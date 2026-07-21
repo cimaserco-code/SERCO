@@ -1,0 +1,24 @@
+{
+  "name": "Documento",
+  "type": "object",
+  "properties": {
+    "titulo": {
+      "type": "string"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "contrato",
+        "renuncia",
+        "otro"
+      ],
+      "default": "otro"
+    },
+    "contenido": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "titulo"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "InventarioItem",
+  "type": "object",
+  "properties": {
+    "nombre": {
+      "type": "string"
+    },
+    "categoria": {
+      "type": "string"
+    },
+    "cantidad": {
+      "type": "number"
+    },
+    "descripcion": {
+      "type": "string"
+    },
+    "ubicacion": {
+      "type": "string"
+    },
+    "sede_id": {
+      "type": "string",
+      "description": "Sede donde se ubica el art\u00edculo"
+    }
+  },
+  "required": [
+    "nombre",
+    "sede_id"
+  ]
+}
