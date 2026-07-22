@@ -76,7 +76,7 @@ class EntityService {
   }
 
   subscribe(callback) {
-    const channel = supabase.channel(`public:${this.tableName}`)
+    const channel = supabase.channel(`public:${this.tableName}:${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: this.tableName }, () => {
         callback();
       })
