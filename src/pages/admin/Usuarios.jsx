@@ -42,10 +42,6 @@ export default function Usuarios() {
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
     load();
-    const unsubscribe = base44.entities.Rol.subscribe(() => {
-      base44.entities.Rol.list().then(setRoles).catch(() => {});
-    });
-    return unsubscribe;
   }, [isAdmin]);
 
   async function load() {
