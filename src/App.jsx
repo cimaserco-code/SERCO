@@ -25,6 +25,7 @@ import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
+import VersionBadge from "@/components/VersionBadge";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -89,6 +90,7 @@ function App() {
           <ScrollToTop />
           <AuthenticatedApp />
           <Toaster />
+          <VersionBadge />
         </Router>
       </QueryClientProvider>
     </AuthProvider>
