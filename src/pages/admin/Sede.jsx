@@ -39,7 +39,7 @@ export default function Sedes() {
   async function load() {
     setLoading(true);
     try {
-      setItems(await base44.entities.Sede.list("-created_date"));
+      setItems(await base44.entities.Sede.list());
     } finally {
       setLoading(false);
     }
