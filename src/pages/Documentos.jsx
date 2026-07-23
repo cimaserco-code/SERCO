@@ -214,18 +214,7 @@ export default function Documentos() {
               <Input value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
             </div>
             <div>
-              <Label>Tipo</Label>
-              <Select value={form.tipo} onValueChange={(v) => setForm({ ...form, tipo: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contrato">Contrato</SelectItem>
-                  <SelectItem value="renuncia">Renuncia</SelectItem>
-                  <SelectItem value="otro">Otro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Subir Archivo (Opcional - Se guardará en Supabase Storage)</Label>
+              <Label>Subir Archivo</Label>
               <Input
                 type="file"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -245,20 +234,13 @@ export default function Documentos() {
                 </p>
               )}
             </div>
-            <div>
-              <Label>O Escribir Contenido de Texto / Plantilla</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[200px] font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="Escribe el contenido del documento aquí..."
-                value={form.contenido && form.contenido.startsWith("http") ? "" : form.contenido}
-                onChange={(e) => setForm({ ...form, contenido: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground mt-1">Puedes usar [NOMBRE], [FECHA], etc. como variables de plantilla.</p>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving || !form.titulo}>
+            <Button 
+              onClick={handleSave} 
+              disabled={saving || !form.titulo|| (!editing && !file)}
+            >
               {saving ? "Guardando..." : "Guardar"}
             </Button>
           </DialogFooter>
