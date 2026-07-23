@@ -24,7 +24,7 @@ class EntityService {
     if (order) {
       const isDesc = order.startsWith('-');
       const col = isDesc ? order.slice(1) : order;
-      const actualCol = col === 'created_date' ? 'created_at' : col;
+      const actualCol = col;
       query = query.order(actualCol, { ascending: !isDesc });
     }
     const { data, error } = await query;
@@ -49,7 +49,7 @@ class EntityService {
     if (order) {
       const isDesc = order.startsWith('-');
       const col = isDesc ? order.slice(1) : order;
-      const actualCol = col === 'created_date' ? 'created_at' : col;
+      const actualCol = col;
       query = query.order(actualCol, { ascending: !isDesc });
     }
     const { data, error } = await query;
