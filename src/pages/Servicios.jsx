@@ -43,10 +43,16 @@ export default function Servicios() {
   async function load() {
     setLoading(true);
     try {
-      const [data, s] = await Promise.all([
-        base44.entities.Servicio.filter(sedeFilter, "-created_date"),
-        base44.entities.Sede.list(),
-      ]);
+    console.log("sedeFilter completo:", JSON.stringify(sedeFilter));
+
+    const [data, s] = await Promise.all([
+      base44.entities.Servicio.filter(sedeFilter),
+      base44.entities.Sede.list(),
+    ]);
+
+    console.log("servicios encontrados:", data);
+
+      console.log("DATOS SERVICIOS:", data);
       setItems(data);
       setSedes(s);
     } finally {
