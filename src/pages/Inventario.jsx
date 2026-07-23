@@ -124,10 +124,9 @@ export default function Inventario() {
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
-              <TableHead>Sede</TableHead>
+              {!defaultSedeId && <TableHead>Sede</TableHead>}
               <TableHead>Categoría</TableHead>
               <TableHead className="text-right">Cantidad</TableHead>
-              <TableHead>Ubicación</TableHead>
               <TableHead>Descripción</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -141,10 +140,11 @@ export default function Inventario() {
               filtered.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.nombre}</TableCell>
-                  <TableCell>{sedeNombre(item.sede_id)}</TableCell>
+                  {!defaultSedeId && (
+                    <TableCell>{sedeNombre(item.sede_id)}</TableCell>
+                  )}
                   <TableCell>{item.categoria || "—"}</TableCell>
                   <TableCell className="text-right">{item.cantidad ?? "—"}</TableCell>
-                  <TableCell>{item.ubicacion || "—"}</TableCell>
                   <TableCell className="max-w-[250px] truncate">{item.descripcion || "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -179,21 +179,34 @@ export default function Inventario() {
               <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
             </div>
             <div>
-              <SedeSelector value={form.sede_id} onChange={(v) => setForm({ ...form, sede_id: v })} sedes={sedes} />
+              {!defaultSedeId && (
+                <SedeSelector
+                   value={form.sede_id}
+                    onChange={(v) => setForm({ ...form, sede_id: v })}
+                   sedes={sedes}
+                  />
+                )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Categoría</Label>
-                <Input value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} />
+              <Select
+                value={form.categoria}
+                onValueChange={(v) => setForm({ ...form, categoria: v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Uniforme">Uniforme</SelectItem>
+                  <SelectItem value="Papelería">Papelería</SelectItem>
+                  <SelectItem value="Material extra">Material extra</SelectItem>
+                </SelectContent>
+              </Select>
               </div>
               <div>
                 <Label>Cantidad</Label>
                 <Input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} />
               </div>
-            </div>
-            <div>
-              <Label>Ubicación</Label>
-              <Input value={form.ubicacion} onChange={(e) => setForm({ ...form, ubicacion: e.target.value })} />
             </div>
             <div>
               <Label>Descripción</Label>
