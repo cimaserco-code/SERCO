@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, Clock4, FileText } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -45,9 +45,9 @@ export default function Cobros() {
     setLoading(true);
     try {
       const [data, sv, s] = await Promise.all([
-        base44.entities.Cobro.filter(sedeFilter, "-created_date"),
-        base44.entities.Servicio.filter(sedeFilter, "-created_date"),
-        base44.entities.Sede.list(),
+        sercoApi.entities.Cobro.filter(sedeFilter, "-created_date"),
+        sercoApi.entities.Servicio.filter(sedeFilter, "-created_date"),
+        sercoApi.entities.Sede.list(),
       ]);
       setItems(data);
       setServicios(sv);
@@ -107,9 +107,9 @@ export default function Cobros() {
         fecha_pago: form.estado === "pagado" ? form.fecha_pago : null,
       };
       if (editing) {
-        await base44.entities.Cobro.update(editing.id, payload);
+        await sercoApi.entities.Cobro.update(editing.id, payload);
       } else {
-        await base44.entities.Cobro.create(payload);
+        await sercoApi.entities.Cobro.create(payload);
       }
       setModalOpen(false);
       await load();
@@ -119,7 +119,7 @@ export default function Cobros() {
   }
 
   async function handleDelete() {
-    await base44.entities.Cobro.delete(deleteId);
+    await sercoApi.entities.Cobro.delete(deleteId);
     setDeleteId(null);
     await load();
   }

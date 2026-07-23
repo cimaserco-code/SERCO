@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { ShieldCheck, Plus, Pencil, Trash2, Lock } from "lucide-react";
@@ -44,7 +44,7 @@ export default function Roles() {
   async function load() {
     setLoading(true);
     try {
-      setRoles(await base44.entities.Rol.list());
+      setRoles(await sercoApi.entities.Rol.list());
     } finally {
       setLoading(false);
     }
@@ -66,10 +66,10 @@ export default function Roles() {
     setSaving(true);
     try {
       if (editing) {
-        await base44.entities.Rol.update(editing.id, { descripcion: form.descripcion, permisos: form.permisos });
+        await sercoApi.entities.Rol.update(editing.id, { descripcion: form.descripcion, permisos: form.permisos });
         toast({ title: "Rol actualizado" });
       } else {
-        await base44.entities.Rol.create({ nombre: form.nombre, descripcion: form.descripcion, permisos: form.permisos });
+        await sercoApi.entities.Rol.create({ nombre: form.nombre, descripcion: form.descripcion, permisos: form.permisos });
         toast({ title: "Rol creado" });
       }
       setModalOpen(false);
@@ -83,7 +83,7 @@ export default function Roles() {
 
   async function handleDelete() {
     try {
-      await base44.entities.Rol.delete(deleteId);
+      await sercoApi.entities.Rol.delete(deleteId);
       toast({ title: "Rol eliminado" });
       setDeleteId(null);
       await load();

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { Plus, Pencil, Search, Lock, KeyRound } from "lucide-react";
@@ -48,9 +48,9 @@ export default function Usuarios() {
     setLoading(true);
     try {
       const [u, s, r] = await Promise.all([
-        base44.entities.User.list(),
-        base44.entities.Sede.list(),
-        base44.entities.Rol.list(),
+        sercoApi.entities.User.list(),
+        sercoApi.entities.Sede.list(),
+        sercoApi.entities.Rol.list(),
       ]);
       setUsers(u);
       setSedes(s);
@@ -82,13 +82,13 @@ export default function Usuarios() {
     if (!inviteEmail) return;
     setInviting(true);
     try {
-      await base44.users.inviteUser(inviteEmail, "user");
+      await sercoApi.users.inviteUser(inviteEmail, "user");
       if (inviteRole) {
         try {
-          const allUsers = await base44.entities.User.list();
+          const allUsers = await sercoApi.entities.User.list();
           const newUser = allUsers.find((u) => u.email === inviteEmail);
           if (newUser) {
-            await base44.entities.User.update(newUser.id, { role: inviteRole });
+            await sercoApi.entities.User.update(newUser.id, { role: inviteRole });
           }
         } catch {}
       }
@@ -121,7 +121,7 @@ export default function Usuarios() {
   async function handleSaveEdit() {
     setSaving(true);
     try {
-      await base44.entities.User.update(editUser.id, {
+      await sercoApi.entities.User.update(editUser.id, {
         role: editForm.role,
         sede_ids: editForm.sede_ids,
         estado: editForm.estado,
@@ -147,7 +147,7 @@ export default function Usuarios() {
   async function handleReset() {
     setResetting(true);
     try {
-      await base44.auth.resetPasswordRequest(resetUser.email);
+      await sercoApi.auth.resetPasswordRequest(resetUser.email);
       toast({ title: "Enlace enviado", description: `Se envió un enlace de restablecimiento a ${resetUser.email}` });
       setResetUser(null);
     } catch (e) {

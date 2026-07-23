@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { sercoApi } from '@/api/sercoClient';
 import { supabase } from '@/lib/supabaseClient';
 
 const AuthContext = createContext();
@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }) => {
   const checkUserAuth = async () => {
     try {
       setIsLoadingAuth(true);
-      const currentUser = await base44.auth.me();
+      const currentUser = await sercoApi.auth.me();
       if (currentUser) {
         setUser(currentUser);
         setIsAuthenticated(true);
@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async (shouldRedirect = true) => {
-    await base44.auth.logout();
+    await sercoApi.auth.logout();
     setUser(null);
     setIsAuthenticated(false);
     if (shouldRedirect) {

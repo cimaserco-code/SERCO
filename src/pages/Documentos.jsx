@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,8 @@ import {
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
+import { supabase } from "@/lib/supabaseClient";
+import { useToast } from "@/components/ui/use-toast";
 
 const emptyForm = { titulo: "", tipo: "otro", contenido: "" };
 
@@ -34,12 +36,14 @@ const tipoColors = {
 
 export default function Documentos() {
   const { canView, can } = usePermissions();
+  const { toast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [viewItem, setViewItem] = useState(null);
@@ -49,7 +53,7 @@ export default function Documentos() {
   async function load() {
     setLoading(true);
     try {
-      const data = await base44.entities.Documento.list("-created_date");
+      const data = await sercoApi.entities.Documento.list("-created_date");
       setItems(data);
     } finally {
       setLoading(false);
@@ -64,32 +68,63 @@ export default function Documentos() {
   function openCreate() {
     setEditing(null);
     setForm(emptyForm);
+    setFile(null);
     setModalOpen(true);
   }
 
   function openEdit(item) {
     setEditing(item);
     setForm({ ...emptyForm, ...item });
+    setFile(null);
     setModalOpen(true);
   }
 
   async function handleSave() {
     setSaving(true);
     try {
+      let finalContenido = form.contenido;
+      if (file) {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const filePath = `uploads/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("documentos")
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("documentos")
+          .getPublicUrl(filePath);
+
+        finalContenido = publicUrl;
+      }
+
+      const payload = { ...form, contenido: finalContenido };
+
       if (editing) {
-        await base44.entities.Documento.update(editing.id, form);
+        await sercoApi.entities.Documento.update(editing.id, payload);
       } else {
-        await base44.entities.Documento.create(form);
+        await sercoApi.entities.Documento.create(payload);
       }
       setModalOpen(false);
+      setFile(null);
       await load();
+      toast({ title: "Documento guardado con éxito" });
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: e.message || "No se pudo subir o guardar el documento",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    await base44.entities.Documento.delete(deleteId);
+    await sercoApi.entities.Documento.delete(deleteId);
     setDeleteId(null);
     await load();
   }
@@ -190,11 +225,32 @@ export default function Documentos() {
               </Select>
             </div>
             <div>
-              <Label>Contenido</Label>
+              <Label>Subir Archivo (Opcional - Se guardará en Supabase Storage)</Label>
+              <Input
+                type="file"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="cursor-pointer mb-3"
+              />
+              {file && (
+                <p className="text-xs text-emerald-600 font-semibold mb-3">
+                  Archivo seleccionado: {file.name}
+                </p>
+              )}
+              {form.contenido && form.contenido.startsWith("http") && (
+                <p className="text-xs text-blue-600 font-semibold mb-3">
+                  Este documento ya tiene un archivo subido:{" "}
+                  <a href={form.contenido} target="_blank" rel="noreferrer" className="underline">
+                    Ver archivo actual
+                  </a>
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>O Escribir Contenido de Texto / Plantilla</Label>
               <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[300px] font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[200px] font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="Escribe el contenido del documento aquí..."
-                value={form.contenido}
+                value={form.contenido && form.contenido.startsWith("http") ? "" : form.contenido}
                 onChange={(e) => setForm({ ...form, contenido: e.target.value })}
               />
               <p className="text-xs text-muted-foreground mt-1">Puedes usar [NOMBRE], [FECHA], etc. como variables de plantilla.</p>
@@ -224,9 +280,21 @@ export default function Documentos() {
               </div>
             </div>
           </DialogHeader>
-          <div className="mt-2 p-4 bg-muted/50 rounded-lg border whitespace-pre-wrap text-sm font-mono">
-            {viewItem?.contenido || "Sin contenido"}
-          </div>
+          {viewItem?.contenido && viewItem.contenido.startsWith("http") ? (
+            <div className="mt-4 p-8 bg-muted/30 rounded-lg border text-center flex flex-col items-center gap-3">
+              <FileText className="w-12 h-12 text-primary opacity-80" />
+              <p className="text-sm font-medium">Este documento es un archivo subido externamente.</p>
+              <Button asChild>
+                <a href={viewItem.contenido} target="_blank" rel="noreferrer">
+                  Descargar / Ver Archivo
+                </a>
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-2 p-4 bg-muted/50 rounded-lg border whitespace-pre-wrap text-sm font-mono">
+              {viewItem?.contenido || "Sin contenido"}
+            </div>
+          )}
           <DialogFooter>
             {can("documentos", "edit") && (
             <Button variant="outline" onClick={() => { setViewItem(null); if (viewItem) openEdit(viewItem); }}>

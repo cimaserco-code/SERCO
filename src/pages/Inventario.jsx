@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -40,8 +40,8 @@ export default function Inventario() {
     setLoading(true);
     try {
       const [data, s] = await Promise.all([
-        base44.entities.InventarioItem.filter(sedeFilter, "-created_date"),
-        base44.entities.Sede.list(),
+        sercoApi.entities.InventarioItem.filter(sedeFilter, "-created_date"),
+        sercoApi.entities.Sede.list(),
       ]);
       setItems(data);
       setSedes(s);
@@ -75,9 +75,9 @@ export default function Inventario() {
     try {
       const payload = { ...form, cantidad: form.cantidad === "" ? null : Number(form.cantidad) };
       if (editing) {
-        await base44.entities.InventarioItem.update(editing.id, payload);
+        await sercoApi.entities.InventarioItem.update(editing.id, payload);
       } else {
-        await base44.entities.InventarioItem.create(payload);
+        await sercoApi.entities.InventarioItem.create(payload);
       }
       setModalOpen(false);
       await load();
@@ -87,7 +87,7 @@ export default function Inventario() {
   }
 
   async function handleDelete() {
-    await base44.entities.InventarioItem.delete(deleteId);
+    await sercoApi.entities.InventarioItem.delete(deleteId);
     setDeleteId(null);
     await load();
   }

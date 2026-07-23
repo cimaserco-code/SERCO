@@ -87,7 +87,7 @@ class EntityService {
   }
 }
 
-export const base44 = {
+export const sercoApi = {
   entities: Object.keys(tableMap).reduce((acc, key) => {
     acc[key] = new EntityService(key);
     return acc;

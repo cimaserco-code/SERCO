@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,7 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await base44.auth.register({ email, password });
+      await sercoApi.auth.register({ email, password });
       setShowOtp(true); // Re-use this state to show the "check your email" view
     } catch (err) {
       setError(err.message || "Registration failed");
@@ -39,7 +39,7 @@ export default function Register() {
 
 
   const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", "/");
+    sercoApi.auth.loginWithProvider("google", "/");
   };
 
   if (showOtp) {

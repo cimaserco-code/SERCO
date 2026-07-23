@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar } from "lucide-react";
+import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/lib/AuthContext";
@@ -26,7 +26,7 @@ const adminNavItems = [
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { canView } = usePermissions();
   const navItems = allNavItems.filter((item) => !item.module || canView(item.module));
 
@@ -147,11 +147,20 @@ export default function Layout() {
             </div>
           </div>
           {user && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground hidden sm:block">{user.email}</span>
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize">
                 {user.role}
               </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => logout(true)}
+                title="Cerrar Sesión"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
           )}
         </header>

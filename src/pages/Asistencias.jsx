@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -42,8 +42,8 @@ export default function Asistencias() {
     setLoading(true);
     try {
       const [emps, asists] = await Promise.all([
-        base44.entities.Empleado.filter(sedeFilter),
-        base44.entities.Asistencia.list()
+        sercoApi.entities.Empleado.filter(sedeFilter),
+        sercoApi.entities.Asistencia.list()
       ]);
       // Only keep active employees (who didn't get given "baja" or got "baja" in the future)
       const activeEmps = emps.filter(e => !e.fecha_baja || new Date(e.fecha_baja) >= new Date());
@@ -112,19 +112,19 @@ export default function Asistencias() {
     try {
       if (found) {
         if (estado === null) {
-          await base44.entities.Asistencia.delete(found.id);
+          await sercoApi.entities.Asistencia.delete(found.id);
         } else {
-          await base44.entities.Asistencia.update(found.id, { estado });
+          await sercoApi.entities.Asistencia.update(found.id, { estado });
         }
       } else if (estado !== null) {
-        await base44.entities.Asistencia.create({
+        await sercoApi.entities.Asistencia.create({
           empleado_id: employeeId,
           fecha: dateStr,
           estado
         });
       }
       // Reload from DB to verify sync
-      const updatedAsists = await base44.entities.Asistencia.list();
+      const updatedAsists = await sercoApi.entities.Asistencia.list();
       setAsistencias(updatedAsists);
     } catch (e) {
       toast({

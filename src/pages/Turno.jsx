@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,9 +41,9 @@ export default function Turnos() {
     async function load() {
       try {
         const [servs, emps, seds] = await Promise.all([
-          base44.entities.Servicio.filter(sedeFilter),
-          base44.entities.Empleado.filter(sedeFilter),
-          base44.entities.Sede.list(),
+          sercoApi.entities.Servicio.filter(sedeFilter),
+          sercoApi.entities.Empleado.filter(sedeFilter),
+          sercoApi.entities.Sede.list(),
         ]);
         setServicios(servs);
         setEmpleados(emps);
@@ -63,7 +63,7 @@ export default function Turnos() {
 
   async function loadAsignaciones() {
     try {
-      const data = await base44.entities.AsignacionTurno.filter({ servicio_id: selectedServicio });
+      const data = await sercoApi.entities.AsignacionTurno.filter({ servicio_id: selectedServicio });
       setAsignaciones(data);
     } catch {
       setAsignaciones([]);
@@ -80,7 +80,7 @@ export default function Turnos() {
     setSaving(true);
     try {
       const serv = servicios.find((s) => s.id === selectedServicio);
-      await base44.entities.AsignacionTurno.create({
+      await sercoApi.entities.AsignacionTurno.create({
         empleado_nombre: newEmpleado,
         servicio_id: selectedServicio,
         servicio_nombre: serv?.nombre || "",
@@ -96,7 +96,7 @@ export default function Turnos() {
   }
 
   async function handleDelete() {
-    await base44.entities.AsignacionTurno.delete(deleteId);
+    await sercoApi.entities.AsignacionTurno.delete(deleteId);
     setDeleteId(null);
     await loadAsignaciones();
   }

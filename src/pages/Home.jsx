@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Users, Briefcase, Package, FileText, ArrowRight, Clock, CheckCircle, DollarSign, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/AuthContext";
@@ -36,12 +36,12 @@ export default function Home() {
     async function load() {
       try {
         const [emp, serv, inv, docs, turnos, cobros] = await Promise.all([
-          canView("empleados") ? base44.entities.Empleado.filter(sedeFilter) : Promise.resolve([]),
-          base44.entities.Servicio.filter(sedeFilter),
-          base44.entities.InventarioItem.filter(sedeFilter),
-          base44.entities.Documento.list(),
-          base44.entities.AsignacionTurno.filter(sedeFilter),
-          base44.entities.Cobro.filter(sedeFilter)
+          canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([]),
+          sercoApi.entities.Servicio.filter(sedeFilter),
+          sercoApi.entities.InventarioItem.filter(sedeFilter),
+          sercoApi.entities.Documento.list(),
+          sercoApi.entities.AsignacionTurno.filter(sedeFilter),
+          sercoApi.entities.Cobro.filter(sedeFilter)
         ]);
 
         const empsActivos = emp.filter(e => !e.fecha_baja).length;

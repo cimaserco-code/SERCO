@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +37,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      await base44.auth.resetPassword({ resetToken, newPassword: password });
+      await sercoApi.auth.resetPassword({ resetToken, newPassword: password });
       setDone(true);
       setTimeout(() => navigate("/login"), 2500);
     } catch {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search, Briefcase, CheckCircle, Ban } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -46,8 +46,8 @@ export default function Servicios() {
     console.log("sedeFilter completo:", JSON.stringify(sedeFilter));
 
     const [data, s] = await Promise.all([
-      base44.entities.Servicio.filter(sedeFilter),
-      base44.entities.Sede.list(),
+      sercoApi.entities.Servicio.filter(sedeFilter),
+      sercoApi.entities.Sede.list(),
     ]);
 
     console.log("servicios encontrados:", data);
@@ -94,9 +94,9 @@ export default function Servicios() {
     try {
       const payload = { ...form };
       if (editing) {
-        await base44.entities.Servicio.update(editing.id, payload);
+        await sercoApi.entities.Servicio.update(editing.id, payload);
       } else {
-        await base44.entities.Servicio.create(payload);
+        await sercoApi.entities.Servicio.create(payload);
       }
       setModalOpen(false);
       await load();
@@ -106,7 +106,7 @@ export default function Servicios() {
   }
 
   async function handleDelete() {
-    await base44.entities.Servicio.delete(deleteId);
+    await sercoApi.entities.Servicio.delete(deleteId);
     setDeleteId(null);
     await load();
   }

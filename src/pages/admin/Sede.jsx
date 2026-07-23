@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { Plus, Pencil, Trash2, Search, Lock } from "lucide-react";
@@ -39,7 +39,7 @@ export default function Sedes() {
   async function load() {
     setLoading(true);
     try {
-      setItems(await base44.entities.Sede.list());
+      setItems(await sercoApi.entities.Sede.list());
     } finally {
       setLoading(false);
     }
@@ -70,10 +70,10 @@ export default function Sedes() {
     setSaving(true);
     try {
       if (editing) {
-        await base44.entities.Sede.update(editing.id, form);
+        await sercoApi.entities.Sede.update(editing.id, form);
         toast({ title: "Sede actualizada" });
       } else {
-        await base44.entities.Sede.create(form);
+        await sercoApi.entities.Sede.create(form);
         toast({ title: "Sede creada" });
       }
       setModalOpen(false);
@@ -87,7 +87,7 @@ export default function Sedes() {
 
   async function handleDelete() {
     try {
-      await base44.entities.Sede.delete(deleteId);
+      await sercoApi.entities.Sede.delete(deleteId);
       toast({ title: "Sede eliminada" });
       setDeleteId(null);
       await load();

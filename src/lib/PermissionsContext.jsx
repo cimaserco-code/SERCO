@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
 
 const PermissionsContext = createContext(null);
@@ -11,7 +11,7 @@ export function PermissionsProvider({ children }) {
 
   const loadRoles = useCallback(async () => {
     try {
-      const data = await base44.entities.Rol.list();
+      const data = await sercoApi.entities.Rol.list();
       setRoles(data);
     } catch {
       setRoles([]);
@@ -22,7 +22,7 @@ export function PermissionsProvider({ children }) {
 
   useEffect(() => {
     loadRoles();
-    const unsubscribe = base44.entities.Rol.subscribe(() => loadRoles());
+    const unsubscribe = sercoApi.entities.Rol.subscribe(() => loadRoles());
     return unsubscribe;
   }, [loadRoles]);
 

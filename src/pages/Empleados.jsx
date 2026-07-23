@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search, FileText } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -17,6 +17,9 @@ import { useSedeScope } from "@/hooks/useSedeScope";
 import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 const emptyForm = {
   nombre_completo: "",
@@ -41,6 +44,7 @@ export default function Empleados() {
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const [items, setItems] = useState([]);
   const [sedes, setSedes] = useState([]);
+  const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -55,12 +59,14 @@ export default function Empleados() {
   async function load() {
     setLoading(true);
     try {
-      const [data, s] = await Promise.all([
-        base44.entities.Empleado.filter(sedeFilter, "-created_date"),
-        base44.entities.Sede.list(),
+      const [data, s, sv] = await Promise.all([
+        sercoApi.entities.Empleado.filter(sedeFilter, "-created_date"),
+        sercoApi.entities.Sede.list(),
+        sercoApi.entities.Servicio.filter(sedeFilter),
       ]);
       setItems(data);
       setSedes(s);
+      setServicios(sv);
     } finally {
       setLoading(false);
     }
@@ -108,9 +114,9 @@ export default function Empleados() {
         uniformes: form.uniformes || null
       };
       if (editing) {
-        await base44.entities.Empleado.update(editing.id, payload);
+        await sercoApi.entities.Empleado.update(editing.id, payload);
       } else {
-        await base44.entities.Empleado.create(payload);
+        await sercoApi.entities.Empleado.create(payload);
       }
       setModalOpen(false);
       await load();
@@ -120,7 +126,7 @@ export default function Empleados() {
   }
 
   async function handleDelete() {
-    await base44.entities.Empleado.delete(deleteId);
+    await sercoApi.entities.Empleado.delete(deleteId);
     setDeleteId(null);
     await load();
   }
@@ -332,7 +338,22 @@ export default function Empleados() {
             </div>
             <div>
               <Label>Servicio / Ubicación</Label>
-              <Input value={form.servicio_ubicacion} onChange={(e) => setForm({ ...form, servicio_ubicacion: e.target.value })} />
+              <Select
+                value={form.servicio_ubicacion || ""}
+                onValueChange={(val) => setForm({ ...form, servicio_ubicacion: val === "none" ? "" : val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un servicio..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Ninguno / Sin asignar</SelectItem>
+                  {servicios.map((s) => (
+                    <SelectItem key={s.id} value={s.nombre}>
+                      {s.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Teléfono</Label>
