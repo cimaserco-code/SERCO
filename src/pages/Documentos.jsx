@@ -22,17 +22,6 @@ import { useToast } from "@/components/ui/use-toast";
 
 const emptyForm = { titulo: "", tipo: "otro", contenido: "" };
 
-const tipoLabels = {
-  contrato: "Contrato",
-  renuncia: "Renuncia",
-  otro: "Otro",
-};
-
-const tipoColors = {
-  contrato: "bg-blue-100 text-blue-700",
-  renuncia: "bg-red-100 text-red-700",
-  otro: "bg-gray-100 text-gray-700",
-};
 
 export default function Documentos() {
   const { canView, can } = usePermissions();
@@ -94,11 +83,13 @@ export default function Documentos() {
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
           .from("documentos")
-          .getPublicUrl(filePath);
+          .createSignedUrl(filePath, 60 * 60);
 
-        finalContenido = publicUrl;
+        if (signedUrlError) throw signedUrlError;
+
+        finalContenido = signedUrlData.signedUrl;
       }
 
       const payload = { ...form, contenido: finalContenido };
@@ -172,16 +163,13 @@ export default function Documentos() {
                         </div>
                         <div>
                           <CardTitle className="text-base leading-tight">{item.titulo}</CardTitle>
-                          <Badge variant="secondary" className={`mt-1 ${tipoColors[item.tipo] || tipoColors.otro}`}>
-                            {tipoLabels[item.tipo] || "Otro"}
-                          </Badge>
                         </div>
                       </div>
                     </div>
                   </CardHeader>
               <CardContent className="pt-0">
-                <p className="text-sm text-muted-foreground line-clamp-3">
-                  {item.contenido || "Sin contenido"}
+                <p className="text-sm text-muted-foreground">
+                   Archivo adjunto
                 </p>
                 <div className="flex gap-1 mt-3" onClick={(e) => e.stopPropagation()}>
                   {can("documentos", "edit") && (
@@ -255,20 +243,43 @@ export default function Documentos() {
               <div>
                 <DialogTitle>{viewItem?.titulo}</DialogTitle>
                 <DialogDescription>
-                  <Badge variant="secondary" className={`mt-1 ${tipoColors[viewItem?.tipo] || tipoColors.otro}`}>
-                    {tipoLabels[viewItem?.tipo] || "Otro"}
-                  </Badge>
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
           {viewItem?.contenido && viewItem.contenido.startsWith("http") ? (
-            <div className="mt-4 p-8 bg-muted/30 rounded-lg border text-center flex flex-col items-center gap-3">
-              <FileText className="w-12 h-12 text-primary opacity-80" />
-              <p className="text-sm font-medium">Este documento es un archivo subido externamente.</p>
-              <Button asChild>
-                <a href={viewItem.contenido} target="_blank" rel="noreferrer">
-                  Descargar / Ver Archivo
+            <div className="mt-4 space-y-4">
+              {viewItem.contenido.toLowerCase().includes(".pdf") ? (
+                <iframe
+                  src={viewItem.contenido}
+                  className="w-full h-[600px] rounded-lg border"
+                  title="Vista previa del documento"
+                />
+              ) : (
+                <div className="p-8 bg-muted/30 rounded-lg border text-center flex flex-col items-center gap-3">
+                  <FileText className="w-12 h-12 text-primary opacity-80" />
+                  <p className="text-sm font-medium">
+                    Este formato no tiene vista previa disponible.
+                  </p>
+                  <Button asChild>
+                    <a
+                      href={viewItem.contenido}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir documento
+                    </a>
+                  </Button>
+                </div>
+              )}
+
+              <Button variant="outline" asChild>
+                <a
+                  href={viewItem.contenido}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir en nueva pestaña
                 </a>
               </Button>
             </div>
