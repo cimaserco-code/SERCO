@@ -19,11 +19,13 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
+import { useSedeScope } from "@/hooks/useSedeScope";
 
-const emptyForm = { titulo: "", tipo: "otro", contenido: "" };
+const emptyForm = { titulo: "", contenido: "", sede_id: "" };
 
 
 export default function Documentos() {
+  const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
   const { toast } = useToast();
   const [items, setItems] = useState([]);
@@ -42,7 +44,10 @@ export default function Documentos() {
   async function load() {
     setLoading(true);
     try {
-      const data = await sercoApi.entities.Documento.list("-created_date");
+      const data = await sercoApi.entities.Documento.filter(
+        sedeFilter,
+        "-created_date"
+      );
       setItems(data);
     } finally {
       setLoading(false);
@@ -56,7 +61,7 @@ export default function Documentos() {
 
   function openCreate() {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, sede_id: defaultSedeId });
     setFile(null);
     setModalOpen(true);
   }
