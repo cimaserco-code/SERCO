@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 
 const emptyForm = {
-  nombre: "", direccion: "", admin_nombre: "", telefono: "", estado: "activo", sede_id: "",
+  nombre: "", direccion: "", admin_nombre: "", telefono: "",correo:"",fecha_inicio: "", estado: "activo", sede_id: "",
 };
 
 export default function Servicios() {
@@ -37,6 +37,7 @@ export default function Servicios() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
+  const [viewItem, setViewItem] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -190,14 +191,21 @@ export default function Servicios() {
               <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No hay servicios registrados</TableCell></TableRow>
             ) : (
               filtered.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow
+                  key={item.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setViewItem(item)}
+                >
                   <TableCell className="font-medium">{item.nombre}</TableCell>
                   <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                   <TableCell className="max-w-[200px] truncate">{item.direccion || "—"}</TableCell>
                   <TableCell>{item.admin_nombre || "—"}</TableCell>
                   <TableCell>{estadoBadge(item.estado)}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div
+                     className="flex justify-end gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {can("servicios", "edit") && (
                         <Button variant="ghost" size="icon" onClick={() => openEdit(item)}>
                           <Pencil className="w-4 h-4" />
@@ -244,6 +252,22 @@ export default function Servicios() {
               <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
             </div>
             <div>
+              <Label>Correo</Label>
+              <Input
+                type="email"
+                value={form.correo}
+                onChange={(e) => setForm({ ...form, correo: e.target.value })}
+              />
+            </div>
+            <div>
+              <div>
+                <Label>Fecha de inicio</Label>
+                <Input
+                  type="date"
+                  value={form.fecha_inicio}
+                  onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
+                />
+              </div>
               <Label>Estado</Label>
               <Select value={form.estado} onValueChange={(v) => setForm({ ...form, estado: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -259,6 +283,81 @@ export default function Servicios() {
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving || !form.nombre || !form.sede_id}>
               {saving ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+            <Dialog open={!!viewItem} onOpenChange={(v) => !v && setViewItem(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{viewItem?.nombre}</DialogTitle>
+            <DialogDescription>
+              Información del servicio
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+
+            <div>
+              <Label>Dirección</Label>
+              <p className="text-sm text-muted-foreground">
+                {viewItem?.direccion || "—"}
+              </p>
+            </div>
+
+            <div>
+              <Label>Administrador</Label>
+              <p className="text-sm text-muted-foreground">
+                {viewItem?.admin_nombre || "—"}
+              </p>
+            </div>
+
+            <div>
+              <Label>Teléfono</Label>
+              <p className="text-sm text-muted-foreground">
+                {viewItem?.telefono || "—"}
+              </p>
+            </div>
+
+            <div>
+              <Label>Correo</Label>
+              <p className="text-sm text-muted-foreground">
+                {viewItem?.correo || "—"}
+              </p>
+            </div>
+
+            <div>
+              <Label>Fecha de inicio</Label>
+              <p className="text-sm text-muted-foreground">
+                {viewItem?.fecha_inicio || "—"}
+              </p>
+            </div>
+
+            <div>
+              <Label>Estado</Label>
+              <div className="mt-1">
+                {estadoBadge(viewItem?.estado)}
+              </div>
+            </div>
+
+          </div>
+
+          <DialogFooter>
+            {can("servicios", "edit") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setViewItem(null);
+                  openEdit(viewItem);
+                }}
+              >
+                <Pencil className="w-4 h-4 mr-1" />
+                Editar
+              </Button>
+            )}
+
+            <Button onClick={() => setViewItem(null)}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>
