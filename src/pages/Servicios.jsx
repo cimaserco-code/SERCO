@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, Briefcase, CheckCircle, Ban } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -69,15 +69,7 @@ export default function Servicios() {
     (item.direccion || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const activos = items.filter((i) => (i.estado || "activo") === "activo");
-  const suspendidos = items.filter((i) => i.estado === "suspendido");
-
-  const kpiCards = [
-    { label: "Total Servicios", value: items.length, icon: Briefcase, color: "bg-slate-500" },
-    { label: "Activos", value: activos.length, icon: CheckCircle, color: "bg-emerald-500" },
-    { label: "Suspendidos", value: suspendidos.length, icon: Ban, color: "bg-amber-500" },
-  ];
-
+  
   function openCreate() {
     setEditing(null);
     setForm({ ...emptyForm, sede_id: defaultSedeId });
@@ -127,27 +119,6 @@ export default function Servicios() {
 
   return (
     <div className="space-y-4">
-      {/* KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {kpiCards.map((card, idx) => {
-          const Icon = card.icon;
-          return (
-            <Card key={idx}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-lg ${card.color} flex items-center justify-center shrink-0`}>
-                    <Icon className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-lg font-bold truncate">{card.value}</div>
-                    <p className="text-xs text-muted-foreground">{card.label}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
