@@ -30,9 +30,11 @@ export default function Layout() {
   const { canView } = usePermissions();
   const navItems = allNavItems.filter((item) => !item.module || canView(item.module));
 
-  const active = navItems.find((item) =>
-    item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to)
-  );
+  const active = navItems.find((item) => {
+    if (item.to === "/") return location.pathname === "/";
+    if (item.to === "/servicios") return location.pathname === "/servicios";
+    return location.pathname.startsWith(item.to);
+  });
 
   const renderNavItems = (onNavigate) =>
     navItems.map((item) => {
@@ -41,7 +43,7 @@ export default function Layout() {
         <NavLink
           key={item.to}
           to={item.to}
-          end={item.to === "/"}
+          end={item.to === "/" || item.to === "/servicios"}
           onClick={onNavigate}
           className={({ isActive }) =>
             `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${

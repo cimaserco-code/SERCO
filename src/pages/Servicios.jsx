@@ -20,6 +20,7 @@ import AccessRestricted from "@/components/AccessRestricted";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
 
 const emptyForm = {
   nombre: "", direccion: "", admin_nombre: "", telefono: "",correo:"",fecha_inicio: "", estado: "activo", sede_id: "",
@@ -28,6 +29,7 @@ const emptyForm = {
 export default function Servicios() {
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
+  const { toast } = useToast();
   const [items, setItems] = useState([]);
   const [sedes, setSedes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,13 +88,41 @@ export default function Servicios() {
     setSaving(true);
     try {
       const payload = { ...form };
+      
       if (editing) {
         await sercoApi.entities.Servicio.update(editing.id, payload);
+        toast({ title: "Servicio actualizado con éxito" });
       } else {
-        await sercoApi.entities.Servicio.create(payload);
+        const created = await sercoApi.entities.Servicio.create(payload);
+        // Create initial pending cobro for the start month of the service
+        try {
+          const [startYear, startMonth] = payload.fecha_inicio.split("-");
+          const targetMonth = `${startYear}-${startMonth}`;
+          await sercoApi.entities.Cobro.create({
+            servicio_id: created.id,
+            servicio_nombre: created.nombre,
+            mes: targetMonth,
+            fecha_factura: null,
+            monto: 0,
+            estado: "pendiente",
+            fecha_limite_pago: null,
+            fecha_pago: null,
+            sede_id: created.sede_id,
+          });
+        } catch (cobroError) {
+          console.error("No se pudo crear el cobro inicial para el servicio:", cobroError);
+        }
+        toast({ title: "Servicio creado con éxito" });
       }
       setModalOpen(false);
       await load();
+    } catch (e) {
+      console.error(e);
+      toast({
+        title: "Error al guardar servicio",
+        description: e.message || "Ocurrió un error inesperado",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -232,7 +262,7 @@ export default function Servicios() {
             </div>
             <div>
               <div>
-                <Label>Fecha de inicio</Label>
+                <Label>Fecha de inicio *</Label>
                 <Input
                   type="date"
                   value={form.fecha_inicio}
@@ -252,7 +282,7 @@ export default function Servicios() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving || !form.nombre || !form.sede_id}>
+            <Button onClick={handleSave} disabled={saving || !form.nombre || !form.fecha_inicio || !form.sede_id}>
               {saving ? "Guardando..." : "Guardar"}
             </Button>
           </DialogFooter>
