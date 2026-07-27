@@ -13,6 +13,22 @@ const tableMap = {
   Asistencia: 'asistencias'
 };
 
+function formatSupabaseError(error) {
+  if (!error) return new Error('Error desconocido de Supabase');
+
+  const parts = [error.message, error.details, error.hint, error.code].filter(Boolean);
+  const message = parts.length ? parts.join(' | ') : 'Error desconocido de Supabase';
+  const wrappedError = new Error(message);
+  wrappedError.originalError = error;
+  return wrappedError;
+}
+
+function getMonthKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
 class EntityService {
   constructor(entityName) {
     this.entityName = entityName;
@@ -28,7 +44,7 @@ class EntityService {
       query = query.order(actualCol, { ascending: !isDesc });
     }
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw formatSupabaseError(error);
     return data;
   }
 
@@ -53,25 +69,60 @@ class EntityService {
       query = query.order(actualCol, { ascending: !isDesc });
     }
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw formatSupabaseError(error);
     return data;
   }
 
   async create(payload) {
     const { data, error } = await supabase.from(this.tableName).insert(payload).select().single();
-    if (error) throw error;
+    if (error) throw formatSupabaseError(error);
+
+    if (this.entityName === 'Servicio' && data) {
+      try {
+        const currentMonth = getMonthKey();
+        const existingCobros = await sercoApi.entities.Cobro.filter({
+          servicio_id: data.id,
+          mes: currentMonth,
+        });
+
+        if (existingCobros?.length) {
+          return data;
+        }
+
+        const cobroPayload = {
+          servicio_id: data.id,
+          servicio_nombre: data.nombre || payload.nombre || '',
+          sede_id: data.sede_id ?? payload.sede_id ?? null,
+          mes: currentMonth,
+          fecha_factura: null,
+          fecha_limite_pago: null,
+          monto: null,
+          estado: 'pendiente',
+          fecha_pago: null,
+        };
+
+        const createdCobro = await sercoApi.entities.Cobro.create(cobroPayload);
+        if (!createdCobro) {
+          console.error('No se pudo crear el cobro asociado al servicio:', data.id);
+        }
+      } catch (cobroError) {
+        const message = cobroError instanceof Error ? cobroError.message : String(cobroError);
+        console.error('No se pudo crear el cobro asociado al servicio:', message);
+      }
+    }
+
     return data;
   }
 
   async update(id, payload) {
     const { data, error } = await supabase.from(this.tableName).update(payload).eq('id', id).select().single();
-    if (error) throw error;
+    if (error) throw formatSupabaseError(error);
     return data;
   }
 
   async delete(id) {
     const { error } = await supabase.from(this.tableName).delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw formatSupabaseError(error);
     return true;
   }
 

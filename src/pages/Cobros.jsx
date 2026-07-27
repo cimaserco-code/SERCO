@@ -51,7 +51,29 @@ function adjustDateToMonth(prevDate, targetMonth) {
 const emptyForm = {
   servicio_id: "", servicio_nombre: "", mes: "", fecha_factura: "",
   monto: "", estado: "pendiente", fecha_limite_pago: "", fecha_pago: "", sede_id: "",
-};
+  };
+
+function copiarFecha(fecha,mes){
+
+  if(!fecha) return "";
+
+  const dia=fecha.slice(8);
+
+  return mes+"-"+dia;
+
+  }
+
+function formatMonthKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function getDateFromMonthKey(monthKey) {
+  if (!monthKey) return new Date();
+  const [year, month] = monthKey.split('-');
+  return new Date(Number(year), Number(month) - 1, 1);
+}
 
 export default function Cobros() {
   const { sedeFilter, defaultSedeId } = useSedeScope();
@@ -69,7 +91,7 @@ export default function Cobros() {
   const [deleteId, setDeleteId] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
     return `${today.getFullYear()}-${mm}`;
   });
 
@@ -84,8 +106,8 @@ export default function Cobros() {
         sercoApi.entities.Sede.list(),
       ]);
 
-      const activeServicios = allServicios.filter(s => {
-        if ((s.estado || 'activo') !== 'activo') return false;
+      const activeServicios = allServicios.filter((s) => {
+        if ((s.estado || "activo") !== "activo") return false;
         if (!s.fecha_inicio) return true;
         const [curYear, curMonth] = currentMonth.split("-").map(Number);
         const [startYear, startMonth] = s.fecha_inicio.split("-").map(Number);
@@ -95,17 +117,17 @@ export default function Cobros() {
       });
 
       const allPendingCreates = [];
-      
-      activeServicios.forEach(s => {
+
+      activeServicios.forEach((s) => {
         const startMonth = s.fecha_inicio ? s.fecha_inicio.substring(0, 7) : currentMonth;
         if (startMonth <= currentMonth) {
           const targetMonths = getMonthsBetween(startMonth, currentMonth);
-          
+
           let lastMonto = 0;
           let lastFechaLimite = null;
-          
-          targetMonths.forEach(m => {
-            const existing = allCobros.find(c => c.servicio_id === s.id && c.mes === m);
+
+          targetMonths.forEach((m) => {
+            const existing = allCobros.find((c) => c.servicio_id === s.id && c.mes === m);
             if (existing) {
               lastMonto = existing.monto ?? 0;
               lastFechaLimite = existing.fecha_limite_pago || null;
@@ -128,16 +150,14 @@ export default function Cobros() {
         }
       });
 
+      let nextCobros = allCobros;
       if (allPendingCreates.length > 0) {
-        await Promise.all(
-          allPendingCreates.map(payload => sercoApi.entities.Cobro.create(payload))
-        );
-        const updatedCobros = await sercoApi.entities.Cobro.filter(sedeFilter, "-created_date");
-        setItems(updatedCobros);
-      } else {
-        setItems(allCobros);
+        await Promise.all(allPendingCreates.map((payload) => sercoApi.entities.Cobro.create(payload)));
+        nextCobros = await sercoApi.entities.Cobro.filter(sedeFilter, "-created_date");
       }
 
+      const monthlyItems = nextCobros.filter((c) => c.mes === currentMonth);
+      setItems(monthlyItems);
       setServicios(allServicios);
       setSedes(allSedes);
     } catch (e) {
@@ -172,10 +192,15 @@ export default function Cobros() {
 
   const monthlyItems = items.filter((item) => item.mes === currentMonth);
 
-  const filtered = monthlyItems.filter((item) =>
-    (item.servicio_nombre || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.fecha_factura || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = monthlyItems.filter((item) => {
+    const txt = search.toLowerCase();
+    return (
+      (item.servicio_nombre || "").toLowerCase().includes(txt) ||
+      (item.estado || "").toLowerCase().includes(txt) ||
+      (item.fecha_factura || "").toLowerCase().includes(txt)
+    );
+  });
+
 
   const totalFacturado = monthlyItems.reduce((sum, i) => sum + (i.monto || 0), 0);
   const totalCobrado = monthlyItems.filter((i) => i.estado === "pagado").reduce((sum, i) => sum + (i.monto || 0), 0);
@@ -195,21 +220,25 @@ export default function Cobros() {
     setModalOpen(true);
   }
 
-  function openEdit(item) {
-    setEditing(item);
-    setForm({ ...emptyForm, ...item, monto: item.monto ?? "" });
-    setModalOpen(true);
-  }
+  function openEdit(item){
 
-  function handleServicioChange(servicioId) {
-    const servicio = servicios.find((s) => s.id === servicioId);
+    setEditing(item);
+
     setForm({
-      ...form,
-      servicio_id: servicioId,
-      servicio_nombre: servicio?.nombre || "",
-      sede_id: servicio?.sede_id || form.sede_id,
+
+    ...emptyForm,
+
+    ...item,
+
+    monto:item.monto??"",
+
+    mes:item.mes
+
     });
-  }
+
+    setModalOpen(true);
+
+    }
 
   async function handleSave() {
     setSaving(true);
@@ -219,21 +248,22 @@ export default function Cobros() {
         monto: form.monto === "" ? null : Number(form.monto),
         fecha_pago: form.estado === "pagado" ? form.fecha_pago : null,
       };
+
       if (editing) {
         await sercoApi.entities.Cobro.update(editing.id, payload);
-        
+
         try {
           const serviceId = editing.servicio_id;
           const editedMonth = editing.mes;
           const newMonto = payload.monto;
           const newFechaLimite = payload.fecha_limite_pago;
-          
-          const allOtherCobros = items.filter(c => c.servicio_id === serviceId && c.id !== editing.id);
-          const subsequentPendingCobros = allOtherCobros.filter(c => c.mes > editedMonth && c.estado === "pendiente");
-          
-           if (subsequentPendingCobros.length > 0) {
+
+          const allOtherCobros = items.filter((c) => c.servicio_id === serviceId && c.id !== editing.id);
+          const subsequentPendingCobros = allOtherCobros.filter((c) => c.mes > editedMonth && c.estado === "pendiente");
+
+          if (subsequentPendingCobros.length > 0) {
             await Promise.all(
-              subsequentPendingCobros.map(c => {
+              subsequentPendingCobros.map((c) => {
                 const adjustedFechaLimite = adjustDateToMonth(newFechaLimite, c.mes);
                 return sercoApi.entities.Cobro.update(c.id, {
                   monto: newMonto,
@@ -263,6 +293,9 @@ export default function Cobros() {
         await sercoApi.entities.Cobro.create(payload);
         toast({ title: "Cobro creado con éxito" });
       }
+
+      setEditing(null);
+      setForm(emptyForm);
       setModalOpen(false);
       await load();
     } catch (e) {
@@ -288,7 +321,7 @@ export default function Cobros() {
   const formatMes = (mes) => {
     if (!mes) return "—";
     try {
-      return new Date(mes + "-01T00:00:00").toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+      return getDateFromMonthKey(mes).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
     } catch {
       return mes;
     }
@@ -404,24 +437,24 @@ export default function Cobros() {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar Cobro" : "Nuevo Cobro"}</DialogTitle>
-            <DialogDescription>Registra un cobro asociado a un servicio</DialogDescription>
+            <DialogTitle>Editar Cobro</DialogTitle>
+            <DialogDescription>Actualiza la información financiera del servicio.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-4 py-2">
             <div>
-              <Label>Servicio *</Label>
-              <Select value={form.servicio_id} onValueChange={handleServicioChange}>
-                <SelectTrigger><SelectValue placeholder="Selecciona un servicio" /></SelectTrigger>
-                <SelectContent>
-                  {servicios.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <Label>Servicio</Label>
+
+                <Input
+                    value={form.servicio_nombre}
+                    disabled
+                />
             </div>
             <div>
-              <Label>Mes *</Label>
-              <Input type="month" value={form.mes} onChange={(e) => setForm({ ...form, mes: e.target.value })} />
+              <Label>Mes</Label>
+              <Input
+                  value={formatMes(form.mes)}
+                  disabled
+              />              
             </div>
             <div>
               <Label>Fecha de Factura</Label>
@@ -455,7 +488,7 @@ export default function Cobros() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving || !form.servicio_id || !form.mes}>
+            <Button onClick={handleSave} disabled={saving}>
               {saving ? "Guardando..." : "Guardar"}
             </Button>
           </DialogFooter>

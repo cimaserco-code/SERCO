@@ -66,7 +66,7 @@ export default function Roles() {
     setSaving(true);
     try {
       if (editing) {
-        await sercoApi.entities.Rol.update(editing.id, { descripcion: form.descripcion, permisos: form.permisos });
+        await sercoApi.entities.Rol.update(editing.id, {nombre: form.nombre, descripcion: form.descripcion, permisos: form.permisos, });;
         toast({ title: "Rol actualizado" });
       } else {
         await sercoApi.entities.Rol.create({ nombre: form.nombre, descripcion: form.descripcion, permisos: form.permisos });
@@ -156,25 +156,20 @@ export default function Roles() {
       </div>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>{editing ? "Editar Rol" : "Nuevo Rol"}</DialogTitle>
             <DialogDescription>
               {editing ? "Modifica la descripción del rol" : "Crea un nuevo rol en el sistema"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 overflow-y-auto max-h-[calc(90vh-180px)] pr-2">
             <div>
               <Label>Nombre del Rol *</Label>
               <Input
                 value={form.nombre}
                 onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                disabled={!!editing}
-                className={editing ? "bg-muted/50" : ""}
               />
-              {editing && (
-                <p className="text-xs text-muted-foreground mt-1">El nombre del rol no se puede modificar.</p>
-              )}
             </div>
             <div>
               <Label>Descripción</Label>

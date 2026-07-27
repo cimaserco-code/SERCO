@@ -40,6 +40,7 @@ export default function Servicios() {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [viewItem, setViewItem] = useState(null);
+  const [estadoFilter, setEstadoFilter] = useState("todos");
 
   useEffect(() => { load(); }, []);
 
@@ -63,13 +64,21 @@ export default function Servicios() {
     }
   }
 
+
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
-  const filtered = items.filter((item) =>
+  const filtered = items.filter((item) => {
+  const coincideBusqueda =
     (item.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
     (item.admin_nombre || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.direccion || "").toLowerCase().includes(search.toLowerCase())
-  );
+    (item.direccion || "").toLowerCase().includes(search.toLowerCase());
+
+  const coincideEstado =
+    estadoFilter === "todos" ||
+    item.estado === estadoFilter;
+
+  return coincideBusqueda && coincideEstado;
+});
 
   
   function openCreate() {
@@ -87,40 +96,87 @@ export default function Servicios() {
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = { ...form };
-      
+      const payload = {
+        nombre: (form.nombre || "").trim(),
+        direccion: (form.direccion || "").trim() || null,
+        admin_nombre: (form.admin_nombre || "").trim() || null,
+        telefono: (form.telefono || "").trim() || null,
+        correo: (form.correo || "").trim() || null,
+        estado: form.estado || "activo",
+        fecha_inicio: form.fecha_inicio || null,
+      };
+
+      if (form.sede_id) {
+        payload.sede_id = form.sede_id;
+      }
+
+      let savedItem = null;
+
       if (editing) {
-        await sercoApi.entities.Servicio.update(editing.id, payload);
+        savedItem = await sercoApi.entities.Servicio.update(editing.id, payload);
         toast({ title: "Servicio actualizado con éxito" });
       } else {
-        const created = await sercoApi.entities.Servicio.create(payload);
-        // Create initial pending cobro for the start month of the service
+        savedItem = await sercoApi.entities.Servicio.create(payload);
+
         try {
-          const [startYear, startMonth] = payload.fecha_inicio.split("-");
+          const [startYear, startMonth] = (payload.fecha_inicio || "").split("-");
           const targetMonth = `${startYear}-${startMonth}`;
-          await sercoApi.entities.Cobro.create({
-            servicio_id: created.id,
-            servicio_nombre: created.nombre,
-            mes: targetMonth,
-            fecha_factura: null,
-            monto: 0,
-            estado: "pendiente",
-            fecha_limite_pago: null,
-            fecha_pago: null,
-            sede_id: created.sede_id,
-          });
+          if (startYear && startMonth) {
+            await sercoApi.entities.Cobro.create({
+              servicio_id: savedItem.id,
+              servicio_nombre: savedItem.nombre,
+              mes: targetMonth,
+              fecha_factura: null,
+              monto: 0,
+              estado: "pendiente",
+              fecha_limite_pago: null,
+              fecha_pago: null,
+              sede_id: savedItem.sede_id,
+            });
+          }
         } catch (cobroError) {
           console.error("No se pudo crear el cobro inicial para el servicio:", cobroError);
         }
+
         toast({ title: "Servicio creado con éxito" });
       }
+
+      setEditing(null);
+      setForm(emptyForm);
       setModalOpen(false);
-      await load();
-    } catch (e) {
-      console.error(e);
+
+      if (savedItem) {
+        setItems((prev) => {
+          if (editing) {
+            return prev.map((item) => (item.id === savedItem.id ? savedItem : item));
+          }
+
+          return prev.some((item) => item.id === savedItem.id)
+            ? prev.map((item) => (item.id === savedItem.id ? savedItem : item))
+            : [...prev, savedItem];
+        });
+      }
+
+      try {
+        await load();
+      } catch (loadError) {
+        console.error("No se pudo recargar la lista de servicios:", loadError?.message || loadError);
+      }
+    } catch (error) {
+      console.error("Error al guardar servicio:", error?.message || error);
+      setEditing(null);
+      setForm(emptyForm);
+      setModalOpen(false);
+
+      try {
+        await load();
+      } catch (loadError) {
+        console.error("No se pudo recargar la lista de servicios:", loadError?.message || loadError);
+      }
+
       toast({
         title: "Error al guardar servicio",
-        description: e.message || "Ocurrió un error inesperado",
+        description: error?.message || "Ocurrió un error inesperado",
         variant: "destructive",
       });
     } finally {
