@@ -112,6 +112,7 @@ export default function Usuarios() {
   function openEdit(u) {
     setEditUser(u);
     setEditForm({
+      full_name: u.full_name || "",
       role: u.role || "",
       sede_ids: u.sede_ids || (u.sede_id ? [u.sede_id] : []),
       estado: u.estado || "active",
@@ -122,6 +123,7 @@ export default function Usuarios() {
     setSaving(true);
     try {
       await sercoApi.entities.User.update(editUser.id, {
+        full_name: editForm.full_name,
         role: editForm.role,
         sede_ids: editForm.sede_ids,
         estado: editForm.estado,
@@ -248,6 +250,7 @@ export default function Usuarios() {
               Se enviará una invitación por correo. El usuario aparecerá en la lista cuando acepte.
             </DialogDescription>
           </DialogHeader>
+          
           <div className="space-y-4 py-2">
             <div>
               <Label>Email *</Label>
@@ -290,6 +293,19 @@ export default function Usuarios() {
             <DialogDescription>{editUser?.email}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div>
+            <Label>Nombre</Label>
+              <Input
+                value={editForm.full_name}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    full_name: e.target.value,
+                  })
+                }
+                placeholder="Nombre completo"
+              />
+            </div>
             <div>
               <Label>Rol</Label>
               <Select value={editForm.role} onValueChange={(v) => setEditForm({ ...editForm, role: v })}>
