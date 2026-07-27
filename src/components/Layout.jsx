@@ -156,7 +156,7 @@ export default function Layout() {
           </div>
           {user && (
             <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground hidden sm:block">{user.email}</span>
+              <span className="text-sm text-muted-foreground hidden sm:block">{user.full_name}</span>
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize">
                 {user.role}
               </span>
