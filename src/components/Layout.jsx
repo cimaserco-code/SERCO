@@ -101,10 +101,14 @@ export default function Layout() {
       {/* Sidebar desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-sidebar border-r border-sidebar-border shrink-0">
         <div className="h-16 flex items-center gap-2 px-6 border-b border-sidebar-border">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">SE</span>
-          </div>
-          <span className="font-heading font-bold text-sidebar-foreground">SERCO</span>
+          <img
+            src="/favicon.png"
+            alt="SERCO"
+            className="h-10 w-auto object-contain"
+          />
+          <span className="font-heading font-bold text-sidebar-foreground">
+            SERCO
+          </span>
         </div>
         <nav className="flex-1 p-3 space-y-1">
             {renderNavItems()}
@@ -119,9 +123,11 @@ export default function Layout() {
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
             <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                  <span className="text-primary-foreground font-bold text-sm">SE</span>
-                </div>
+                <img
+                    src="/favicon.png"
+                    alt="SERCO"
+                    className="h-10 w-auto object-contain"
+                  />
                 <span className="font-heading font-bold text-sidebar-foreground">SERCO</span>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
@@ -155,13 +161,24 @@ export default function Layout() {
                 {user.role}
               </span>
               <Button
-                variant="ghost"
-                size="icon"
                 onClick={() => logout(true)}
                 title="Cerrar Sesión"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
+                className="
+                  h-9
+                  px-3
+                  bg-black
+                  text-white
+                  hover:bg-gray-800
+                  flex
+                  items-center
+                  gap-2
+                  rounded-lg
+                "
               >
                 <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">
+                  Salir
+                </span>
               </Button>
             </div>
           )}
