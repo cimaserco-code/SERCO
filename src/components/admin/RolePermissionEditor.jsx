@@ -4,7 +4,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 // Modules and the actions each one supports, matching the permission checks
 // used across the app (canView / can(module, action)).
 const MODULES = [
+  { key: "inicio", label: "Inicio", actions: ["view"] },
   { key: "empleados", label: "Empleados", actions: ["view", "create", "edit", "delete"] },
+  { key: "asistencias", label: "Asistencias", actions: ["view", "create", "edit", "delete"] },
   { key: "servicios", label: "Servicios", actions: ["view", "create", "edit", "delete"] },
   { key: "cobros", label: "Cobros", actions: ["view", "create", "edit", "delete"] },
   { key: "turnos", label: "Turnos", actions: ["view", "create", "delete"] },

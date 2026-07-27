@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
 
 const allNavItems = [
-  { to: "/", label: "Inicio", icon: Home, module: null },
+  { to: "/", label: "Inicio", icon: Home, module: "inicio" },
   { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
   { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
   { to: "/servicios", label: "Servicios", icon: Briefcase, module: "servicios" },

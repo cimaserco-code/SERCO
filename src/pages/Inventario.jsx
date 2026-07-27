@@ -128,17 +128,20 @@ export default function Inventario() {
               <TableHead>Categoría</TableHead>
               <TableHead className="text-right">Cantidad</TableHead>
               <TableHead>Descripción</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={!defaultSedeId ? 5 : 4} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay artículos en inventario</TableCell></TableRow>
+              <TableRow><TableCell colSpan={!defaultSedeId ? 5 : 4} className="text-center text-muted-foreground py-8">No hay artículos en inventario</TableCell></TableRow>
             ) : (
               filtered.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow 
+                  key={item.id} 
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => can("inventario", "edit") && openEdit(item)}
+                >
                   <TableCell className="font-medium">{item.nombre}</TableCell>
                   {!defaultSedeId && (
                     <TableCell>{sedeNombre(item.sede_id)}</TableCell>
@@ -146,20 +149,6 @@ export default function Inventario() {
                   <TableCell>{item.categoria || "—"}</TableCell>
                   <TableCell className="text-right">{item.cantidad ?? "—"}</TableCell>
                   <TableCell className="max-w-[250px] truncate">{item.descripcion || "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      {can("inventario", "edit") && (
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(item)}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {can("inventario", "delete") && (
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(item.id)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -213,11 +202,18 @@ export default function Inventario() {
               <Input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving || !form.nombre || !form.sede_id}>
-              {saving ? "Guardando..." : "Guardar"}
-            </Button>
+          <DialogFooter className="flex justify-between items-center w-full gap-2">
+            {editing && can("inventario", "delete") && (
+              <Button variant="destructive" onClick={() => { setModalOpen(false); setDeleteId(editing.id); }} className="mr-auto">
+                Eliminar
+              </Button>
+            )}
+            <div className="flex gap-2 justify-end ml-auto">
+              <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSave} disabled={saving || !form.nombre || !form.sede_id}>
+                {saving ? "Guardando..." : "Guardar"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

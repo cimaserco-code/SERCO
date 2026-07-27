@@ -202,12 +202,12 @@ export default function Turnos() {
             <DialogTitle>
               Asignar a {turnosConfig.find((t) => t.key === addModalTurno)?.label}
             </DialogTitle>
-            <DialogDescription>Selecciona un empleado o escribe el nombre</DialogDescription>
+            <DialogDescription>Selecciona un empleado</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             {empleados.length > 0 && (
               <div>
-                <Label>Seleccionar empleado existente</Label>
+                <Label>Seleccionar empleado</Label>
                 <Select value={newEmpleado} onValueChange={setNewEmpleado}>
                   <SelectTrigger><SelectValue placeholder="Buscar..." /></SelectTrigger>
                   <SelectContent>
@@ -220,14 +220,6 @@ export default function Turnos() {
                 </Select>
               </div>
             )}
-            <div>
-              <Label>O escribir nombre manualmente</Label>
-              <Input
-                value={newEmpleado}
-                onChange={(e) => setNewEmpleado(e.target.value)}
-                placeholder="Nombre del empleado"
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddModalTurno(null)}>Cancelar</Button>

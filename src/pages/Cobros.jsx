@@ -38,6 +38,16 @@ function getMonthsBetween(start, end) {
   return result;
 }
 
+function adjustDateToMonth(prevDate, targetMonth) {
+  if (!prevDate) return null;
+  const day = parseInt(prevDate.substring(8, 10));
+  const [targetY, targetM] = targetMonth.split("-").map(Number);
+  const lastDay = new Date(targetY, targetM, 0).getDate();
+  const finalDay = Math.min(day, lastDay);
+  const dd = String(finalDay).padStart(2, '0');
+  return `${targetMonth}-${dd}`;
+}
+
 const emptyForm = {
   servicio_id: "", servicio_nombre: "", mes: "", fecha_factura: "",
   monto: "", estado: "pendiente", fecha_limite_pago: "", fecha_pago: "", sede_id: "",
@@ -90,20 +100,29 @@ export default function Cobros() {
         const startMonth = s.fecha_inicio ? s.fecha_inicio.substring(0, 7) : currentMonth;
         if (startMonth <= currentMonth) {
           const targetMonths = getMonthsBetween(startMonth, currentMonth);
+          
+          let lastMonto = 0;
+          let lastFechaLimite = null;
+          
           targetMonths.forEach(m => {
-            const exists = allCobros.some(c => c.servicio_id === s.id && c.mes === m);
-            if (!exists) {
+            const existing = allCobros.find(c => c.servicio_id === s.id && c.mes === m);
+            if (existing) {
+              lastMonto = existing.monto ?? 0;
+              lastFechaLimite = existing.fecha_limite_pago || null;
+            } else {
+              const adjustedFechaLimite = adjustDateToMonth(lastFechaLimite, m);
               allPendingCreates.push({
                 servicio_id: s.id,
                 servicio_nombre: s.nombre,
                 mes: m,
                 fecha_factura: null,
-                monto: 0,
+                monto: lastMonto,
                 estado: "pendiente",
-                fecha_limite_pago: null,
+                fecha_limite_pago: adjustedFechaLimite,
                 fecha_pago: null,
                 sede_id: s.sede_id,
               });
+              lastFechaLimite = adjustedFechaLimite;
             }
           });
         }
@@ -202,11 +221,57 @@ export default function Cobros() {
       };
       if (editing) {
         await sercoApi.entities.Cobro.update(editing.id, payload);
+        
+        try {
+          const serviceId = editing.servicio_id;
+          const editedMonth = editing.mes;
+          const newMonto = payload.monto;
+          const newFechaLimite = payload.fecha_limite_pago;
+          
+          const allOtherCobros = items.filter(c => c.servicio_id === serviceId && c.id !== editing.id);
+          const subsequentPendingCobros = allOtherCobros.filter(c => c.mes > editedMonth && c.estado === "pendiente");
+          
+           if (subsequentPendingCobros.length > 0) {
+            await Promise.all(
+              subsequentPendingCobros.map(c => {
+                const adjustedFechaLimite = adjustDateToMonth(newFechaLimite, c.mes);
+                return sercoApi.entities.Cobro.update(c.id, {
+                  monto: newMonto,
+                  fecha_limite_pago: adjustedFechaLimite,
+                });
+              })
+            );
+            toast({
+              title: "Propagación exitosa",
+              description: `Se actualizó el monto de $${newMonto} y fecha en ${subsequentPendingCobros.length} meses posteriores.`,
+            });
+          } else {
+            toast({
+              title: "Guardado sin propagación",
+              description: "No se encontraron meses futuros pendientes para este servicio en esta sede.",
+            });
+          }
+        } catch (propagateError) {
+          console.error("No se pudo propagar el cambio a los meses siguientes:", propagateError);
+          toast({
+            title: "Advertencia de propagación",
+            description: "El cobro se guardó, pero no se pudo propagar a los meses siguientes.",
+            variant: "warning",
+          });
+        }
       } else {
         await sercoApi.entities.Cobro.create(payload);
+        toast({ title: "Cobro creado con éxito" });
       }
       setModalOpen(false);
       await load();
+    } catch (e) {
+      console.error(e);
+      toast({
+        title: "Error al guardar cobro",
+        description: e.message || "Ocurrió un error inesperado al procesar",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -292,11 +357,6 @@ export default function Cobros() {
               className="pl-9 w-full sm:w-64"
             />
           </div>
-          {can("cobros", "create") && (
-            <Button onClick={openCreate}>
-              <Plus className="w-4 h-4 mr-1" /> Agregar
-            </Button>
-          )}
         </div>
       </div>
 

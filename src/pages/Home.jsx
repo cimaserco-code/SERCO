@@ -6,11 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/AuthContext";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
+import AccessRestricted from "@/components/AccessRestricted";
 
 export default function Home() {
   const { user } = useAuth();
   const { canView } = usePermissions();
   const { sedeFilter } = useSedeScope();
+  
+  if (!canView("inicio")) return <AccessRestricted />;
+  
   const [stats, setStats] = useState({
     empleadosActivos: 0,
     empleadosBajas: 0,
