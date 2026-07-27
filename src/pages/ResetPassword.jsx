@@ -23,15 +23,15 @@ export default function ResetPassword() {
     setError("");
 
     if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+      setError("Contraseña demasiado corta. Debe tener al menos 8 caracteres.");
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
     if (!resetToken) {
-      setError("Invalid or missing reset token. Please request a new reset link.");
+      setError("Token invalido. Vuelve a pedir enlace.");
       return;
     }
 
@@ -41,7 +41,7 @@ export default function ResetPassword() {
       setDone(true);
       setTimeout(() => navigate("/login"), 2500);
     } catch {
-      setError("We couldn't reset your password. The link may have expired.");
+      setError("No pudimos restablecer tu contraseña. Es posible que el enlace haya expirado.");
     } finally {
       setLoading(false);
     }
@@ -50,22 +50,22 @@ export default function ResetPassword() {
   return (
     <AuthLayout
       icon={done ? CheckCircle2 : Lock}
-      title={done ? "Password updated" : "Set a new password"}
-      subtitle={done ? "Redirecting you to log in" : "Choose a strong password for your account"}
+      title={done ? "Contraseña actualizada" : "Establecer una nueva contraseña"}
+      subtitle={done ? "Te estamos redirigiendo para iniciar sesión" : "Elige una contraseña segura para tu cuenta"}
       footer={
         <Link to="/login" className="text-primary font-medium hover:underline">
-          <ArrowLeft className="w-3 h-3 inline mr-1" />Back to log in
+          <ArrowLeft className="w-3 h-3 inline mr-1" />Volver a iniciar sesión
         </Link>
       }
     >
       {done ? (
         <p className="text-sm text-foreground text-center">
-          Your password has been reset successfully. You can now log in with your new password.
+          Tu contraseña ha sido restablecida con éxito. Ahora puedes iniciar sesión con tu nueva contraseña.
         </p>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="password">New password</Label>
+            <Label htmlFor="password">Nueva contraseña</Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
               <Input
@@ -73,7 +73,7 @@ export default function ResetPassword() {
                 type="password"
                 autoComplete="new-password"
                 autoFocus
-                placeholder="At least 8 characters"
+                placeholder="Al menos 8 caracteres"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="pl-10 h-12"
@@ -83,14 +83,14 @@ export default function ResetPassword() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm new password</Label>
+            <Label htmlFor="confirmPassword">Confirmar nueva contraseña</Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
               <Input
                 id="confirmPassword"
                 type="password"
                 autoComplete="new-password"
-                placeholder="Re-enter your password"
+                placeholder="Escribe la misma contraseña"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="pl-10 h-12"
@@ -109,10 +109,10 @@ export default function ResetPassword() {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Updating...
+                Actualizando...
               </>
             ) : (
-              "Reset password"
+              "Reiniciar contraseña"
             )}
           </Button>
         </form>
