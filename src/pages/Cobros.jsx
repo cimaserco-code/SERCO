@@ -163,8 +163,8 @@ export default function Cobros() {
     } catch (e) {
       console.error(e);
       toast({
-        title: "Error al cargar cobros",
-        description: e.message || "Ocurrió un error inesperado al procesar cobros automáticos",
+        title: "Error al cargar facturas",
+        description: e.message || "Ocurrió un error inesperado al procesar facturas automáticas",
         variant: "destructive",
       });
     } finally {
@@ -201,18 +201,6 @@ export default function Cobros() {
     );
   });
 
-
-  const totalFacturado = monthlyItems.reduce((sum, i) => sum + (i.monto || 0), 0);
-  const totalCobrado = monthlyItems.filter((i) => i.estado === "pagado").reduce((sum, i) => sum + (i.monto || 0), 0);
-  const totalPendiente = monthlyItems.filter((i) => i.estado !== "pagado").reduce((sum, i) => sum + (i.monto || 0), 0);
-  const facturasPendientes = monthlyItems.filter((i) => i.estado !== "pagado").length;
-
-  const kpiCards = [
-    { label: "Total Facturado", value: `$${totalFacturado.toLocaleString("es-MX")}`, icon: DollarSign, color: "bg-blue-500" },
-    { label: "Total Cobrado", value: `$${totalCobrado.toLocaleString("es-MX")}`, icon: CheckCircle, color: "bg-emerald-500" },
-    { label: "Total Pendiente", value: `$${totalPendiente.toLocaleString("es-MX")}`, icon: Clock4, color: "bg-amber-500" },
-    { label: "Facturas Pendientes", value: facturasPendientes, icon: FileText, color: "bg-red-500" },
-  ];
 
   function openCreate() {
     setEditing(null);
@@ -291,7 +279,7 @@ export default function Cobros() {
         }
       } else {
         await sercoApi.entities.Cobro.create(payload);
-        toast({ title: "Cobro creado con éxito" });
+        toast({ title: "Factura creada con éxito" });
       }
 
       setEditing(null);
@@ -301,7 +289,7 @@ export default function Cobros() {
     } catch (e) {
       console.error(e);
       toast({
-        title: "Error al guardar cobro",
+        title: "Error al guardar factura",
         description: e.message || "Ocurrió un error inesperado al procesar",
         variant: "destructive",
       });
@@ -340,33 +328,12 @@ export default function Cobros() {
 
   return (
     <div className="space-y-4">
-      {/* KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {kpiCards.map((card, idx) => {
-          const Icon = card.icon;
-          return (
-            <Card key={idx}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-lg ${card.color} flex items-center justify-center shrink-0`}>
-                    <Icon className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-lg font-bold truncate">{card.value}</div>
-                    <p className="text-xs text-muted-foreground">{card.label}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-4">
           <div>
-            <h2 className="text-2xl font-heading font-bold">Cobros</h2>
-            <p className="text-sm text-muted-foreground mt-1">{filtered.length} cobro(s)</p>
+            <h2 className="text-2xl font-heading font-bold">Facturas</h2>
+            <p className="text-sm text-muted-foreground mt-1">{filtered.length} factura(s)</p>
           </div>
           <div className="flex items-center gap-1 bg-muted px-2 py-1 rounded-lg border">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleMonthChange(-1)}>
@@ -410,7 +377,7 @@ export default function Cobros() {
             {loading ? (
               <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay cobros registrados</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
             ) : (
               filtered.map((item) => (
                 <TableRow 
@@ -437,7 +404,7 @@ export default function Cobros() {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Editar Cobro</DialogTitle>
+            <DialogTitle>Editar Factura</DialogTitle>
             <DialogDescription>Actualiza la información financiera del servicio.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-4 py-2">
@@ -498,7 +465,7 @@ export default function Cobros() {
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}
-        title="¿Eliminar cobro?"
+        title="¿Eliminar factura?"
         description="Esta acción no se puede deshacer."
         onConfirm={handleDelete}
       />

@@ -21,6 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const emptyForm = {
   nombre: "", direccion: "", admin_nombre: "", telefono: "",correo:"",fecha_inicio: "", estado: "activo", sede_id: "",
@@ -40,7 +41,7 @@ export default function Servicios() {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [viewItem, setViewItem] = useState(null);
-  const [estadoFilter, setEstadoFilter] = useState("todos");
+  const [activeTab, setActiveTab] = useState("activos");
 
   useEffect(() => { load(); }, []);
 
@@ -68,17 +69,18 @@ export default function Servicios() {
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
   const filtered = items.filter((item) => {
-  const coincideBusqueda =
-    (item.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.admin_nombre || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.direccion || "").toLowerCase().includes(search.toLowerCase());
-
-  const coincideEstado =
-    estadoFilter === "todos" ||
-    item.estado === estadoFilter;
-
-  return coincideBusqueda && coincideEstado;
-});
+    const coincideBusqueda =
+      (item.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
+      (item.admin_nombre || "").toLowerCase().includes(search.toLowerCase()) ||
+      (item.direccion || "").toLowerCase().includes(search.toLowerCase());
+ 
+    const statusNormalized = (item.estado || "activo").toLowerCase();
+    const coincideEstado = activeTab === "activos"
+      ? statusNormalized === "activo"
+      : statusNormalized === "suspendido";
+ 
+    return coincideBusqueda && coincideEstado;
+  });
 
   
   function openCreate() {
@@ -229,58 +231,67 @@ export default function Servicios() {
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Sede</TableHead>
-              <TableHead>Dirección</TableHead>
-              <TableHead>Administrador</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No hay servicios registrados</TableCell></TableRow>
-            ) : (
-              filtered.map((item) => (
-                <TableRow
-                  key={item.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => setViewItem(item)}
-                >
-                  <TableCell className="font-medium">{item.nombre}</TableCell>
-                  <TableCell>{sedeNombre(item.sede_id)}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{item.direccion || "—"}</TableCell>
-                  <TableCell>{item.admin_nombre || "—"}</TableCell>
-                  <TableCell>{estadoBadge(item.estado)}</TableCell>
-                  <TableCell className="text-right">
-                    <div
-                     className="flex justify-end gap-1"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {can("servicios", "edit") && (
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(item)}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {can("servicios", "delete") && (
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(item.id)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-64 grid-cols-2">
+          <TabsTrigger value="activos">Activos</TabsTrigger>
+          <TabsTrigger value="suspendidos">Suspendidos</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value={activeTab} className="mt-4">
+          <div className="rounded-lg border bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Sede</TableHead>
+                  <TableHead>Dirección</TableHead>
+                  <TableHead>Administrador</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No hay servicios registrados</TableCell></TableRow>
+                ) : (
+                  filtered.map((item) => (
+                    <TableRow
+                      key={item.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => setViewItem(item)}
+                    >
+                      <TableCell className="font-medium">{item.nombre}</TableCell>
+                      <TableCell>{sedeNombre(item.sede_id)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{item.direccion || "—"}</TableCell>
+                      <TableCell>{item.admin_nombre || "—"}</TableCell>
+                      <TableCell>{estadoBadge(item.estado)}</TableCell>
+                      <TableCell className="text-right">
+                        <div
+                          className="flex justify-end gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {can("servicios", "edit") && (
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(item)}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {can("servicios", "delete") && (
+                            <Button variant="ghost" size="icon" onClick={() => setDeleteId(item.id)}>
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-lg">
@@ -288,7 +299,7 @@ export default function Servicios() {
             <DialogTitle>{editing ? "Editar Servicio" : "Nuevo Servicio"}</DialogTitle>
             <DialogDescription>Completa los datos operativos del servicio</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 gap-4 py-2">
+          <div className="grid grid-cols-1 gap-4 py-2 max-h-[60vh] overflow-y-auto pr-2">
             <div>
               <Label>Nombre del Servicio *</Label>
               <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
@@ -325,13 +336,12 @@ export default function Servicios() {
                   onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
                 />
               </div>
-              <Label>Estado</Label>
+              <Label className="mt-2 block">Estado</Label>
               <Select value={form.estado} onValueChange={(v) => setForm({ ...form, estado: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="activo">Activo</SelectItem>
                   <SelectItem value="suspendido">Suspendido</SelectItem>
-                  <SelectItem value="inactivo">Inactivo</SelectItem>
                 </SelectContent>
               </Select>
             </div>

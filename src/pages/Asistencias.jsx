@@ -41,12 +41,13 @@ export default function Asistencias() {
   async function loadData() {
     setLoading(true);
     try {
+      const todayStr = new Date().toISOString().slice(0, 10);
       const [emps, asists] = await Promise.all([
-        sercoApi.entities.Empleado.filter(sedeFilter),
-        sercoApi.entities.Asistencia.list()
+        sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
+        sercoApi.entities.Asistencia.list().catch(() => [])
       ]);
       // Only keep active employees (who didn't get given "baja" or got "baja" in the future)
-      const activeEmps = emps.filter(e => !e.fecha_baja || new Date(e.fecha_baja) >= new Date());
+      const activeEmps = emps.filter(e => !e.fecha_baja || e.fecha_baja >= todayStr);
       setEmployees(activeEmps);
       setAsistencias(asists);
     } catch (e) {

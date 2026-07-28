@@ -17,6 +17,8 @@ import Cobros from '@/pages/Cobros';
 import Inventario from '@/pages/Inventario';
 import Documentos from '@/pages/Documentos';
 import Turnos from '@/pages/Turno';
+import Egresos from '@/pages/Egresos';
+import Overview from '@/pages/Overview';
 import Administracion from '@/pages/Administracion';
 import AdminUsuarios from '@/pages/admin/Usuarios';
 import AdminRoles from '@/pages/admin/Roles';
@@ -61,10 +63,11 @@ const AuthenticatedApp = () => {
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
+          <Route path="/overview" element={<Overview />} />
           <Route path="/empleados" element={<Empleados />} />
           <Route path="/asistencias" element={<Asistencias />} />
           <Route path="/servicios" element={<Servicios />} />
-          <Route path="/cobros" element={<Cobros />} />
+          <Route path="/facturas" element={<Cobros />} />
           <Route path="/servicios/turnos" element={<Turnos />} />
           <Route path="/administracion" element={<Administracion />} />
           <Route path="/administracion/usuarios" element={<AdminUsuarios />} />
@@ -72,6 +75,7 @@ const AuthenticatedApp = () => {
           <Route path="/administracion/sedes" element={<AdminSedes />} />
           <Route path="/inventario" element={<Inventario />} />
           <Route path="/documentos" element={<Documentos />} />
+          <Route path="/egresos" element={<Egresos />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

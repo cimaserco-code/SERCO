@@ -10,7 +10,8 @@ const tableMap = {
   Cobro: 'cobros',
   InventarioItem: 'inventario_items',
   Documento: 'documentos',
-  Asistencia: 'asistencias'
+  Asistencia: 'asistencias',
+  Egreso: 'egresos'
 };
 
 function formatSupabaseError(error) {
@@ -181,7 +182,7 @@ export const sercoApi = {
         role: profile?.role || 'user',
         sede_id: profile?.sede_ids?.[0] || null,
         sede_ids: profile?.sede_ids || [],
-        nombre: profile?.nombre || user.user_metadata?.nombre || user.email.split('@')[0],
+        full_name: profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0],
         estado: profile?.estado || 'active'
       };
     },

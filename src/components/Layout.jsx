@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, LogOut } from "lucide-react";
+import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, LogOut, TrendingDown, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/lib/AuthContext";
@@ -8,13 +8,15 @@ import { usePermissions } from "@/lib/PermissionsContext";
 
 const allNavItems = [
   { to: "/", label: "Inicio", icon: Home, module: "inicio" },
+  { to: "/overview", label: "Overview", icon: LayoutGrid, module: "overview" },
   { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
   { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
   { to: "/servicios", label: "Servicios", icon: Briefcase, module: "servicios" },
-  { to: "/cobros", label: "Cobros", icon: DollarSign, module: "cobros" },
+  { to: "/facturas", label: "Facturas", icon: DollarSign, module: "cobros" },
   { to: "/servicios/turnos", label: "Turnos", icon: Clock, module: "turnos" },
   { to: "/inventario", label: "Inventario", icon: Package, module: "inventario" },
   { to: "/documentos", label: "Documentos", icon: FileText, module: "documentos" },
+  { to: "/egresos", label: "Egresos", icon: TrendingDown, module: "egresos" },
 ];
 
 const adminNavItems = [
@@ -156,7 +158,7 @@ export default function Layout() {
           </div>
           {user && (
             <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground hidden sm:block">{user.full_name}</span>
+              <span className="text-sm font-semibold hidden sm:block">{user.full_name}</span>
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize">
                 {user.role}
               </span>
