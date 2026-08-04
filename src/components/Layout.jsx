@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, LogOut, TrendingDown, LayoutGrid } from "lucide-react";
+import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, LogOut, TrendingDown, LayoutGrid, Megaphone, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/lib/AuthContext";
@@ -11,6 +11,7 @@ const allNavItems = [
   { to: "/overview", label: "Overview", icon: LayoutGrid, module: "overview" },
   { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
   { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
+  { to: "/nominas", label: "Nóminas", icon: Calculator, module: "nominas" },
   { to: "/servicios", label: "Servicios", icon: Briefcase, module: "servicios" },
   { to: "/facturas", label: "Facturas", icon: DollarSign, module: "cobros" },
   { to: "/servicios/turnos", label: "Turnos", icon: Clock, module: "turnos" },
@@ -23,6 +24,7 @@ const adminNavItems = [
   { to: "/administracion/usuarios", label: "Usuarios", icon: Users },
   { to: "/administracion/roles", label: "Roles", icon: ShieldCheck },
   { to: "/administracion/sedes", label: "Sedes", icon: Building2 },
+  { to: "/administracion/comunicados", label: "Comunicados", icon: Megaphone },
 ];
 
 export default function Layout() {

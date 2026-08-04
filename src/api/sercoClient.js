@@ -11,7 +11,9 @@ const tableMap = {
   InventarioItem: 'inventario_items',
   Documento: 'documentos',
   Asistencia: 'asistencias',
-  Egreso: 'egresos'
+  Egreso: 'egresos',
+  Comunicado: 'comunicados',
+  Nominas: 'nominas'
 };
 
 function formatSupabaseError(error) {

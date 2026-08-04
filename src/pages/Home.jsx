@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
-import { Users, Briefcase, Package, FileText, ArrowRight, Clock, CheckCircle, DollarSign, AlertCircle, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Users, Briefcase, Package, FileText, ArrowRight, Clock, CheckCircle, DollarSign, AlertCircle, ChevronLeft, ChevronRight, Plus, Megaphone, Bell } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
@@ -30,6 +30,7 @@ export default function Home() {
     totalCobrado: 0,
   });
   const [sedeStats, setSedeStats] = useState([]);
+  const [comunicados, setComunicados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
@@ -74,15 +75,19 @@ export default function Home() {
     async function load() {
       setLoading(true);
       try {
-        const [emp, serv, inv, docs, turnos, cobros, seds] = await Promise.all([
+        const [emp, serv, inv, docs, turnos, cobros, seds, coms] = await Promise.all([
           (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
           sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
           sercoApi.entities.InventarioItem.filter(sedeFilter).catch(() => []),
           sercoApi.entities.Documento.list().catch(() => []),
           sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => []),
           sercoApi.entities.Cobro.filter(sedeFilter).catch(() => []),
-          sercoApi.entities.Sede.list().catch(() => [])
+          sercoApi.entities.Sede.list().catch(() => []),
+          sercoApi.entities.Comunicado.list().catch(() => [])
         ]);
+
+        const activeComs = (coms || []).filter(c => c.activo !== false);
+        setComunicados(activeComs);
 
         const empsActivos = emp.filter(e => !e.fecha_baja).length;
         const empsBajas = emp.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth).length;
@@ -176,6 +181,35 @@ export default function Home() {
           </Button>
         </div>
       </div>
+
+      {/* Comunicados Section */}
+      {comunicados.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+            <Megaphone className="w-4 h-4 text-primary animate-bounce shrink-0" /> Comunicados Recientes
+          </h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            {comunicados.map((com) => (
+              <Card key={com.id} className="border-l-4 border-l-primary bg-primary/5 hover:bg-primary/10 transition-colors">
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold text-primary flex items-center gap-1.5">
+                      <Bell className="w-4 h-4 text-primary shrink-0" /> {com.titulo}
+                    </CardTitle>
+                    <span className="text-xs text-muted-foreground">{com.fecha}</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{com.contenido}</p>
+                  <div className="mt-3 text-right">
+                    <span className="text-xs font-semibold text-muted-foreground italic">Publicado por: {com.autor_nombre || "Administración"}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isCeoOrAdmin ? (
         <div className="space-y-8">

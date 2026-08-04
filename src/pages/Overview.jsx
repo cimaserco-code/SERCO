@@ -22,7 +22,8 @@ import {
   Package,
   FileText,
   CheckCircle2,
-  Clock
+  Clock,
+  Calculator
 } from "lucide-react";
 
 export default function Overview() {
@@ -44,7 +45,8 @@ export default function Overview() {
     docs: [],
     cobros: [],
     egresos: [],
-    asistencias: []
+    asistencias: [],
+    nominas: []
   });
 
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function Overview() {
   async function load() {
     setLoading(true);
     try {
-      const [emp, serv, inv, docs, cobros, egresos, asistencias, seds] = await Promise.all([
+      const [emp, serv, inv, docs, cobros, egresos, asistencias, noms, seds] = await Promise.all([
         (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("servicios") ? sercoApi.entities.Servicio.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("inventario") ? sercoApi.entities.InventarioItem.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
@@ -62,10 +64,11 @@ export default function Overview() {
         (canView("cobros") ? sercoApi.entities.Cobro.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") ? sercoApi.entities.Egreso.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("asistencias") ? sercoApi.entities.Asistencia.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (sercoApi.entities.Nominas ? sercoApi.entities.Nominas.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         sercoApi.entities.Sede.list().catch(() => [])
       ]);
 
-      setRawData({ emp, serv, inv, docs, cobros, egresos, asistencias });
+      setRawData({ emp, serv, inv, docs, cobros, egresos, asistencias, nominas: noms });
       setSedes(seds);
     } catch (e) {
       console.error(e);
@@ -108,6 +111,7 @@ export default function Overview() {
   const filteredCobros = selectedSedeId === "all" ? rawData.cobros : rawData.cobros.filter(c => c.sede_id === selectedSedeId);
   const filteredEgresos = selectedSedeId === "all" ? rawData.egresos : rawData.egresos.filter(e => e.sede_id === selectedSedeId);
   const filteredAsistencias = selectedSedeId === "all" ? rawData.asistencias : rawData.asistencias.filter(a => a.sede_id === selectedSedeId);
+  const filteredNominas = selectedSedeId === "all" ? rawData.nominas : (rawData.nominas || []).filter(n => n.sede_id === selectedSedeId);
 
   // Stats calculation
   const empActivos = filteredEmp.filter(e => !e.fecha_baja).length;
@@ -138,6 +142,10 @@ export default function Overview() {
   const asistFaltas = monthlyAsistencias.filter(a => a.estado === "F").length;
 
   const netBalance = totalCobrado - totalEgresos;
+
+  const monthlyNominas = filteredNominas.filter(n => n.mes && n.mes.startsWith(currentMonth));
+  const totalNominasPagadas = monthlyNominas.reduce((sum, n) => sum + (Number(n.total_pagado) || 0), 0);
+  const totalNominasEmpleados = new Set(monthlyNominas.map(n => n.empleado_id)).size;
 
   const availableSedes = isSuperAdmin
     ? sedes
@@ -317,6 +325,25 @@ export default function Overview() {
                 <FileText className="w-4 h-4 text-muted-foreground" /> Documentos y Plantillas
               </span>
               <span className="font-semibold text-muted-foreground">{loading ? "—" : rawData.docs.length}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Nóminas */}
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <Calculator className="w-5 h-5 text-indigo-600" /> Nóminas
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm text-muted-foreground">Total Dispersado</span>
+              <span className="font-bold text-indigo-600">${loading ? "—" : totalNominasPagadas.toLocaleString("es-MX")}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Colaboradores Calculados</span>
+              <span className="font-semibold text-slate-700">{loading ? "—" : totalNominasEmpleados}</span>
             </div>
           </CardContent>
         </Card>

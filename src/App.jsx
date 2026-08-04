@@ -19,10 +19,12 @@ import Documentos from '@/pages/Documentos';
 import Turnos from '@/pages/Turno';
 import Egresos from '@/pages/Egresos';
 import Overview from '@/pages/Overview';
+import Nominas from '@/pages/Nominas';
 import Administracion from '@/pages/Administracion';
 import AdminUsuarios from '@/pages/admin/Usuarios';
 import AdminRoles from '@/pages/admin/Roles';
 import AdminSedes from '@/pages/admin/Sede';
+import AdminComunicados from '@/pages/admin/Comunicados';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -66,6 +68,7 @@ const AuthenticatedApp = () => {
           <Route path="/overview" element={<Overview />} />
           <Route path="/empleados" element={<Empleados />} />
           <Route path="/asistencias" element={<Asistencias />} />
+          <Route path="/nominas" element={<Nominas />} />
           <Route path="/servicios" element={<Servicios />} />
           <Route path="/facturas" element={<Cobros />} />
           <Route path="/servicios/turnos" element={<Turnos />} />
@@ -73,6 +76,7 @@ const AuthenticatedApp = () => {
           <Route path="/administracion/usuarios" element={<AdminUsuarios />} />
           <Route path="/administracion/roles" element={<AdminRoles />} />
           <Route path="/administracion/sedes" element={<AdminSedes />} />
+          <Route path="/administracion/comunicados" element={<AdminComunicados />} />
           <Route path="/inventario" element={<Inventario />} />
           <Route path="/documentos" element={<Documentos />} />
           <Route path="/egresos" element={<Egresos />} />

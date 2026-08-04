@@ -111,26 +111,32 @@ export default function Asistencias() {
 
     setSaving(true);
     try {
+      const emp = employees.find(e => e.id === employeeId);
       if (found) {
         if (estado === null) {
           await sercoApi.entities.Asistencia.delete(found.id);
         } else {
-          await sercoApi.entities.Asistencia.update(found.id, { estado });
+          await sercoApi.entities.Asistencia.update(found.id, { 
+            estado,
+            sede_id: emp?.sede_id || null 
+          });
         }
       } else if (estado !== null) {
         await sercoApi.entities.Asistencia.create({
           empleado_id: employeeId,
           fecha: dateStr,
-          estado
+          estado,
+          sede_id: emp?.sede_id || null
         });
       }
       // Reload from DB to verify sync
       const updatedAsists = await sercoApi.entities.Asistencia.list();
       setAsistencias(updatedAsists);
     } catch (e) {
+      console.error("Error al guardar asistencia:", e);
       toast({
-        title: "Error",
-        description: "No se pudo actualizar la asistencia.",
+        title: "Error al actualizar asistencia",
+        description: e.message || "Ocurrió un error inesperado al guardar la asistencia.",
         variant: "destructive"
       });
     } finally {
@@ -138,7 +144,36 @@ export default function Asistencias() {
     }
   };
 
+  // Day of week calculation
+  const getDayOfWeek = (dayNum) => {
+    try {
+      const date = new Date(year, month, dayNum);
+      const days = ["D", "L", "M", "M", "J", "V", "S"];
+      return days[date.getDay()];
+    } catch {
+      return "";
+    }
+  };
+
+  // Check if day is today
+  const today = new Date();
+  const isToday = (dayNum) => {
+    return today.getFullYear() === year &&
+           today.getMonth() === month &&
+           today.getDate() === dayNum;
+  };
+
   if (!canView("asistencias")) return <AccessRestricted />;
+
+  // Group employees by servicio_ubicacion
+  const groupedEmployees = employees.reduce((groups, emp) => {
+    const serviceName = emp.servicio_ubicacion || "Sin Servicio Asignado";
+    if (!groups[serviceName]) {
+      groups[serviceName] = [];
+    }
+    groups[serviceName].push(emp);
+    return groups;
+  }, {});
 
   return (
     <div className="space-y-4">
@@ -196,11 +231,20 @@ export default function Asistencias() {
                 <TableHead className="sticky left-0 bg-slate-50 dark:bg-slate-900 z-10 min-w-[200px] border-r font-bold">
                   Empleado
                 </TableHead>
-                {daysArray.map((day) => (
-                  <TableHead key={day} className="text-center font-bold px-1 py-2 min-w-[36px]">
-                    {day}
-                  </TableHead>
-                ))}
+                {daysArray.map((day) => {
+                  const todayFlag = isToday(day);
+                  return (
+                    <TableHead 
+                      key={day} 
+                      className={`text-center font-bold px-1 py-1 min-w-[36px] text-xs ${
+                        todayFlag ? "bg-primary/15 text-primary border-x border-primary/30" : ""
+                      }`}
+                    >
+                      <div className="text-[10px] opacity-75 uppercase">{getDayOfWeek(day)}</div>
+                      <div className={`text-xs ${todayFlag ? "font-black" : ""}`}>{day}</div>
+                    </TableHead>
+                  );
+                })}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -217,38 +261,60 @@ export default function Asistencias() {
                   </TableCell>
                 </TableRow>
               ) : (
-                employees.map((emp) => (
-                  <TableRow key={emp.id} className="hover:bg-muted/50">
-                    <TableCell className="sticky left-0 bg-card z-10 border-r font-medium py-2 min-w-[200px]">
-                      {emp.nombre_completo}
-                    </TableCell>
-                    {daysArray.map((day) => {
-                      const currentVal = getAsistenciaEstado(emp.id, day);
-                      return (
-                        <TableCell key={day} className="p-1 text-center">
-                          <Select
-                            value={currentVal || "none"}
-                            onValueChange={(val) => handleSetEstado(emp.id, day, val === "none" ? null : val)}
-                          >
-                            <SelectTrigger className={`w-8 h-8 p-0 rounded flex items-center justify-center border transition-all ${
-                              currentVal ? estadosConfig[currentVal].color : "bg-card text-muted-foreground border-border hover:bg-muted"
-                            }`}>
-                              <span className="text-xs uppercase font-bold">
-                                {currentVal ? estadosConfig[currentVal].label : "-"}
-                              </span>
-                            </SelectTrigger>
-                            <SelectContent className="min-w-[100px]">
-                              <SelectItem value="none">- Limpiar</SelectItem>
-                              <SelectItem value="asistió">Asistió</SelectItem>
-                              <SelectItem value="falta">Falta</SelectItem>
-                              <SelectItem value="descanso">Descanso</SelectItem>
-                              <SelectItem value="extra">Extra</SelectItem>
-                            </SelectContent>
-                          </Select>
+                Object.entries(groupedEmployees).map(([serviceName, groupEmps]) => (
+                  <React.Fragment key={serviceName}>
+                    {/* Service Group Header Row */}
+                    <TableRow className="bg-slate-200 dark:bg-slate-800 border-b select-none hover:bg-slate-200">
+                      <TableCell 
+                        className="sticky left-0 bg-slate-200 dark:bg-slate-800 py-2.5 px-4 text-sm text-foreground font-bold z-10 border-r border-b text-left min-w-[200px]"
+                      >
+                        {serviceName}
+                      </TableCell>
+                      <TableCell 
+                        colSpan={daysInMonth} 
+                        className="bg-slate-200 dark:bg-slate-800 border-b"
+                      />
+                    </TableRow>
+                    {groupEmps.map((emp) => (
+                      <TableRow key={emp.id} className="hover:bg-muted/50">
+                        <TableCell className="sticky left-0 bg-card z-10 border-r font-medium py-2 min-w-[200px]">
+                          {emp.nombre_completo}
                         </TableCell>
-                      );
-                    })}
-                  </TableRow>
+                        {daysArray.map((day) => {
+                          const currentVal = getAsistenciaEstado(emp.id, day);
+                          const todayFlag = isToday(day);
+                          return (
+                            <TableCell 
+                              key={day} 
+                              className={`p-1 text-center ${
+                                todayFlag ? "bg-primary/5 border-x border-primary/10" : ""
+                              }`}
+                            >
+                              <Select
+                                value={currentVal || "none"}
+                                onValueChange={(val) => handleSetEstado(emp.id, day, val === "none" ? null : val)}
+                              >
+                                <SelectTrigger className={`w-8 h-8 p-0 rounded flex items-center justify-center border transition-all ${
+                                  currentVal ? estadosConfig[currentVal].color : "bg-card text-muted-foreground border-border hover:bg-muted"
+                                }`}>
+                                  <span className="text-xs uppercase font-bold">
+                                    {currentVal ? estadosConfig[currentVal].label : "-"}
+                                  </span>
+                                </SelectTrigger>
+                                <SelectContent className="min-w-[100px]">
+                                  <SelectItem value="none">- Limpiar</SelectItem>
+                                  <SelectItem value="asistió">Asistió</SelectItem>
+                                  <SelectItem value="falta">Falta</SelectItem>
+                                  <SelectItem value="descanso">Descanso</SelectItem>
+                                  <SelectItem value="extra">Extra</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </React.Fragment>
                 ))
               )}
             </TableBody>
