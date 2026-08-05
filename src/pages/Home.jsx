@@ -89,8 +89,8 @@ export default function Home() {
         const activeComs = (coms || []).filter(c => c.activo !== false);
         setComunicados(activeComs);
 
-        const empsActivos = emp.filter(e => !e.fecha_baja).length;
-        const empsBajas = emp.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth).length;
+        const empsActivos = emp.filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)).length;
+        const empsBajas = emp.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso)).length;
         const empsAltas = emp.filter(e => 
           (e.fecha_ingreso && e.fecha_ingreso.slice(0, 7) === currentMonth) || 
           (e.fecha_reingreso && e.fecha_reingreso.slice(0, 7) === currentMonth)
@@ -130,8 +130,8 @@ export default function Home() {
           
           const sServicios = serv.filter(s => s.sede_id === sede.id).length;
           const sEmpleados = emp.filter(e => e.sede_id === sede.id);
-          const sEmpsActivos = sEmpleados.filter(e => !e.fecha_baja).length;
-          const sEmpsBajas = sEmpleados.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth).length;
+          const sEmpsActivos = sEmpleados.filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)).length;
+          const sEmpsBajas = sEmpleados.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso)).length;
           const sEmpsAltas = sEmpleados.filter(e => 
             (e.fecha_ingreso && e.fecha_ingreso.slice(0, 7) === currentMonth) || 
             (e.fecha_reingreso && e.fecha_reingreso.slice(0, 7) === currentMonth)

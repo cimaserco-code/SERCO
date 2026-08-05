@@ -46,8 +46,8 @@ export default function Asistencias() {
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
         sercoApi.entities.Asistencia.list().catch(() => [])
       ]);
-      // Only keep active employees (who didn't get given "baja" or got "baja" in the future)
-      const activeEmps = emps.filter(e => !e.fecha_baja || e.fecha_baja >= todayStr);
+      // Only keep active employees (who didn't get given "baja" or got "baja" in the future, or did a re-entry after their last baja)
+      const activeEmps = emps.filter(e => !e.fecha_baja || e.fecha_baja >= todayStr || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja));
       setEmployees(activeEmps);
       setAsistencias(asists);
     } catch (e) {

@@ -114,8 +114,8 @@ export default function Overview() {
   const filteredNominas = selectedSedeId === "all" ? rawData.nominas : (rawData.nominas || []).filter(n => n.sede_id === selectedSedeId);
 
   // Stats calculation
-  const empActivos = filteredEmp.filter(e => !e.fecha_baja).length;
-  const empBajas = filteredEmp.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth).length;
+  const empActivos = filteredEmp.filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)).length;
+  const empBajas = filteredEmp.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso)).length;
   const empAltas = filteredEmp.filter(e => 
     (e.fecha_ingreso && e.fecha_ingreso.slice(0, 7) === currentMonth) || 
     (e.fecha_reingreso && e.fecha_reingreso.slice(0, 7) === currentMonth)

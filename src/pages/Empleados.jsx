@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -50,6 +50,11 @@ const emptyForm = {
   contacto_emergencia: "",
   telefono_emergencia: "",
   parentesco: "",
+  infonavit: "",
+  medio_reclutamiento: "",
+  dia_capacitacion: "",
+  fecha_montaje: "",
+  hospedaje: false,
 };
 
 export default function Empleados() {
@@ -68,6 +73,9 @@ export default function Empleados() {
   const [deleteId, setDeleteId] = useState(null);
   const [activeTab, setActiveTab] = useState("activos");
   const [viewEmpleado, setViewEmpleado] = useState(null);
+  const [bajaConfirmId, setBajaConfirmId] = useState(null);
+  const [reingresoConfirmId, setReingresoConfirmId] = useState(null);
+  const [motivoBajaInput, setMotivoBajaInput] = useState("");
 
   useEffect(() => { load(); }, []);
 
@@ -96,8 +104,8 @@ export default function Empleados() {
   );
 
   // Divide into Active and Bajas
-  const activos = filtered.filter(item => !item.fecha_baja);
-  const bajas = filtered.filter(item => item.fecha_baja);
+  const activos = filtered.filter(item => !item.fecha_baja || (item.fecha_reingreso && item.fecha_reingreso >= item.fecha_baja));
+  const bajas = filtered.filter(item => item.fecha_baja && (!item.fecha_reingreso || item.fecha_baja > item.fecha_reingreso));
 
   function openCreate() {
     setEditing(null);
@@ -113,7 +121,8 @@ export default function Empleados() {
       sueldo: item.sueldo ?? "",
       actas_administrativas: String(item.actas_administrativas ?? 0),
       fecha_baja: item.fecha_baja || "",
-      uniformes: item.uniformes || ""
+      uniformes: item.uniformes || "",
+      hospedaje: !!item.hospedaje
     });
     setModalOpen(true);
   }
@@ -137,6 +146,22 @@ function calcularEdad(fechaNacimiento) {
 
   return `${edad} años`;
 }
+
+function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
+  if (!fechaIngreso) return "—";
+  const start = new Date(fechaIngreso);
+  
+  const isActive = !fechaBaja || (fechaReingreso && fechaReingreso >= fechaBaja);
+  const end = isActive ? new Date() : new Date(fechaBaja);
+  
+  // Set times to midnight to calculate purely by calendar days
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  
+  const diffTime = end.getTime() - start.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 ? `${diffDays} días` : "—";
+}
   
   async function handleSave() {
   console.log("ENTRÓ A GUARDAR", form);
@@ -151,9 +176,15 @@ function calcularEdad(fechaNacimiento) {
      fecha_ingreso: form.fecha_ingreso || null,
      fecha_nacimiento: form.fecha_nacimiento || null,
       fecha_baja: form.fecha_baja || null,
-     fecha_reingreso: form.fecha_reingreso || null,
-     uniformes: form.uniformes || null
-    };
+      fecha_reingreso: form.fecha_reingreso || null,
+      uniformes: form.uniformes || null,
+      infonavit: form.infonavit || null,
+      medio_reclutamiento: form.medio_reclutamiento || null,
+      dia_capacitacion: form.dia_capacitacion || null,
+      fecha_montaje: form.fecha_montaje || null,
+      historial_bajas: form.historial_bajas || null,
+      hospedaje: form.hospedaje ? true : false
+     };
 
     console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
 
@@ -178,6 +209,40 @@ function calcularEdad(fechaNacimiento) {
     await sercoApi.entities.Empleado.delete(deleteId);
     setDeleteId(null);
     await load();
+  }
+
+  async function handleConfirmBaja() {
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const emp = items.find((e) => e.id === bajaConfirmId);
+      const prevHistorial = emp?.historial_bajas ? emp.historial_bajas + ", " : "";
+      const newHistorial = prevHistorial + todayStr;
+
+      await sercoApi.entities.Empleado.update(bajaConfirmId, {
+        fecha_baja: todayStr,
+        fecha_reingreso: null,
+        historial_bajas: newHistorial,
+        motivo_baja: motivoBajaInput || null
+      });
+      setBajaConfirmId(null);
+      setMotivoBajaInput("");
+      await load();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleConfirmReingreso() {
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      await sercoApi.entities.Empleado.update(reingresoConfirmId, {
+        fecha_reingreso: todayStr
+      });
+      setReingresoConfirmId(null);
+      await load();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   // Finiquito estimation helper
@@ -539,6 +604,19 @@ function calcularEdad(fechaNacimiento) {
               </div>
 
               <div>
+                <Label>Infonavit</Label>
+                <Input
+                  value={form.infonavit}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      infonavit: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
                 <Label>Teléfono</Label>
 
                 <Input
@@ -776,34 +854,6 @@ function calcularEdad(fechaNacimiento) {
               </div>
 
               <div>
-                <Label>Fecha de Reingreso</Label>
-                <Input
-                  type="date"
-                  value={form.fecha_reingreso}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      fecha_reingreso: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              <div>
-                <Label>Fecha de Baja</Label>
-                <Input
-                  type="date"
-                  value={form.fecha_baja}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      fecha_baja: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              <div>
                 <Label>Sueldo Mensual</Label>
                 <Input
                   type="number"
@@ -812,6 +862,47 @@ function calcularEdad(fechaNacimiento) {
                     setForm({
                       ...form,
                       sueldo: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Medio de Reclutamiento</Label>
+                <Input
+                  value={form.medio_reclutamiento}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      medio_reclutamiento: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Día de Capacitación</Label>
+                <Input
+                  type="date"
+                  value={form.dia_capacitacion}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      dia_capacitacion: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Fecha de Montaje</Label>
+                <Input
+                  type="date"
+                  value={form.fecha_montaje}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      fecha_montaje: e.target.value,
                     })
                   }
                 />
@@ -830,6 +921,26 @@ function calcularEdad(fechaNacimiento) {
                   }
                 />
               </div>
+
+              {sedes.find((s) => s.id === form.sede_id)?.nombre?.toLowerCase() === "monterrey" && (
+                <div className="flex items-center space-x-2 pt-8 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    id="hospedaje"
+                    checked={!!form.hospedaje}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        hospedaje: e.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <Label htmlFor="hospedaje" className="cursor-pointer font-semibold text-sm">
+                    ¿Tiene Hospedaje?
+                  </Label>
+                </div>
+              )}
 
               <div className="sm:col-span-2">
                 <Label>Uniformes Asignados</Label>
@@ -932,18 +1043,47 @@ function calcularEdad(fechaNacimiento) {
         </div>
 
         <div>
-          <Label>Fecha de reingreso</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.fecha_reingreso || "—"}
+          <Label>Días en la Empresa</Label>
+          <p className="text-sm text-muted-foreground font-semibold text-primary">
+            {calcularDiasEnEmpresa(viewEmpleado?.fecha_ingreso, viewEmpleado?.fecha_baja, viewEmpleado?.fecha_reingreso)}
           </p>
         </div>
 
-        <div>
-          <Label>Fecha de baja</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.fecha_baja || "—"}
-          </p>
-        </div>
+        {viewEmpleado?.fecha_reingreso && (
+          <div>
+            <Label>Fecha de reingreso</Label>
+            <p className="text-sm text-muted-foreground">
+              {viewEmpleado.fecha_reingreso}
+            </p>
+          </div>
+        )}
+
+        {(viewEmpleado?.historial_bajas || viewEmpleado?.fecha_baja) && (
+          <div>
+            <Label>{viewEmpleado.historial_bajas?.includes(",") ? "Historial de Bajas" : "Fecha de Baja"}</Label>
+            <p className="text-sm text-muted-foreground font-semibold text-rose-600">
+              {viewEmpleado.historial_bajas || viewEmpleado.fecha_baja}
+            </p>
+          </div>
+        )}
+
+        {sedes.find((s) => s.id === viewEmpleado?.sede_id)?.nombre?.toLowerCase() === "monterrey" && (
+          <div>
+            <Label>Hospedaje</Label>
+            <p className="text-sm text-muted-foreground font-semibold">
+              {viewEmpleado?.hospedaje ? "Sí" : "No"}
+            </p>
+          </div>
+        )}
+
+        {viewEmpleado?.motivo_baja && (
+          <div>
+            <Label>Motivo de la Baja</Label>
+            <p className="text-sm text-muted-foreground font-semibold text-rose-600">
+              {viewEmpleado.motivo_baja}
+            </p>
+          </div>
+        )}
 
       </div>
     </div>
@@ -975,6 +1115,27 @@ function calcularEdad(fechaNacimiento) {
           <Label>Uniformes</Label>
           <p className="text-sm text-muted-foreground">
             {viewEmpleado?.uniformes || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Medio de Reclutamiento</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.medio_reclutamiento || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Día de Capacitación</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.dia_capacitacion || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Fecha de Montaje</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.fecha_montaje || "—"}
           </p>
         </div>
 
@@ -1072,6 +1233,13 @@ function calcularEdad(fechaNacimiento) {
           </p>
         </div>
 
+        <div>
+          <Label>Infonavit</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.infonavit || "—"}
+          </p>
+        </div>
+
       </div>
     </div>
 
@@ -1165,6 +1333,37 @@ function calcularEdad(fechaNacimiento) {
   </div>
             
             <DialogFooter>
+              {!viewEmpleado?.fecha_baja || (viewEmpleado?.fecha_reingreso && viewEmpleado?.fecha_reingreso >= viewEmpleado?.fecha_baja) ? (
+                can("empleados", "edit") && (
+                  <Button
+                    variant="outline"
+                    className="border-rose-300 text-rose-600 hover:bg-rose-50"
+                    onClick={() => {
+                      setBajaConfirmId(viewEmpleado.id);
+                      setMotivoBajaInput("");
+                      setViewEmpleado(null);
+                    }}
+                  >
+                    <UserX className="w-4 h-4 mr-2" />
+                    Baja
+                  </Button>
+                )
+              ) : (
+                can("empleados", "edit") && (
+                  <Button
+                    variant="outline"
+                    className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+                    onClick={() => {
+                      setReingresoConfirmId(viewEmpleado.id);
+                      setViewEmpleado(null);
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Reingreso
+                  </Button>
+                )
+              )}
+
               {can("empleados", "delete") && (
                 <Button
                   variant="destructive"
@@ -1203,8 +1402,36 @@ function calcularEdad(fechaNacimiento) {
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}
         title="¿Eliminar empleado?"
-        description="Esta acción no se puede deshacer."
+        description="Esta acción no se puede deshacer y borrará permanentemente la información."
         onConfirm={handleDelete}
+      />
+      <ConfirmDialog
+        open={!!bajaConfirmId}
+        onOpenChange={(v) => !v && setBajaConfirmId(null)}
+        title="¿Dar de baja al empleado?"
+        description="Esta acción registrará la baja del empleado con la fecha de hoy automáticamente y lo moverá a la sección de bajas."
+        confirmLabel="Dar de Baja"
+        onConfirm={handleConfirmBaja}
+      >
+        <div className="space-y-2 py-3 px-1">
+          <Label htmlFor="motivo-baja-confirm">Motivo de la Baja</Label>
+          <Textarea
+            id="motivo-baja-confirm"
+            placeholder="Escribe el motivo de la baja..."
+            value={motivoBajaInput}
+            onChange={(e) => setMotivoBajaInput(e.target.value)}
+          />
+        </div>
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={!!reingresoConfirmId}
+        onOpenChange={(v) => !v && setReingresoConfirmId(null)}
+        title="¿Confirmar reingreso del empleado?"
+        description="Esta acción registrará el reingreso del empleado con la fecha de hoy automáticamente y lo moverá a la sección de activos."
+        confirmLabel="Confirmar Reingreso"
+        variant="success"
+        loadingLabel="Guardando..."
+        onConfirm={handleConfirmReingreso}
       />
     </div>
   );
