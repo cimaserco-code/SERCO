@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -106,6 +106,54 @@ export default function Empleados() {
   // Divide into Active and Bajas
   const activos = filtered.filter(item => !item.fecha_baja || (item.fecha_reingreso && item.fecha_reingreso >= item.fecha_baja));
   const bajas = filtered.filter(item => item.fecha_baja && (!item.fecha_reingreso || item.fecha_baja > item.fecha_reingreso));
+
+  const exportToExcel = () => {
+    const listToExport = activeTab === "activos" ? activos : bajas;
+    const headers = [
+      "Nombre Completo",
+      "Sede",
+      "Puesto",
+      "Fecha de Ingreso",
+      "Sueldo",
+      "Ubicación de Servicio",
+      "Uniformes",
+      "Actas Administrativas",
+      "Teléfono",
+      "Día de Capacitación",
+      "Medio de Reclutamiento",
+      "Hospedaje",
+      "Historial de Bajas",
+      "Motivo de Baja"
+    ];
+
+    const rows = listToExport.map(emp => [
+      emp.nombre_completo || "",
+      sedeNombre(emp.sede_id),
+      emp.puesto || "",
+      emp.fecha_ingreso || "",
+      emp.sueldo ? `$${emp.sueldo}` : "—",
+      emp.servicio_ubicacion || "Sin Asignar",
+      emp.uniformes || "Sin uniformes",
+      emp.actas_administrativas || 0,
+      emp.telefono || "",
+      emp.dia_capacitacion || "",
+      emp.medio_reclutamiento || "",
+      emp.hospedaje ? "Sí" : "No",
+      emp.historial_bajas || "",
+      emp.motivo_baja || ""
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `empleados_${activeTab}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   function openCreate() {
     setEditing(null);
@@ -293,6 +341,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               <Plus className="w-4 h-4 mr-1" /> Agregar
             </Button>
           )}
+          <Button variant="outline" onClick={exportToExcel}>
+            <Download className="w-4 h-4 mr-1" /> Exportar Excel
+          </Button>
         </div>
       </div>
 
