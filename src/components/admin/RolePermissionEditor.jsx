@@ -9,7 +9,7 @@ const MODULES = [
   { key: "asistencias", label: "Asistencias", actions: ["view", "create", "edit", "delete"] },
   { key: "servicios", label: "Servicios", actions: ["view", "create", "edit", "delete"] },
   { key: "cobros", label: "Facturas", actions: ["view", "create", "edit", "delete"] },
-  { key: "turnos", label: "Turnos", actions: ["view", "create", "delete"] },
+  { key: "turnos", label: "Plantilla", actions: ["view", "create", "delete"] },
   { key: "inventario", label: "Inventario", actions: ["view", "create", "edit", "delete"] },
   { key: "documentos", label: "Documentos", actions: ["view", "create", "edit", "delete"] },
   { key: "egresos", label: "Egresos", actions: ["view", "create", "edit", "delete"] },

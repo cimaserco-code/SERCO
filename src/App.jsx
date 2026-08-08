@@ -16,7 +16,7 @@ import Servicios from '@/pages/Servicios';
 import Cobros from '@/pages/Cobros';
 import Inventario from '@/pages/Inventario';
 import Documentos from '@/pages/Documentos';
-import Turnos from '@/pages/Turno';
+import Plantilla from '@/pages/Plantilla';
 import Egresos from '@/pages/Egresos';
 import Overview from '@/pages/Overview';
 import Nominas from '@/pages/Nominas';
@@ -71,7 +71,7 @@ const AuthenticatedApp = () => {
           <Route path="/nominas" element={<Nominas />} />
           <Route path="/servicios" element={<Servicios />} />
           <Route path="/facturas" element={<Cobros />} />
-          <Route path="/servicios/turnos" element={<Turnos />} />
+          <Route path="/servicios/plantilla" element={<Plantilla />} />
           <Route path="/administracion" element={<Administracion />} />
           <Route path="/administracion/usuarios" element={<AdminUsuarios />} />
           <Route path="/administracion/roles" element={<AdminRoles />} />

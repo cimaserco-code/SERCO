@@ -13,7 +13,9 @@ const tableMap = {
   Asistencia: 'asistencias',
   Egreso: 'egresos',
   Comunicado: 'comunicados',
-  Nominas: 'nominas'
+  Nominas: 'nominas',
+  Vacante: 'vacantes',
+  SolicitudInventario: 'solicitudes_inventario'
 };
 
 function formatSupabaseError(error) {

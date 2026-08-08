@@ -16,6 +16,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
+import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -58,6 +59,7 @@ const emptyForm = {
 };
 
 export default function Empleados() {
+  const { user } = useAuth();
   const { canView, can } = usePermissions();
   const canAccess = canView("empleados");
   const { sedeFilter, defaultSedeId } = useSedeScope();
@@ -1385,7 +1387,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             
             <DialogFooter>
               {!viewEmpleado?.fecha_baja || (viewEmpleado?.fecha_reingreso && viewEmpleado?.fecha_reingreso >= viewEmpleado?.fecha_baja) ? (
-                can("empleados", "edit") && (
+                (can("empleados", "edit") || user?.role?.toLowerCase() === "supervisor") && (
                   <Button
                     variant="outline"
                     className="border-rose-300 text-rose-600 hover:bg-rose-50"

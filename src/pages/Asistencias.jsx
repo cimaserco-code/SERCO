@@ -13,6 +13,9 @@ import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { toast } from "@/components/ui/use-toast";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 
 const estadosConfig = {
   asistió: { label: "A", color: "bg-green-500 hover:bg-green-600 text-white font-bold" },
@@ -33,6 +36,7 @@ export default function Asistencias() {
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     return `${today.getFullYear()}-${mm}`;
   });
+  const [selectedEmpSummary, setSelectedEmpSummary] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -278,7 +282,13 @@ export default function Asistencias() {
                     {groupEmps.map((emp) => (
                       <TableRow key={emp.id} className="hover:bg-muted/50">
                         <TableCell className="sticky left-0 bg-card z-10 border-r font-medium py-2 min-w-[200px]">
-                          {emp.nombre_completo}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEmpSummary(emp)}
+                            className="text-primary hover:underline text-left font-semibold focus:outline-none"
+                          >
+                            {emp.nombre_completo}
+                          </button>
                         </TableCell>
                         {daysArray.map((day) => {
                           const currentVal = getAsistenciaEstado(emp.id, day);
@@ -321,6 +331,117 @@ export default function Asistencias() {
           </Table>
         </div>
       </div>
+
+      {selectedEmpSummary && (
+        <EmployeeSummaryDialog
+          employee={selectedEmpSummary}
+          currentMonth={currentMonth}
+          monthName={monthNames[month]}
+          year={year}
+          asistencias={asistencias}
+          onClose={() => setSelectedEmpSummary(null)}
+        />
+      )}
     </div>
   );
 }
+
+// Attendance summary modal helper
+const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asistencias, onClose }) => {
+  const empAsists = asistencias.filter(a => a.empleado_id === employee.id && a.fecha.startsWith(currentMonth));
+  const totalA = empAsists.filter(a => a.estado === "asistió").length;
+  const totalF = empAsists.filter(a => a.estado === "falta").length;
+  const totalD = empAsists.filter(a => a.estado === "descanso").length;
+  const totalE = empAsists.filter(a => a.estado === "extra").length;
+  
+  const divisor = totalA + totalF;
+  const punctuality = divisor > 0 ? Math.round((totalA / divisor) * 100) : 100;
+
+  // Format date helper
+  const formatDateDay = (dateStr) => {
+    try {
+      const day = dateStr.slice(-2);
+      return `Día ${day}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <Dialog open={!!employee} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+            <UserCheck className="w-5 h-5 text-primary" />
+            Resumen: {employee.nombre_completo}
+          </DialogTitle>
+          <DialogDescription>
+            Detalles de asistencia correspondientes a {monthName} de {year}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* KPIs Section */}
+        <div className="grid grid-cols-3 gap-3 my-2">
+          <Card className="bg-primary/5 border-primary/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-black text-primary">{punctuality}%</div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">Asistencia</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-black text-green-600">{totalA}</div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">Asistió</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/50">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-black text-purple-600">{totalE}</div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">Extras</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-2">
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Faltas:</span>
+            <span className="font-bold text-red-500">{totalF}</span>
+          </div>
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Descansos:</span>
+            <span className="font-bold text-slate-500">{totalD}</span>
+          </div>
+        </div>
+
+        {/* History Log */}
+        <div className="space-y-2 mt-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Bitácora del Mes</h4>
+          <div className="border rounded-md max-h-48 overflow-y-auto p-2 bg-muted/30 divide-y space-y-1">
+            {empAsists.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">Sin registros capturados en este mes</p>
+            ) : (
+              empAsists
+                .sort((a, b) => a.fecha.localeCompare(b.fecha))
+                .map((a) => (
+                  <div key={a.id} className="flex justify-between items-center py-1.5 text-xs">
+                    <span className="font-medium">{formatDateDay(a.fecha)}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      a.estado === "asistió" ? "bg-green-100 text-green-700" :
+                      a.estado === "falta" ? "bg-red-100 text-red-700" :
+                      a.estado === "descanso" ? "bg-slate-100 text-slate-700" : "bg-purple-100 text-purple-700"
+                    }`}>
+                      {a.estado}
+                    </span>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="mt-4">
+          <Button onClick={() => onClose()} className="w-full sm:w-auto">Cerrar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};

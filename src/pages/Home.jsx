@@ -31,6 +31,7 @@ export default function Home() {
   });
   const [sedeStats, setSedeStats] = useState([]);
   const [comunicados, setComunicados] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
@@ -75,7 +76,7 @@ export default function Home() {
     async function load() {
       setLoading(true);
       try {
-        const [emp, serv, inv, docs, turnos, cobros, seds, coms] = await Promise.all([
+        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols] = await Promise.all([
           (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
           sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
           sercoApi.entities.InventarioItem.filter(sedeFilter).catch(() => []),
@@ -83,7 +84,9 @@ export default function Home() {
           sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => []),
           sercoApi.entities.Cobro.filter(sedeFilter).catch(() => []),
           sercoApi.entities.Sede.list().catch(() => []),
-          sercoApi.entities.Comunicado.list().catch(() => [])
+          sercoApi.entities.Comunicado.list().catch(() => []),
+          sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
+          sercoApi.entities.SolicitudInventario.list().catch(() => [])
         ]);
 
         const activeComs = (coms || []).filter(c => c.activo !== false);
@@ -117,6 +120,90 @@ export default function Home() {
           totalFacturado: totalFacturado,
           totalCobrado: totalCobrado,
         });
+
+        // Generate dynamic Alerts based on Role
+        const alertsList = [];
+        const isCeo = role === "ceo";
+        const isDirector = role === "director";
+        const isAdmin = role === "admin";
+        const isSuperUser = isCeo || isDirector || isAdmin;
+
+        // 1. Finanzas: Material de inventario solicitado (pendiente)
+        if (role === "finanzas" || isSuperUser) {
+          (sols || []).filter(s => s.estado === 'pendiente').forEach(s => {
+            alertsList.push({
+              id: `sol-${s.id}`,
+              type: 'info',
+              title: 'Material Solicitado',
+              description: `${s.solicitante_nombre} solicitó ${s.cantidad} unidad(es) de ${s.item_nombre}.`,
+              time: 'Material'
+            });
+          });
+        }
+
+        // 2. RH / Reclutador: Nuevas vacantes abiertas
+        if (role === "rh" || role === "reclutador" || isSuperUser) {
+          (vacs || []).filter(v => v.estado === 'abierta').forEach(v => {
+            const servName = serv.find(s => s.id === v.servicio_id)?.nombre || "Servicio";
+            alertsList.push({
+              id: `vac-${v.id}`,
+              type: 'warning',
+              title: 'Nueva Vacante',
+              description: `Se abrió vacante para ${v.puesto} (${v.turno}) en ${servName}.`,
+              time: 'Vacante'
+            });
+          });
+        }
+
+        // 3. RH: Bajas de empleados (Supervisor dio de baja a alguien)
+        if (role === "rh" || isSuperUser) {
+          const recentBajas = (emp || []).filter(e => {
+            return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
+          });
+          recentBajas.forEach(e => {
+            alertsList.push({
+              id: `baja-rh-${e.id}`,
+              type: 'danger',
+              title: 'Empleado de Baja (RH)',
+              description: `${e.nombre_completo} fue dado de baja (Motivo: ${e.motivo_baja || 'No especificado'}).`,
+              time: 'Baja'
+            });
+          });
+        }
+
+        // 4. Supervisor: Altas y Bajas de empleados
+        if (role === "supervisor" || isSuperUser) {
+          // Altas
+          const recentHires = (emp || []).filter(e => {
+            const date = e.fecha_ingreso || e.fecha_reingreso;
+            return date && date.slice(0, 7) === currentMonth;
+          });
+          recentHires.forEach(e => {
+            alertsList.push({
+              id: `alta-sup-${e.id}`,
+              type: 'success',
+              title: 'Alta de Personal',
+              description: `${e.nombre_completo} se incorporó como ${e.puesto || 'Personal'}.`,
+              time: 'Alta'
+            });
+          });
+
+          // Bajas
+          const recentBajas = (emp || []).filter(e => {
+            return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
+          });
+          recentBajas.forEach(e => {
+            alertsList.push({
+              id: `baja-sup-${e.id}`,
+              type: 'danger',
+              title: 'Baja de Personal',
+              description: `${e.nombre_completo} fue dado de baja.`,
+              time: 'Baja'
+            });
+          });
+        }
+
+        setNotifications(alertsList);
 
         // Compute per-sede stats
         const computedSedeStats = seds.map(sede => {
@@ -182,239 +269,286 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Comunicados Section */}
-      {comunicados.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-primary animate-bounce shrink-0" /> Comunicados Recientes
-          </h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            {comunicados.map((com) => (
-              <Card key={com.id} className="border-l-4 border-l-primary bg-primary/5 hover:bg-primary/10 transition-colors">
-                <CardHeader className="p-4 pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold text-primary flex items-center gap-1.5">
-                      <Bell className="w-4 h-4 text-primary shrink-0" /> {com.titulo}
-                    </CardTitle>
-                    <span className="text-xs text-muted-foreground">{com.fecha}</span>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{com.contenido}</p>
-                  <div className="mt-3 text-right">
-                    <span className="text-xs font-semibold text-muted-foreground italic">Publicado por: {com.autor_nombre || "Administración"}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {isCeoOrAdmin ? (
-        <div className="space-y-8">
-          {sedeStats.map(sede => (
-            <div key={sede.sedeId} className="space-y-3 p-4 rounded-xl border bg-card/30">
-              <h3 className="text-base font-bold text-primary border-b pb-2 capitalize">
-                Sede: {sede.sedeNombre}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Columna Izquierda: Dashboard / Métricas */}
+        <div className="col-span-12 lg:col-span-9 space-y-6">
+          {/* Comunicados Section */}
+          {comunicados.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                <Megaphone className="w-4 h-4 text-primary animate-bounce shrink-0" /> Comunicados Recientes
               </h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {showFinances && (
-                  <>
+              <div className="grid gap-4 md:grid-cols-2">
+                {comunicados.map((com) => (
+                  <Card key={com.id} className="border-l-4 border-l-primary bg-primary/5 hover:bg-primary/10 transition-colors">
+                    <CardHeader className="p-4 pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-bold text-primary flex items-center gap-1.5">
+                          <Bell className="w-4 h-4 text-primary shrink-0" /> {com.titulo}
+                        </CardTitle>
+                        <span className="text-xs text-muted-foreground">{com.fecha}</span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                      <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{com.contenido}</p>
+                      <div className="mt-3 text-right">
+                        <span className="text-xs font-semibold text-muted-foreground italic">Publicado por: {com.autor_nombre || "Administración"}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isCeoOrAdmin ? (
+            <div className="space-y-8">
+              {sedeStats.map(sede => (
+                <div key={sede.sedeId} className="space-y-3 p-4 rounded-xl border bg-card/30">
+                  <h3 className="text-base font-bold text-primary border-b pb-2 capitalize">
+                    Sede: {sede.sedeNombre}
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {showFinances && (
+                      <>
+                        <Card>
+                          <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
+                              <CheckCircle className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold">{loading ? "—" : `$${sede.pagados.toLocaleString("es-MX")}`}</div>
+                              <p className="text-xs text-muted-foreground">Cobrado (Pagados)</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
+                              <Clock className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold">{loading ? "—" : `$${sede.pendientes.toLocaleString("es-MX")}`}</div>
+                              <p className="text-xs text-muted-foreground">Pendiente de Cobro</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
+                              <DollarSign className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold">{loading ? "—" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}</div>
+                              <p className="text-xs text-muted-foreground">Total Facturado</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </>
+                    )}
+                    <Card>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
+                          <Briefcase className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <div className="text-xl font-bold">{loading ? "—" : sede.servicios}</div>
+                          <p className="text-xs text-muted-foreground">Servicios Activos</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    {showRH && (
+                      <>
+                        <Card>
+                          <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center shrink-0">
+                              <Users className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold">{loading ? "—" : sede.empleadosActivos}</div>
+                              <p className="text-xs text-muted-foreground">Empleados Activos</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center shrink-0">
+                              <Plus className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold">{loading ? "—" : sede.empleadosAltas}</div>
+                              <p className="text-xs text-muted-foreground">Altas del Mes</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center shrink-0">
+                              <AlertCircle className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <div className="text-xl font-bold">{loading ? "—" : sede.empleadosBajas}</div>
+                              <p className="text-xs text-muted-foreground">Bajas del Personal</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* 1. FINANCIAL DASHBOARD (Jefe & Finanzas) */}
+              {showFinances && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Resumen Financiero (Facturas del Mes)
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Card>
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
                           <CheckCircle className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-xl font-bold">{loading ? "—" : `$${sede.pagados.toLocaleString("es-MX")}`}</div>
+                          <div className="text-xl font-bold">{loading ? "—" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}</div>
                           <p className="text-xs text-muted-foreground">Cobrado (Pagados)</p>
                         </div>
                       </CardContent>
                     </Card>
+
                     <Card>
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
                           <Clock className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-xl font-bold">{loading ? "—" : `$${sede.pendientes.toLocaleString("es-MX")}`}</div>
+                          <div className="text-xl font-bold">{loading ? "—" : `$${stats.pendientes.toLocaleString("es-MX")}`}</div>
                           <p className="text-xs text-muted-foreground">Pendiente de Cobro</p>
                         </div>
                       </CardContent>
                     </Card>
+
                     <Card>
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
                           <DollarSign className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-xl font-bold">{loading ? "—" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}</div>
+                          <div className="text-xl font-bold">{loading ? "—" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}</div>
                           <p className="text-xs text-muted-foreground">Total Facturado</p>
                         </div>
                       </CardContent>
                     </Card>
-                  </>
-                )}
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
-                      <Briefcase className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : sede.servicios}</div>
-                      <p className="text-xs text-muted-foreground">Servicios Activos</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                {showRH && (
-                  <>
+
+                    <Card>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
+                          <Briefcase className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <div className="text-xl font-bold">{loading ? "—" : stats.servicios}</div>
+                          <p className="text-xs text-muted-foreground">Servicios Activos</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. RECURSOS HUMANOS DASHBOARD (Jefe & RH) */}
+              {showRH && (
+                <div className="space-y-3 mt-6">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Estadísticas de Personal (Recursos Humanos)
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <Card>
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center shrink-0">
                           <Users className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-xl font-bold">{loading ? "—" : sede.empleadosActivos}</div>
+                          <div className="text-xl font-bold">{loading ? "—" : stats.empleadosActivos}</div>
                           <p className="text-xs text-muted-foreground">Empleados Activos</p>
                         </div>
                       </CardContent>
                     </Card>
+
                     <Card>
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center shrink-0">
                           <Plus className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-xl font-bold">{loading ? "—" : sede.empleadosAltas}</div>
+                          <div className="text-xl font-bold">{loading ? "—" : stats.empleadosAltas}</div>
                           <p className="text-xs text-muted-foreground">Altas del Mes</p>
                         </div>
                       </CardContent>
                     </Card>
+
                     <Card>
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center shrink-0">
                           <AlertCircle className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                          <div className="text-xl font-bold">{loading ? "—" : sede.empleadosBajas}</div>
+                          <div className="text-xl font-bold">{loading ? "—" : stats.empleadosBajas}</div>
                           <p className="text-xs text-muted-foreground">Bajas del Personal</p>
                         </div>
                       </CardContent>
                     </Card>
-                  </>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Columna Derecha: Alertas */}
+        <div className="col-span-12 lg:col-span-3 space-y-4">
+          <Card className="h-full">
+            <CardHeader className="pb-3 border-b bg-card">
+              <CardTitle className="flex items-center gap-2 text-base font-bold">
+                <Bell className="w-5 h-5 text-primary shrink-0 animate-pulse" />
+                Alertas
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                {loading ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">Cargando alertas...</p>
+                ) : notifications.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">No hay alertas pendientes.</p>
+                ) : (
+                  notifications.map((notif) => (
+                    <div 
+                      key={notif.id} 
+                      className={`flex gap-3 text-sm p-3 rounded-lg border bg-card/60 hover:bg-muted/50 transition-all duration-200 border-l-4 ${
+                        notif.type === 'danger' ? 'border-l-red-500' : 
+                        notif.type === 'warning' ? 'border-l-amber-500' : 
+                        notif.type === 'success' ? 'border-l-emerald-500' : 'border-l-blue-500'
+                      }`}
+                    >
+                      <div className="space-y-1.5 flex-1">
+                        <p className="font-semibold text-xs leading-none text-foreground">{notif.title}</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{notif.description}</p>
+                        <span className="text-[9px] bg-muted px-2 py-0.5 rounded font-medium text-muted-foreground inline-block">
+                          {notif.time}
+                        </span>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
-            </div>
-          ))}
+            </CardContent>
+          </Card>
         </div>
-      ) : (
-        <>
-          {/* 1. FINANCIAL DASHBOARD (Jefe & Finanzas) */}
-          {showFinances && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Resumen Financiero (Facturas del Mes)
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
-                      <CheckCircle className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}</div>
-                      <p className="text-xs text-muted-foreground">Cobrado (Pagados)</p>
-                    </div>
-                  </CardContent>
-                </Card>
 
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
-                      <Clock className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : `$${stats.pendientes.toLocaleString("es-MX")}`}</div>
-                      <p className="text-xs text-muted-foreground">Pendiente de Cobro</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
-                      <DollarSign className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}</div>
-                      <p className="text-xs text-muted-foreground">Total Facturado</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
-                      <Briefcase className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : stats.servicios}</div>
-                      <p className="text-xs text-muted-foreground">Servicios Activos</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          )}
-
-          {/* 2. RECURSOS HUMANOS DASHBOARD (Jefe & RH) */}
-          {showRH && (
-            <div className="space-y-3 mt-6">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Estadísticas de Personal (Recursos Humanos)
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center shrink-0">
-                      <Users className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : stats.empleadosActivos}</div>
-                      <p className="text-xs text-muted-foreground">Empleados Activos</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center shrink-0">
-                      <Plus className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : stats.empleadosAltas}</div>
-                      <p className="text-xs text-muted-foreground">Altas del Mes</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center shrink-0">
-                      <AlertCircle className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{loading ? "—" : stats.empleadosBajas}</div>
-                      <p className="text-xs text-muted-foreground">Bajas del Personal</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      </div>
     </div>
   );
 }

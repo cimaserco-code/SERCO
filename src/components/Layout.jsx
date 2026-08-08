@@ -6,18 +6,39 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
 
-const allNavItems = [
+const flatNavItems = [
   { to: "/", label: "Inicio", icon: Home, module: "inicio" },
   { to: "/overview", label: "Overview", icon: LayoutGrid, module: "overview" },
-  { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
-  { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
-  { to: "/nominas", label: "Nóminas", icon: Calculator, module: "nominas" },
-  { to: "/servicios", label: "Servicios", icon: Briefcase, module: "servicios" },
-  { to: "/facturas", label: "Facturas", icon: DollarSign, module: "cobros" },
-  { to: "/servicios/turnos", label: "Turnos", icon: Clock, module: "turnos" },
-  { to: "/inventario", label: "Inventario", icon: Package, module: "inventario" },
-  { to: "/documentos", label: "Documentos", icon: FileText, module: "documentos" },
-  { to: "/egresos", label: "Egresos", icon: TrendingDown, module: "egresos" },
+];
+
+const navigationSections = [
+  {
+    title: "Operaciones",
+    icon: Briefcase,
+    items: [
+      { to: "/servicios", label: "Servicios", icon: Briefcase, module: "servicios" },
+      { to: "/servicios/plantilla", label: "Plantilla", icon: Clock, module: "turnos" },
+      { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
+      { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
+    ]
+  },
+  {
+    title: "Finanzas",
+    icon: DollarSign,
+    items: [
+      { to: "/facturas", label: "Facturas", icon: DollarSign, module: "cobros" },
+      { to: "/nominas", label: "Nóminas", icon: Calculator, module: "nominas" },
+      { to: "/egresos", label: "Egresos", icon: TrendingDown, module: "egresos" },
+    ]
+  },
+  {
+    title: "Recursos",
+    icon: Package,
+    items: [
+      { to: "/inventario", label: "Inventario", icon: Package, module: "inventario" },
+      { to: "/documentos", label: "Documentos", icon: FileText, module: "documentos" },
+    ]
+  }
 ];
 
 const adminNavItems = [
@@ -32,25 +53,27 @@ export default function Layout() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const { canView } = usePermissions();
-  const navItems = allNavItems.filter((item) => !item.module || canView(item.module));
 
-  const active = navItems.find((item) => {
+  const allFlatItems = [...flatNavItems, ...navigationSections.flatMap(section => section.items)];
+
+  const active = allFlatItems.find((item) => {
     if (item.to === "/") return location.pathname === "/";
     if (item.to === "/servicios") return location.pathname === "/servicios";
     return location.pathname.startsWith(item.to);
   });
 
-  const renderNavItems = (onNavigate) =>
-    navItems.map((item) => {
+  const renderFlatNavItems = (onNavigate) => {
+    const visibleItems = flatNavItems.filter((item) => !item.module || canView(item.module));
+    return visibleItems.map((item) => {
       const Icon = item.icon;
       return (
         <NavLink
           key={item.to}
           to={item.to}
-          end={item.to === "/" || item.to === "/servicios"}
+          end={item.to === "/"}
           onClick={onNavigate}
           className={({ isActive }) =>
-            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
               isActive
                 ? "bg-sidebar-primary text-sidebar-primary-foreground"
                 : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -60,6 +83,52 @@ export default function Layout() {
           <Icon className="w-4 h-4 shrink-0" />
           {item.label}
         </NavLink>
+      );
+    });
+  };
+
+  const renderNavSections = (onNavigate) =>
+    navigationSections.map((section) => {
+      const visibleItems = section.items.filter((item) => !item.module || canView(item.module));
+      if (visibleItems.length === 0) return null;
+
+      const SectionIcon = section.icon;
+
+      return (
+        <div key={section.title} className="pt-2 border-t border-sidebar-border first:border-0 first:pt-0">
+          <Collapsible defaultOpen>
+            <CollapsibleTrigger className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <SectionIcon className="w-4 h-4 shrink-0" />
+              <span>{section.title}</span>
+              <ChevronDown className="w-4 h-4 ml-auto transition-transform" />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-1 space-y-1 ml-4 border-l border-sidebar-border pl-3">
+                {visibleItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === "/servicios"}
+                      onClick={onNavigate}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          isActive
+                            ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        }`
+                      }
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      {item.label}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
       );
     });
 
@@ -114,8 +183,11 @@ export default function Layout() {
             SERCO
           </span>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
-            {renderNavItems()}
+        <nav className="flex-1 p-3 space-y-3 overflow-y-auto">
+            <div className="space-y-0.5">
+              {renderFlatNavItems()}
+            </div>
+            {renderNavSections()}
             {renderAdminNav()}
           </nav>
       </aside>
@@ -138,8 +210,11 @@ export default function Layout() {
                 <X className="w-5 h-5" />
               </Button>
             </div>
-            <nav className="flex-1 p-3 space-y-1">
-              {renderNavItems(() => setSidebarOpen(false))}
+            <nav className="flex-1 p-3 space-y-3 overflow-y-auto">
+              <div className="space-y-0.5">
+                {renderFlatNavItems(() => setSidebarOpen(false))}
+              </div>
+              {renderNavSections(() => setSidebarOpen(false))}
               {renderAdminNav(() => setSidebarOpen(false))}
             </nav>
           </aside>
