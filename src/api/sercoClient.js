@@ -9,6 +9,7 @@ const tableMap = {
   AsignacionTurno: 'asignacion_turnos',
   Cobro: 'cobros',
   InventarioItem: 'inventario_items',
+  InventarioVariante: 'inventario_variantes',
   Documento: 'documentos',
   Asistencia: 'asistencias',
   Egreso: 'egresos',

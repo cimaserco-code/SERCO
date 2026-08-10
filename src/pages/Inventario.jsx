@@ -28,12 +28,14 @@ export default function Inventario() {
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
   const [items, setItems] = useState([]);
+  const [variantes, setVariantes] = useState([]);
   const [sedes, setSedes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [formVariantes, setFormVariantes] = useState([]);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [activeCategoryTab, setActiveCategoryTab] = useState("Uniforme");
@@ -46,21 +48,24 @@ export default function Inventario() {
   useEffect(() => { load(); }, []);
 
   async function load() {
-    setLoading(true);
-    try {
-      const [data, s, sols] = await Promise.all([
-        sercoApi.entities.InventarioItem.filter(sedeFilter, "-created_date"),
-        sercoApi.entities.Sede.list(),
-        sercoApi.entities.SolicitudInventario.list("-created_date").catch(() => []),
-      ]);
-      setItems(data);
-      setSedes(s);
-      setSolicitudes(sols);
-    } finally {
-      setLoading(false);
-    }
-  }
+  setLoading(true);
 
+  try {
+    const [data, vars, s, sols] = await Promise.all([
+      sercoApi.entities.InventarioItem.filter(sedeFilter, "-created_date"),
+      sercoApi.entities.InventarioVariante.list("-created_date"),
+      sercoApi.entities.Sede.list(),
+      sercoApi.entities.SolicitudInventario.list("-created_date").catch(() => []),
+    ]);
+
+    setItems(data);
+    setVariantes(vars);
+    setSedes(s);
+    setSolicitudes(sols);
+  } finally {
+    setLoading(false);
+  }
+}
   const openSolicitar = () => {
     setSolicitudForm({
       inventario_item_id: "",
@@ -121,30 +126,108 @@ export default function Inventario() {
   function openCreate() {
     setEditing(null);
     setForm({ ...emptyForm, sede_id: defaultSedeId });
+    setFormVariantes([]);
     setModalOpen(true);
   }
 
   function openEdit(item) {
-    setEditing(item);
-    setForm({ ...emptyForm, ...item, cantidad: item.cantidad ?? "" });
-    setModalOpen(true);
-  }
+  setEditing(item);
+  setForm({ ...emptyForm, ...item, cantidad: item.cantidad ?? "" });
+
+  const itemVariantes = variantes
+    .filter((v) => v.inventario_item_id === item.id)
+    .map((v) => ({
+      id: v.id,
+      color: v.color || "",
+      talla: v.talla || "",
+      cantidad: v.cantidad ?? "",
+    }));
+
+  setFormVariantes(itemVariantes);
+  setModalOpen(true);
+}
+
+function agregarVariante() {
+  setFormVariantes([
+    ...formVariantes,
+    {
+      color: "",
+      talla: "",
+      cantidad: "",
+    },
+  ]);
+}
+
+function actualizarVariante(index, campo, valor) {
+  const nuevasVariantes = [...formVariantes];
+  nuevasVariantes[index] = {
+    ...nuevasVariantes[index],
+    [campo]: valor,
+  };
+  setFormVariantes(nuevasVariantes);
+}
+
+function eliminarVariante(index) {
+  setFormVariantes(
+    formVariantes.filter((_, i) => i !== index)
+  );
+}
 
   async function handleSave() {
-    setSaving(true);
-    try {
-      const payload = { ...form, cantidad: form.cantidad === "" ? null : Number(form.cantidad) };
-      if (editing) {
-        await sercoApi.entities.InventarioItem.update(editing.id, payload);
-      } else {
-        await sercoApi.entities.InventarioItem.create(payload);
-      }
-      setModalOpen(false);
-      await load();
-    } finally {
-      setSaving(false);
+  setSaving(true);
+
+  try {
+    const payload = {
+      ...form,
+      cantidad: form.cantidad === "" ? 0 : Number(form.cantidad),
+    };
+
+    let itemGuardado;
+
+    if (editing) {
+      itemGuardado = await sercoApi.entities.InventarioItem.update(
+        editing.id,
+        payload
+      );
+
+      // Eliminar variantes que tenía anteriormente
+      await Promise.all(
+        variantes
+          .filter((v) => v.inventario_item_id === editing.id)
+          .map((v) =>
+            sercoApi.entities.InventarioVariante.delete(v.id)
+          )
+      );
+    } else {
+      itemGuardado = await sercoApi.entities.InventarioItem.create(payload);
     }
+
+    // Guardar las variantes del artículo
+    if (form.categoria === "Uniforme" && formVariantes.length > 0) {
+      const variantesValidas = formVariantes.filter(
+        (v) => v.color || v.talla || v.cantidad !== ""
+      );
+
+      await Promise.all(
+        variantesValidas.map((v) =>
+          sercoApi.entities.InventarioVariante.create({
+            inventario_item_id: itemGuardado.id,
+            color: v.color || null,
+            talla: v.talla || null,
+            cantidad:
+              v.cantidad === "" ? 0 : Number(v.cantidad),
+          })
+        )
+      );
+    }
+
+    setModalOpen(false);
+    setFormVariantes([]);
+    await load();
+  } finally {
+    setSaving(false);
   }
+}
 
   async function handleDelete() {
     await sercoApi.entities.InventarioItem.delete(deleteId);
@@ -407,6 +490,84 @@ export default function Inventario() {
               <Label>Descripción</Label>
               <Input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
             </div>
+            {form.categoria === "Uniforme" && (
+  <div className="space-y-3">
+    <div className="flex items-center justify-between">
+      <Label>Variantes</Label>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={agregarVariante}
+      >
+        <Plus className="w-4 h-4 mr-1" />
+        Agregar variante
+      </Button>
+    </div>
+
+    {formVariantes.length === 0 ? (
+      <p className="text-sm text-muted-foreground">
+        No hay variantes agregadas.
+      </p>
+    ) : (
+      <div className="space-y-2">
+        {formVariantes.map((variante, index) => (
+          <div
+            key={variante.id || index}
+            className="grid grid-cols-[1fr_1fr_100px_auto] gap-2 items-end"
+          >
+            <div>
+              <Label className="text-xs">Color</Label>
+              <Input
+                value={variante.color}
+                onChange={(e) =>
+                  actualizarVariante(index, "color", e.target.value)
+                }
+                placeholder="Ej. Azul"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Talla</Label>
+              <Input
+                value={variante.talla}
+                onChange={(e) =>
+                  actualizarVariante(index, "talla", e.target.value)
+                }
+                placeholder="Ej. M"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Cantidad</Label>
+              <Input
+                type="number"
+                min="0"
+                value={variante.cantidad}
+                onChange={(e) =>
+                  actualizarVariante(index, "cantidad", e.target.value)
+                }
+                placeholder="0"
+              />
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-destructive"
+              onClick={() => eliminarVariante(index)}
+              title="Eliminar variante"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
           </div>
           <DialogFooter className="flex justify-between items-center w-full gap-2">
             {editing && can("inventario", "delete") && (
