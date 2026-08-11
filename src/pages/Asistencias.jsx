@@ -22,6 +22,8 @@ const estadosConfig = {
   falta: { label: "F", color: "bg-red-500 hover:bg-red-600 text-white font-bold" },
   descanso: { label: "D", color: "bg-slate-400 hover:bg-slate-500 text-white font-bold" },
   extra: { label: "E", color: "bg-purple-500 hover:bg-purple-600 text-white font-bold" },
+  descanso_laborado: { label: "DL", color: "bg-sky-500 hover:bg-sky-600 text-white font-bold" },
+  descanso_extra: { label: "DLE", color: "bg-indigo-500 hover:bg-indigo-600 text-white font-bold" },
 };
 
 export default function Asistencias() {
@@ -50,8 +52,8 @@ export default function Asistencias() {
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
         sercoApi.entities.Asistencia.list().catch(() => [])
       ]);
-      // Only keep active employees (who didn't get given "baja" or got "baja" in the future, or did a re-entry after their last baja)
-      const activeEmps = emps.filter(e => !e.fecha_baja || e.fecha_baja >= todayStr || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja));
+      // Only keep active employees (who didn't get given "baja" or did a re-entry after their last baja)
+      const activeEmps = emps.filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja));
       setEmployees(activeEmps);
       setAsistencias(asists);
     } catch (e) {
@@ -217,8 +219,16 @@ export default function Asistencias() {
             <span>Descanso</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-6 h-6 flex items-center justify-center rounded bg-purple-500 text-white font-bold">E</span>
+            <span className="w-6 h-6 flex items-center justify-center rounded bg-purple-500 text-white font-bold text-[10px]">E</span>
             <span>Turno Extra</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-6 h-6 flex items-center justify-center rounded bg-sky-500 text-white font-bold text-[10px]">DL</span>
+            <span>Descanso Lab.</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-6 h-6 flex items-center justify-center rounded bg-indigo-500 text-white font-bold text-[10px]">DLE</span>
+            <span>Descanso Lab. + Extra</span>
           </div>
           <div className="ml-auto text-xs text-muted-foreground self-center italic">
             * Haz clic en cualquier casilla para cambiar o alternar la asistencia.
@@ -317,6 +327,8 @@ export default function Asistencias() {
                                   <SelectItem value="falta">Falta</SelectItem>
                                   <SelectItem value="descanso">Descanso</SelectItem>
                                   <SelectItem value="extra">Extra</SelectItem>
+                                  <SelectItem value="descanso_laborado">Descanso Laborado</SelectItem>
+                                  <SelectItem value="descanso_extra">Descanso Lab. + Extra</SelectItem>
                                 </SelectContent>
                               </Select>
                             </TableCell>
@@ -353,19 +365,11 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
   const totalF = empAsists.filter(a => a.estado === "falta").length;
   const totalD = empAsists.filter(a => a.estado === "descanso").length;
   const totalE = empAsists.filter(a => a.estado === "extra").length;
+  const totalDL = empAsists.filter(a => a.estado === "descanso_laborado").length;
+  const totalDLE = empAsists.filter(a => a.estado === "descanso_extra").length;
   
-  const divisor = totalA + totalF;
-  const punctuality = divisor > 0 ? Math.round((totalA / divisor) * 100) : 100;
-
-  // Format date helper
-  const formatDateDay = (dateStr) => {
-    try {
-      const day = dateStr.slice(-2);
-      return `Día ${day}`;
-    } catch {
-      return dateStr;
-    }
-  };
+  const divisor = totalA + totalF + totalDL + totalDLE;
+  const punctuality = divisor > 0 ? Math.round(((totalA + totalDL + totalDLE) / divisor) * 100) : 100;
 
   return (
     <Dialog open={!!employee} onOpenChange={(v) => !v && onClose()}>
@@ -411,30 +415,13 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
             <span className="text-muted-foreground">Descansos:</span>
             <span className="font-bold text-slate-500">{totalD}</span>
           </div>
-        </div>
-
-        {/* History Log */}
-        <div className="space-y-2 mt-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Bitácora del Mes</h4>
-          <div className="border rounded-md max-h-48 overflow-y-auto p-2 bg-muted/30 divide-y space-y-1">
-            {empAsists.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">Sin registros capturados en este mes</p>
-            ) : (
-              empAsists
-                .sort((a, b) => a.fecha.localeCompare(b.fecha))
-                .map((a) => (
-                  <div key={a.id} className="flex justify-between items-center py-1.5 text-xs">
-                    <span className="font-medium">{formatDateDay(a.fecha)}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      a.estado === "asistió" ? "bg-green-100 text-green-700" :
-                      a.estado === "falta" ? "bg-red-100 text-red-700" :
-                      a.estado === "descanso" ? "bg-slate-100 text-slate-700" : "bg-purple-100 text-purple-700"
-                    }`}>
-                      {a.estado}
-                    </span>
-                  </div>
-                ))
-            )}
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Descanso Laborado (DL):</span>
+            <span className="font-bold text-sky-600">{totalDL}</span>
+          </div>
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Descanso Lab. + Extra (DLE):</span>
+            <span className="font-bold text-indigo-600">{totalDLE}</span>
           </div>
         </div>
 

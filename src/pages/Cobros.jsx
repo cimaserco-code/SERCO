@@ -88,6 +88,7 @@ export default function Cobros() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [kpiMode, setKpiMode] = useState("total");
   const [deleteId, setDeleteId] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
@@ -107,7 +108,20 @@ export default function Cobros() {
       ]);
 
       const activeServicios = allServicios.filter((s) => {
-        if ((s.estado || "activo") !== "activo") return false;
+        const isCurrentlyActive = (s.estado || "activo") === "activo";
+
+        if (!isCurrentlyActive) {
+          // If no deactivation date, exclude it completely
+          if (!s.fecha_baja) return false;
+          
+          // Allow billing generation ONLY for months prior to or equal to the deactivation month
+          const [curYear, curMonth] = currentMonth.split("-").map(Number);
+          const [bajaYear, bajaMonth] = s.fecha_baja.split("-").map(Number);
+          if (curYear < bajaYear) return true;
+          if (curYear === bajaYear && curMonth <= bajaMonth) return true;
+          return false;
+        }
+
         if (!s.fecha_inicio) return true;
         const [curYear, curMonth] = currentMonth.split("-").map(Number);
         const [startYear, startMonth] = s.fecha_inicio.split("-").map(Number);
@@ -326,8 +340,56 @@ export default function Cobros() {
     }
   };
 
+  const totalMontoNormal = filtered.reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
+  const totalIva = totalMontoNormal * 0.16;
+  const totalConIva = totalMontoNormal * 1.16;
+
+  const pagadoNormal = filtered.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
+  const pagadoIva = pagadoNormal * 0.16;
+  const pagadoTotal = pagadoNormal * 1.16;
+
+  const pendienteNormal = filtered.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
+  const pendienteIva = pendienteNormal * 0.16;
+  const pendienteTotal = pendienteNormal * 1.16;
+
   return (
     <div className="space-y-4">
+
+      {/* KPI Cards Panel */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className={`cursor-pointer transition-all ${kpiMode === "normal" ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:bg-muted/30"}`} onClick={() => setKpiMode("normal")}>
+          <CardContent className="pt-6">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Subtotal (Normal)</p>
+            <h3 className="text-2xl font-bold mt-1 text-slate-800">${totalMontoNormal.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</h3>
+            <div className="flex justify-between text-xs text-muted-foreground mt-2">
+              <span>Pagado: ${pagadoNormal.toLocaleString("es-MX")}</span>
+              <span>Pendiente: ${pendienteNormal.toLocaleString("es-MX")}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={`cursor-pointer transition-all ${kpiMode === "iva" ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:bg-muted/30"}`} onClick={() => setKpiMode("iva")}>
+          <CardContent className="pt-6">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">IVA (16%)</p>
+            <h3 className="text-2xl font-bold mt-1 text-amber-600">${totalIva.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</h3>
+            <div className="flex justify-between text-xs text-muted-foreground mt-2">
+              <span>Pagado: ${pagadoIva.toLocaleString("es-MX")}</span>
+              <span>Pendiente: ${pendienteIva.toLocaleString("es-MX")}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={`cursor-pointer transition-all ${kpiMode === "total" ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:bg-muted/30"}`} onClick={() => setKpiMode("total")}>
+          <CardContent className="pt-6">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Total (Con IVA)</p>
+            <h3 className="text-2xl font-bold mt-1 text-emerald-600">${totalConIva.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</h3>
+            <div className="flex justify-between text-xs text-muted-foreground mt-2">
+              <span>Pagado: ${pagadoTotal.toLocaleString("es-MX")}</span>
+              <span>Pendiente: ${pendienteTotal.toLocaleString("es-MX")}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-4">
@@ -367,7 +429,7 @@ export default function Cobros() {
               <TableHead>Servicio</TableHead>
               <TableHead>Mes</TableHead>
               <TableHead>Fecha Factura</TableHead>
-              <TableHead className="text-right">Monto</TableHead>
+              <TableHead className="text-right">Total (Con IVA)</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Fecha Límite</TableHead>
               <TableHead>Fecha Pago</TableHead>
@@ -388,8 +450,8 @@ export default function Cobros() {
                   <TableCell className="font-medium">{item.servicio_nombre || "—"}</TableCell>
                   <TableCell className="capitalize">{formatMes(item.mes)}</TableCell>
                   <TableCell>{item.fecha_factura || "—"}</TableCell>
-                  <TableCell className="text-right">
-                    {item.monto != null ? `$${Number(item.monto).toLocaleString("es-MX")}` : "—"}
+                  <TableCell className="text-right font-semibold">
+                    {item.monto != null ? `$${(Number(item.monto) * 1.16).toLocaleString("es-MX", { minimumFractionDigits: 2 })}` : "—"}
                   </TableCell>
                   <TableCell>{estadoBadge(item.estado)}</TableCell>
                   <TableCell>{item.fecha_limite_pago || "—"}</TableCell>
@@ -428,8 +490,18 @@ export default function Cobros() {
               <Input type="date" value={form.fecha_factura} onChange={(e) => setForm({ ...form, fecha_factura: e.target.value })} />
             </div>
             <div>
-              <Label>Monto</Label>
+              <Label>Monto Normal (Sin IVA)</Label>
               <Input type="number" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>IVA (16%)</Label>
+                <Input value={form.monto ? `$${(Number(form.monto) * 0.16).toLocaleString("es-MX", { minimumFractionDigits: 2 })}` : "$0.00"} disabled className="bg-muted" />
+              </div>
+              <div>
+                <Label>Total (Monto + IVA)</Label>
+                <Input value={form.monto ? `$${(Number(form.monto) * 1.16).toLocaleString("es-MX", { minimumFractionDigits: 2 })}` : "$0.00"} disabled className="bg-muted font-bold text-primary" />
+              </div>
             </div>
             <div>
               <Label>Estado</Label>

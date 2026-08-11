@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -78,6 +78,8 @@ export default function Empleados() {
   const [bajaConfirmId, setBajaConfirmId] = useState(null);
   const [reingresoConfirmId, setReingresoConfirmId] = useState(null);
   const [motivoBajaInput, setMotivoBajaInput] = useState("");
+  const [sortField, setSortField] = useState("nombre_completo");
+  const [sortDirection, setSortDirection] = useState("asc");
 
   useEffect(() => { load(); }, []);
 
@@ -108,6 +110,74 @@ export default function Empleados() {
   // Divide into Active and Bajas
   const activos = filtered.filter(item => !item.fecha_baja || (item.fecha_reingreso && item.fecha_reingreso >= item.fecha_baja));
   const bajas = filtered.filter(item => item.fecha_baja && (!item.fecha_reingreso || item.fecha_baja > item.fecha_reingreso));
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const renderSortIcon = (field) => {
+    if (sortField !== field) return <ChevronsUpDown className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />;
+    return sortDirection === "asc"
+      ? <ChevronUp className="w-3.5 h-3.5 text-primary shrink-0" />
+      : <ChevronDown className="w-3.5 h-3.5 text-primary shrink-0" />;
+  };
+
+  const sortItems = (list) => {
+    return [...list].sort((a, b) => {
+      let valA = a[sortField];
+      let valB = b[sortField];
+
+      if (valA == null) valA = "";
+      if (valB == null) valB = "";
+
+      if (sortField === "sueldo") {
+        return sortDirection === "asc" ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+      }
+
+      if (sortField === "servicio_ubicacion") {
+        if (!valA && valB) return 1;
+        if (valA && !valB) return -1;
+      }
+
+      valA = String(valA).toLowerCase();
+      valB = String(valB).toLowerCase();
+
+      return sortDirection === "asc"
+        ? valA.localeCompare(valB, undefined, { numeric: true })
+        : valB.localeCompare(valA, undefined, { numeric: true });
+    });
+  };
+
+  const sortedActivos = sortItems(activos);
+  const sortedBajas = sortItems(bajas);
+
+  const getServiceRowColor = (serviceName) => {
+    if (user?.email !== "sercoseguridad45@gmail.com") return "";
+    if (!serviceName) return "bg-slate-50/40 dark:bg-slate-900/10";
+    
+    const colors = [
+      "bg-sky-50/70 hover:bg-sky-100/70 dark:bg-sky-950/20 text-sky-950 dark:text-sky-100 border-sky-100 dark:border-sky-900/50",
+      "bg-emerald-50/70 hover:bg-emerald-100/70 dark:bg-emerald-950/20 text-emerald-950 dark:text-emerald-100 border-emerald-100 dark:border-emerald-900/50",
+      "bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/20 text-amber-950 dark:text-amber-100 border-amber-100 dark:border-amber-900/50",
+      "bg-rose-50/70 hover:bg-rose-100/70 dark:bg-rose-950/20 text-rose-950 dark:text-rose-100 border-rose-100 dark:border-rose-900/50",
+      "bg-indigo-50/70 hover:bg-indigo-100/70 dark:bg-indigo-950/20 text-indigo-950 dark:text-indigo-100 border-indigo-100 dark:border-indigo-900/50",
+      "bg-teal-50/70 hover:bg-teal-100/70 dark:bg-teal-950/20 text-teal-950 dark:text-teal-100 border-teal-100 dark:border-teal-900/50",
+      "bg-violet-50/70 hover:bg-violet-100/70 dark:bg-violet-950/20 text-violet-950 dark:text-violet-100 border-violet-100 dark:border-violet-900/50",
+      "bg-orange-50/70 hover:bg-orange-100/70 dark:bg-orange-950/20 text-orange-950 dark:text-orange-100 border-orange-100 dark:border-orange-900/50",
+    ];
+
+    let hash = 0;
+    for (let i = 0; i < serviceName.length; i++) {
+      hash = serviceName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
+  };
 
   const exportToExcel = () => {
     const listToExport = activeTab === "activos" ? activos : bajas;
@@ -360,12 +430,28 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nombre</TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("nombre_completo")}>
+                    <div className="flex items-center gap-1.5">
+                      Nombre {renderSortIcon("nombre_completo")}
+                    </div>
+                  </TableHead>
                   <TableHead>Sede</TableHead>
                   <TableHead>Puesto</TableHead>
-                  <TableHead>Fecha Ingreso</TableHead>
-                  <TableHead className="text-right">Sueldo</TableHead>
-                  <TableHead>Servicio</TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("fecha_ingreso")}>
+                    <div className="flex items-center gap-1.5">
+                      Fecha Ingreso {renderSortIcon("fecha_ingreso")}
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-right cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("sueldo")}>
+                    <div className="flex items-center justify-end gap-1.5">
+                      Sueldo {renderSortIcon("sueldo")}
+                    </div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("servicio_ubicacion")}>
+                    <div className="flex items-center gap-1.5">
+                      Servicio {renderSortIcon("servicio_ubicacion")}
+                    </div>
+                  </TableHead>
                   <TableHead>Uniformes</TableHead>
                   <TableHead className="text-center">Actas</TableHead>
                   
@@ -374,13 +460,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               <TableBody>
                 {loading ? (
                   <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
-                ) : activos.length === 0 ? (
+                ) : sortedActivos.length === 0 ? (
                   <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
                 ) : (
-                  activos.map((item) => (
+                  sortedActivos.map((item) => (
                     <TableRow
                       key={item.id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                       onClick={() => setViewEmpleado(item)}
                     >
                       <TableCell className="font-medium">{item.nombre_completo}</TableCell>
@@ -398,11 +484,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          
-                        </div>
+                        <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()} />
                       </TableCell>
                     </TableRow>
                   ))
@@ -417,10 +499,22 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nombre</TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("nombre_completo")}>
+                    <div className="flex items-center gap-1.5">
+                      Nombre {renderSortIcon("nombre_completo")}
+                    </div>
+                  </TableHead>
                   <TableHead>Sede</TableHead>
-                  <TableHead>Fecha Ingreso</TableHead>
-                  <TableHead>Fecha Baja</TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("fecha_ingreso")}>
+                    <div className="flex items-center gap-1.5">
+                      Fecha Ingreso {renderSortIcon("fecha_ingreso")}
+                    </div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("fecha_baja")}>
+                    <div className="flex items-center gap-1.5 text-destructive">
+                      Fecha Baja {renderSortIcon("fecha_baja")}
+                    </div>
+                  </TableHead>
                   <TableHead>Días Laborados</TableHead>
                   <TableHead className="text-right">Finiquito Est.</TableHead>
                   <TableHead className="text-center">Actas</TableHead>
@@ -430,15 +524,15 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               <TableBody>
                 {loading ? (
                   <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
-                ) : bajas.length === 0 ? (
+                ) : sortedBajas.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
                 ) : (
-                  bajas.map((item) => {
+                  sortedBajas.map((item) => {
                     const est = getFiniquitoEstimation(item.fecha_ingreso, item.fecha_baja, item.sueldo);
                     return (
                       <TableRow
                         key={item.id}
-                        className="cursor-pointer hover:bg-muted/50"
+                        className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                         onClick={() => setViewEmpleado(item)}
                       >
                         <TableCell className="font-medium">{item.nombre_completo}</TableCell>

@@ -123,9 +123,20 @@ export default function Inventario() {
     (item.ubicacion || "").toLowerCase().includes(search.toLowerCase())
   );
 
+  const getDisplayCantidad = (item) => {
+    if (item.categoria === "Uniforme") {
+      const itemVars = variantes.filter((v) => v.inventario_item_id === item.id);
+      if (itemVars.length > 0) {
+        return itemVars.reduce((sum, v) => sum + (Number(v.cantidad) || 0), 0);
+      }
+    }
+    return item.cantidad ?? 0;
+  };
+
   function openCreate() {
     setEditing(null);
-    setForm({ ...emptyForm, sede_id: defaultSedeId });
+    const defaultCategoria = activeCategoryTab === "Solicitudes" ? "Uniforme" : activeCategoryTab;
+    setForm({ ...emptyForm, sede_id: defaultSedeId, categoria: defaultCategoria });
     setFormVariantes([]);
     setModalOpen(true);
   }
@@ -177,9 +188,14 @@ function eliminarVariante(index) {
   setSaving(true);
 
   try {
+    const isUniforme = form.categoria === "Uniforme";
+    const totalVariantQty = isUniforme && formVariantes.length > 0
+      ? formVariantes.reduce((sum, v) => sum + (v.cantidad === "" ? 0 : Number(v.cantidad)), 0)
+      : null;
+
     const payload = {
       ...form,
-      cantidad: form.cantidad === "" ? 0 : Number(form.cantidad),
+      cantidad: totalVariantQty !== null ? totalVariantQty : (form.cantidad === "" ? 0 : Number(form.cantidad)),
     };
 
     let itemGuardado;
@@ -351,7 +367,7 @@ function eliminarVariante(index) {
                           <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                         )}
                         <TableCell>{item.categoria || "—"}</TableCell>
-                        <TableCell className="text-right">{item.cantidad ?? "—"}</TableCell>
+                        <TableCell className="text-right">{getDisplayCantidad(item)}</TableCell>
                         <TableCell className="max-w-[250px] truncate">{item.descripcion || "—"}</TableCell>
                       </TableRow>
                     ))
@@ -464,28 +480,12 @@ function eliminarVariante(index) {
                 />
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Categoría</Label>
-                <Select
-                  value={form.categoria}
-                  onValueChange={(v) => setForm({ ...form, categoria: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Uniforme">Uniforme</SelectItem>
-                    <SelectItem value="Papelería">Papelería</SelectItem>
-                    <SelectItem value="Material extra">Material extra</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {form.categoria !== "Uniforme" && (
               <div>
                 <Label>Cantidad</Label>
                 <Input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} />
               </div>
-            </div>
+            )}
             <div>
               <Label>Descripción</Label>
               <Input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />

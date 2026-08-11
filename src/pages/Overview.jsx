@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 
 export default function Overview() {
+  const navigate = useNavigate();
   const { isSuperAdmin, userSedeIds, showSedeSelector, sedeFilter } = useSedeScope();
   const { canView } = usePermissions();
   const [loading, setLoading] = useState(true);
@@ -38,6 +40,7 @@ export default function Overview() {
 
   const [selectedSedeId, setSelectedSedeId] = useState("all");
   const [sedes, setSedes] = useState([]);
+  const [facturasKpiView, setFacturasKpiView] = useState("total"); // "total", "iva", "normal"
   const [rawData, setRawData] = useState({
     emp: [],
     serv: [],
@@ -200,30 +203,57 @@ export default function Overview() {
       {/* Grid containing module KPIs */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Facturas */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/facturas")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-emerald-500" /> Facturas
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex gap-1 mb-2 bg-muted p-0.5 rounded-md text-[10px] w-fit" onClick={(e) => e.stopPropagation()}>
+              <button
+                className={`px-2 py-0.5 rounded-sm transition-all ${facturasKpiView === "total" ? "bg-background shadow-sm font-semibold text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setFacturasKpiView("total")}
+              >
+                Normal + IVA
+              </button>
+              <button
+                className={`px-2 py-0.5 rounded-sm transition-all ${facturasKpiView === "normal" ? "bg-background shadow-sm font-semibold text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setFacturasKpiView("normal")}
+              >
+                Normal
+              </button>
+              <button
+                className={`px-2 py-0.5 rounded-sm transition-all ${facturasKpiView === "iva" ? "bg-background shadow-sm font-semibold text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setFacturasKpiView("iva")}
+              >
+                IVA
+              </button>
+            </div>
+
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Pagado</span>
-              <span className="font-semibold text-emerald-600">${loading ? "—" : totalCobrado.toLocaleString("es-MX")}</span>
+              <span className="font-semibold text-emerald-600">
+                ${loading ? "—" : (totalCobrado * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+              </span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Pendiente</span>
-              <span className="font-semibold text-amber-600">${loading ? "—" : totalPendiente.toLocaleString("es-MX")}</span>
+              <span className="font-semibold text-amber-600">
+                ${loading ? "—" : (totalPendiente * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Total Facturado</span>
-              <span className="font-bold text-blue-600">${loading ? "—" : (totalCobrado + totalPendiente).toLocaleString("es-MX")}</span>
+              <span className="font-bold text-blue-600">
+                ${loading ? "—" : ((totalCobrado + totalPendiente) * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+              </span>
             </div>
           </CardContent>
         </Card>
 
         {/* Egresos / Gastos */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/egresos")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <TrendingDown className="w-5 h-5 text-rose-500" /> Gastos y Egresos
@@ -244,7 +274,7 @@ export default function Overview() {
         </Card>
 
         {/* Empleados */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/empleados")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-500" /> Personal
@@ -267,7 +297,7 @@ export default function Overview() {
         </Card>
 
         {/* Servicios */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/servicios")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Briefcase className="w-5 h-5 text-indigo-500" /> Servicios
@@ -286,7 +316,7 @@ export default function Overview() {
         </Card>
 
         {/* Asistencias */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/asistencias")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-teal-500" /> Registro de Asistencias
@@ -305,7 +335,7 @@ export default function Overview() {
         </Card>
 
         {/* Inventario & Documentos */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/inventario")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Package className="w-5 h-5 text-violet-500" /> Almacén
@@ -330,7 +360,7 @@ export default function Overview() {
         </Card>
 
         {/* Nóminas */}
-        <Card className="hover:shadow-md transition-shadow">
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/nominas")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Calculator className="w-5 h-5 text-indigo-600" /> Nóminas

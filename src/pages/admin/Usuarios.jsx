@@ -194,6 +194,7 @@ export default function Usuarios() {
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
+              <TableHead>Username</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Rol</TableHead>
               <TableHead>Sedes</TableHead>
@@ -203,13 +204,14 @@ export default function Usuarios() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No hay usuarios. Invita usuarios con el botón "Invitar".</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay usuarios. Invita usuarios con el botón "Invitar".</TableCell></TableRow>
             ) : (
               filtered.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell className="font-medium">{u.full_name || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{u.nombre || "—"}</TableCell>
                   <TableCell>{u.email || "—"}</TableCell>
                   <TableCell>
                     <Badge className="bg-slate-100 text-slate-700 capitalize">

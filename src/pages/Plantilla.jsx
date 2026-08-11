@@ -38,6 +38,7 @@ export default function Plantilla() {
   const [loading, setLoading] = useState(true);
   const [addModalTurno, setAddModalTurno] = useState(null);
   const [newEmpleado, setNewEmpleado] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   
@@ -88,6 +89,7 @@ export default function Plantilla() {
   function openAdd(turnoKey) {
     setAddModalTurno(turnoKey);
     setNewEmpleado("");
+    setSearchTerm("");
   }
 
   async function handleAdd() {
@@ -341,17 +343,42 @@ export default function Plantilla() {
           <div className="space-y-3 py-2">
             {empleados.length > 0 && (
               <div>
-                <Label>Seleccionar empleado</Label>
-                <Select value={newEmpleado} onValueChange={setNewEmpleado}>
-                  <SelectTrigger><SelectValue placeholder="Buscar..." /></SelectTrigger>
-                  <SelectContent>
-                    {empleados.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.nombre_completo}>
-                        {emp.nombre_completo}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Escribe el nombre del empleado</Label>
+                <Input
+                  type="text"
+                  placeholder="Buscar empleado por nombre..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="mb-2"
+                />
+                <div className="border rounded-md max-h-48 overflow-y-auto divide-y bg-background">
+                  {(() => {
+                    const filtered = empleados.filter((emp) =>
+                      (emp.nombre_completo || "").toLowerCase().includes(searchTerm.toLowerCase())
+                    );
+                    if (filtered.length === 0) {
+                      return (
+                        <p className="text-xs text-muted-foreground p-3 text-center">
+                          No se encontraron empleados activos
+                        </p>
+                      );
+                    }
+                    return filtered.map((emp) => {
+                      const isSelected = newEmpleado === emp.nombre_completo;
+                      return (
+                        <div
+                          key={emp.id}
+                          onClick={() => setNewEmpleado(emp.nombre_completo)}
+                          className={`p-2 text-sm cursor-pointer transition-colors hover:bg-muted ${
+                            isSelected ? "bg-primary/10 font-medium text-primary" : ""
+                          }`}
+                        >
+                          {emp.nombre_completo}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
             )}
           </div>

@@ -192,7 +192,20 @@ export const sercoApi = {
       };
     },
 
-    async loginViaEmailPassword(email, password) {
+    async loginViaEmailPassword(emailOrUsername, password) {
+      let email = emailOrUsername;
+      if (!emailOrUsername.includes('@')) {
+        const { data: profile, error: profileErr } = await supabase
+          .from('profiles')
+          .select('email')
+          .or(`nombre.ilike."${emailOrUsername}",full_name.ilike."${emailOrUsername}"`)
+          .maybeSingle();
+
+        if (profileErr || !profile?.email) {
+          throw new Error("Usuario o correo no encontrado");
+        }
+        email = profile.email;
+      }
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       return data;
@@ -232,6 +245,41 @@ export const sercoApi = {
       // Supabase uses standard access token when redirecting for password reset.
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
+      return true;
+    },
+
+    async updateProfile({ email, password, full_name, username, userId }) {
+      const updates = {};
+      if (password) updates.password = password;
+      if (email) updates.email = email;
+      
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase.auth.updateUser(updates);
+        if (error) throw error;
+      }
+
+      const profileUpdates = {};
+      if (full_name) profileUpdates.full_name = full_name;
+      if (username) profileUpdates.nombre = username;
+
+      if (Object.keys(profileUpdates).length > 0 && userId) {
+        const { error } = await supabase
+          .from('profiles')
+          .update(profileUpdates)
+          .eq('id', userId);
+        if (error) throw error;
+      }
+      return true;
+    },
+
+    async deleteAccount(userId) {
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+      if (profileErr) throw profileErr;
+
+      await supabase.auth.signOut();
       return true;
     },
 

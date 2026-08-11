@@ -170,8 +170,8 @@ function cleanAddressForGeocoding(address, sedeName) {
 }
 
 const emptyForm = {
-  nombre: "", direccion: "", admin_nombre: "", telefono: "",correo:"",fecha_inicio: "", estado: "activo", sede_id: "",
-  latitud: "", longitud: ""
+  nombre: "", direccion: "", admin_nombre: "", telefono: "",correo:"",fecha_inicio: "", estado: "activo", fecha_baja: "", sede_id: "",
+  dia_costo: "", dia_pago: "", costo: "", pago: "", turnos_autorizados: ""
 };
 
 export default function Servicios() {
@@ -313,6 +313,7 @@ export default function Servicios() {
       ...emptyForm, 
       ...item, 
       estado: item.estado || "activo",
+      fecha_baja: item.fecha_baja ?? "",
       latitud: item.latitud ?? "",
       longitud: item.longitud ?? ""
     });
@@ -347,6 +348,7 @@ export default function Servicios() {
         correo: (form.correo || "").trim() || null,
         estado: form.estado || "activo",
         fecha_inicio: form.fecha_inicio || null,
+        fecha_baja: form.estado === "suspendido" ? (form.fecha_baja || null) : null,
         latitud: finalLat,
         longitud: finalLon
       };
@@ -685,13 +687,24 @@ export default function Servicios() {
                 />
               </div>
               <Label className="mt-2 block">Estado</Label>
-              <Select value={form.estado} onValueChange={(v) => setForm({ ...form, estado: v })}>
+              <Select value={form.estado} onValueChange={(v) => setForm({ ...form, estado: v, fecha_baja: v === "suspendido" ? new Date().toISOString().slice(0, 10) : "" })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="activo">Activo</SelectItem>
-                  <SelectItem value="suspendido">Suspendido</SelectItem>
+                  <SelectItem value="suspendido">Baja / Suspendido</SelectItem>
                 </SelectContent>
               </Select>
+              {form.estado === "suspendido" && (
+                <div className="mt-2">
+                  <Label>Fecha de Baja *</Label>
+                  <Input
+                    type="date"
+                    value={form.fecha_baja}
+                    onChange={(e) => setForm({ ...form, fecha_baja: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -757,12 +770,21 @@ export default function Servicios() {
               </p>
             </div>
 
-            <div>
+             <div>
               <Label>Estado</Label>
               <div className="mt-1">
                 {estadoBadge(viewItem?.estado)}
               </div>
             </div>
+
+            {viewItem?.estado === "suspendido" && viewItem?.fecha_baja && (
+              <div>
+                <Label>Fecha de Baja</Label>
+                <p className="text-sm text-muted-foreground">
+                  {viewItem.fecha_baja}
+                </p>
+              </div>
+            )}
 
           </div>
 
