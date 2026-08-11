@@ -209,9 +209,9 @@ export default function Usuarios() {
               <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay usuarios. Invita usuarios con el botón "Invitar".</TableCell></TableRow>
             ) : (
               filtered.map((u) => (
-                <TableRow key={u.id}>
+                 <TableRow key={u.id}>
                   <TableCell className="font-medium">{u.full_name || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{u.nombre || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{u.usuario || u.email?.split("@")[0] || "—"}</TableCell>
                   <TableCell>{u.email || "—"}</TableCell>
                   <TableCell>
                     <Badge className="bg-slate-100 text-slate-700 capitalize">

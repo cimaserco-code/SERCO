@@ -158,8 +158,7 @@ export const sercoApi = {
         .insert({
           email,
           role: role || 'user',
-          estado: 'active',
-          nombre: email.split('@')[0]
+          estado: 'active'
         })
         .select()
         .single();
@@ -180,7 +179,7 @@ export const sercoApi = {
         .select('*')
         .eq('id', user.id)
         .single();
-        
+         
       return {
         id: user.id,
         email: user.email,
@@ -188,6 +187,7 @@ export const sercoApi = {
         sede_id: profile?.sede_ids?.[0] || null,
         sede_ids: profile?.sede_ids || [],
         full_name: profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0],
+        nombre: profile?.usuario || user.user_metadata?.username || user.email.split('@')[0],
         estado: profile?.estado || 'active'
       };
     },
@@ -198,7 +198,7 @@ export const sercoApi = {
         const { data: profile, error: profileErr } = await supabase
           .from('profiles')
           .select('email')
-          .or(`nombre.ilike."${emailOrUsername}",full_name.ilike."${emailOrUsername}"`)
+          .or(`usuario.ilike."${emailOrUsername}",full_name.ilike."${emailOrUsername}"`)
           .maybeSingle();
 
         if (profileErr || !profile?.email) {
@@ -253,6 +253,14 @@ export const sercoApi = {
       if (password) updates.password = password;
       if (email) updates.email = email;
       
+      const meta = {};
+      if (username) meta.username = username;
+      if (full_name) meta.full_name = full_name;
+      
+      if (Object.keys(meta).length > 0) {
+        updates.data = meta;
+      }
+      
       if (Object.keys(updates).length > 0) {
         const { error } = await supabase.auth.updateUser(updates);
         if (error) throw error;
@@ -260,7 +268,7 @@ export const sercoApi = {
 
       const profileUpdates = {};
       if (full_name) profileUpdates.full_name = full_name;
-      if (username) profileUpdates.nombre = username;
+      if (username) profileUpdates.usuario = username;
 
       if (Object.keys(profileUpdates).length > 0 && userId) {
         const { error } = await supabase
