@@ -16,7 +16,9 @@ const tableMap = {
   Comunicado: 'comunicados',
   Nominas: 'nominas',
   Vacante: 'vacantes',
-  SolicitudInventario: 'solicitudes_inventario'
+  SolicitudInventario: 'solicitudes_inventario',
+  Rondin: 'rondines',
+  ReporteSupervision: 'reportes_supervision'
 };
 
 function formatSupabaseError(error) {
@@ -62,6 +64,10 @@ class EntityService {
         if (val !== undefined && val !== null) {
           if (typeof val === 'object' && '$in' in val) {
             query = query.in(key, val['$in']);
+          } else if (typeof val === 'object' && '$gte' in val) {
+            query = query.gte(key, val['$gte']);
+          } else if (typeof val === 'object' && '$lte' in val) {
+            query = query.lte(key, val['$lte']);
           } else {
             query = query.eq(key, val);
           }

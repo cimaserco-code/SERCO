@@ -360,10 +360,10 @@ export default function Cobros() {
         <Card className={`cursor-pointer transition-all ${kpiMode === "normal" ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:bg-muted/30"}`} onClick={() => setKpiMode("normal")}>
           <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted-foreground uppercase">Subtotal (Normal)</p>
-            <h3 className="text-2xl font-bold mt-1 text-slate-800">${totalMontoNormal.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</h3>
+            <h3 className="text-2xl font-bold mt-1 text-slate-800">${totalMontoNormal.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</h3>
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
-              <span>Pagado: ${pagadoNormal.toLocaleString("es-MX")}</span>
-              <span>Pendiente: ${pendienteNormal.toLocaleString("es-MX")}</span>
+              <span>Pagado: ${pagadoNormal.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+              <span>Pendiente: ${pendienteNormal.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
             </div>
           </CardContent>
         </Card>
@@ -371,10 +371,10 @@ export default function Cobros() {
         <Card className={`cursor-pointer transition-all ${kpiMode === "iva" ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:bg-muted/30"}`} onClick={() => setKpiMode("iva")}>
           <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted-foreground uppercase">IVA (16%)</p>
-            <h3 className="text-2xl font-bold mt-1 text-amber-600">${totalIva.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</h3>
+            <h3 className="text-2xl font-bold mt-1 text-amber-600">${totalIva.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</h3>
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
-              <span>Pagado: ${pagadoIva.toLocaleString("es-MX")}</span>
-              <span>Pendiente: ${pendienteIva.toLocaleString("es-MX")}</span>
+              <span>Pagado: ${pagadoIva.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+              <span>Pendiente: ${pendienteIva.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
             </div>
           </CardContent>
         </Card>
@@ -382,10 +382,10 @@ export default function Cobros() {
         <Card className={`cursor-pointer transition-all ${kpiMode === "total" ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "hover:bg-muted/30"}`} onClick={() => setKpiMode("total")}>
           <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted-foreground uppercase">Total (Con IVA)</p>
-            <h3 className="text-2xl font-bold mt-1 text-emerald-600">${totalConIva.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</h3>
+            <h3 className="text-2xl font-bold mt-1 text-emerald-600">${totalConIva.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</h3>
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
-              <span>Pagado: ${pagadoTotal.toLocaleString("es-MX")}</span>
-              <span>Pendiente: ${pendienteTotal.toLocaleString("es-MX")}</span>
+              <span>Pagado: ${pagadoTotal.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+              <span>Pendiente: ${pendienteTotal.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
             </div>
           </CardContent>
         </Card>
@@ -451,7 +451,7 @@ export default function Cobros() {
                   <TableCell className="capitalize">{formatMes(item.mes)}</TableCell>
                   <TableCell>{item.fecha_factura || "—"}</TableCell>
                   <TableCell className="text-right font-semibold">
-                    {item.monto != null ? `$${(Number(item.monto) * 1.16).toLocaleString("es-MX", { minimumFractionDigits: 2 })}` : "—"}
+                    {item.monto != null ? `$${Math.round(Number(item.monto) * 1.16).toLocaleString("es-MX")}` : "—"}
                   </TableCell>
                   <TableCell>{estadoBadge(item.estado)}</TableCell>
                   <TableCell>{item.fecha_limite_pago || "—"}</TableCell>
@@ -496,11 +496,11 @@ export default function Cobros() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>IVA (16%)</Label>
-                <Input value={form.monto ? `$${(Number(form.monto) * 0.16).toLocaleString("es-MX", { minimumFractionDigits: 2 })}` : "$0.00"} disabled className="bg-muted" />
+                <Input value={form.monto ? `$${Math.round(Number(form.monto) * 0.16).toLocaleString("es-MX")}` : "$0"} disabled className="bg-muted" />
               </div>
               <div>
                 <Label>Total (Monto + IVA)</Label>
-                <Input value={form.monto ? `$${(Number(form.monto) * 1.16).toLocaleString("es-MX", { minimumFractionDigits: 2 })}` : "$0.00"} disabled className="bg-muted font-bold text-primary" />
+                <Input value={form.monto ? `$${Math.round(Number(form.monto) * 1.16).toLocaleString("es-MX")}` : "$0"} disabled className="bg-muted font-bold text-primary" />
               </div>
             </div>
             <div>

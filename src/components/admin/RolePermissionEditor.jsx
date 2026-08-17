@@ -15,6 +15,7 @@ const MODULES = [
   { key: "egresos", label: "Egresos", actions: ["view", "create", "edit", "delete"] },
   { key: "comunicados", label: "Comunicados", actions: ["view", "create", "edit", "delete"] },
   { key: "nominas", label: "Nóminas", actions: ["view", "create", "edit", "delete"] },
+  { key: "supervisiones", label: "Supervisiones", actions: ["view", "create", "edit", "delete"] },
   { key: "overview", label: "Overview", actions: ["view"] },
   { key: "kpi_financiero", label: "KPI Financiero (Inicio)", actions: ["view"] },
   { key: "kpi_rh", label: "KPI Recursos Humanos (Inicio)", actions: ["view"] },

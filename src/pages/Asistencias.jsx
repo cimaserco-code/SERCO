@@ -24,6 +24,8 @@ const estadosConfig = {
   extra: { label: "E", color: "bg-purple-500 hover:bg-purple-600 text-white font-bold" },
   descanso_laborado: { label: "DL", color: "bg-sky-500 hover:bg-sky-600 text-white font-bold" },
   descanso_extra: { label: "DLE", color: "bg-indigo-500 hover:bg-indigo-600 text-white font-bold" },
+  vacaciones: { label: "V", color: "bg-teal-500 hover:bg-teal-600 text-white font-bold" },
+  justificada: { label: "J", color: "bg-amber-500 hover:bg-amber-600 text-white font-bold" },
 };
 
 export default function Asistencias() {
@@ -42,15 +44,29 @@ export default function Asistencias() {
 
   useEffect(() => {
     loadData();
-  }, [sedeFilter]);
+  }, [sedeFilter, currentMonth]);
 
   async function loadData() {
     setLoading(true);
     try {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const [yearStr, monthStr] = currentMonth.split("-");
+      const y = parseInt(yearStr);
+      const m = parseInt(monthStr) - 1;
+      const daysInM = new Date(y, m + 1, 0).getDate();
+      const startDate = `${currentMonth}-01`;
+      const endDate = `${currentMonth}-${String(daysInM).padStart(2, '0')}`;
+
+      const filterObj = {
+        ...sedeFilter,
+        fecha: {
+          '$gte': startDate,
+          '$lte': endDate
+        }
+      };
+
       const [emps, asists] = await Promise.all([
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
-        sercoApi.entities.Asistencia.list().catch(() => [])
+        sercoApi.entities.Asistencia.filter(filterObj).catch(() => [])
       ]);
       // Only keep active employees (who didn't get given "baja" or did a re-entry after their last baja)
       const activeEmps = emps.filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja));
@@ -136,7 +152,21 @@ export default function Asistencias() {
         });
       }
       // Reload from DB to verify sync
-      const updatedAsists = await sercoApi.entities.Asistencia.list();
+      const [yearStr, monthStr] = currentMonth.split("-");
+      const y = parseInt(yearStr);
+      const m = parseInt(monthStr) - 1;
+      const daysInM = new Date(y, m + 1, 0).getDate();
+      const startDate = `${currentMonth}-01`;
+      const endDate = `${currentMonth}-${String(daysInM).padStart(2, '0')}`;
+
+      const filterObj = {
+        ...sedeFilter,
+        fecha: {
+          '$gte': startDate,
+          '$lte': endDate
+        }
+      };
+      const updatedAsists = await sercoApi.entities.Asistencia.filter(filterObj);
       setAsistencias(updatedAsists);
     } catch (e) {
       console.error("Error al guardar asistencia:", e);
@@ -229,6 +259,14 @@ export default function Asistencias() {
           <div className="flex items-center gap-1.5">
             <span className="w-6 h-6 flex items-center justify-center rounded bg-indigo-500 text-white font-bold text-[10px]">DLE</span>
             <span>Descanso Lab. + Extra</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-6 h-6 flex items-center justify-center rounded bg-teal-500 text-white font-bold text-[10px]">V</span>
+            <span>Vacaciones</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-6 h-6 flex items-center justify-center rounded bg-amber-500 text-white font-bold text-[10px]">J</span>
+            <span>Justificación</span>
           </div>
           <div className="ml-auto text-xs text-muted-foreground self-center italic">
             * Haz clic en cualquier casilla para cambiar o alternar la asistencia.
@@ -329,6 +367,8 @@ export default function Asistencias() {
                                   <SelectItem value="extra">Extra</SelectItem>
                                   <SelectItem value="descanso_laborado">Descanso Laborado</SelectItem>
                                   <SelectItem value="descanso_extra">Descanso Lab. + Extra</SelectItem>
+                                  <SelectItem value="vacaciones">Vacaciones</SelectItem>
+                                  <SelectItem value="justificada">Justificación</SelectItem>
                                 </SelectContent>
                               </Select>
                             </TableCell>
@@ -367,6 +407,8 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
   const totalE = empAsists.filter(a => a.estado === "extra").length;
   const totalDL = empAsists.filter(a => a.estado === "descanso_laborado").length;
   const totalDLE = empAsists.filter(a => a.estado === "descanso_extra").length;
+  const totalV = empAsists.filter(a => a.estado === "vacaciones").length;
+  const totalJ = empAsists.filter(a => a.estado === "justificada").length;
   
   const divisor = totalA + totalF + totalDL + totalDLE;
   const punctuality = divisor > 0 ? Math.round(((totalA + totalDL + totalDLE) / divisor) * 100) : 100;
@@ -422,6 +464,14 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
           <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
             <span className="text-muted-foreground">Descanso Lab. + Extra (DLE):</span>
             <span className="font-bold text-indigo-600">{totalDLE}</span>
+          </div>
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Vacaciones (V):</span>
+            <span className="font-bold text-teal-600">{totalV}</span>
+          </div>
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Justificaciones (J):</span>
+            <span className="font-bold text-amber-600">{totalJ}</span>
           </div>
         </div>
 

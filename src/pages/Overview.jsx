@@ -234,19 +234,19 @@ export default function Overview() {
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Pagado</span>
               <span className="font-semibold text-emerald-600">
-                ${loading ? "—" : (totalCobrado * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                ${loading ? "—" : Math.round(totalCobrado * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX")}
               </span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Pendiente</span>
               <span className="font-semibold text-amber-600">
-                ${loading ? "—" : (totalPendiente * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                ${loading ? "—" : Math.round(totalPendiente * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX")}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Total Facturado</span>
               <span className="font-bold text-blue-600">
-                ${loading ? "—" : ((totalCobrado + totalPendiente) * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                ${loading ? "—" : Math.round((totalCobrado + totalPendiente) * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX")}
               </span>
             </div>
           </CardContent>

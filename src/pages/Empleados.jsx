@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -24,6 +24,7 @@ import {
 
 const emptyForm = {
   nombre_completo: "",
+  clabe_bancaria: "",
   fecha_ingreso: "",
   sueldo: "",
   servicio_ubicacion: "",
@@ -56,6 +57,7 @@ const emptyForm = {
   dia_capacitacion: "",
   fecha_montaje: "",
   hospedaje: false,
+  seguro: false,
 };
 
 export default function Empleados() {
@@ -239,13 +241,22 @@ export default function Empleados() {
       ...emptyForm, 
       ...item, 
       sueldo: item.sueldo ?? "",
+      clabe_bancaria: item.clabe_bancaria || "",
       actas_administrativas: String(item.actas_administrativas ?? 0),
       fecha_baja: item.fecha_baja || "",
       uniformes: item.uniformes || "",
-      hospedaje: !!item.hospedaje
+      hospedaje: !!item.hospedaje,
+      seguro: !!item.seguro
     });
     setModalOpen(true);
   }
+
+const hasPendingInfo = (emp) => {
+  if (!emp) return false;
+  const missingPersonal = !emp.curp || !emp.rfc || !emp.nss || !emp.fecha_nacimiento || !emp.telefono;
+  const missingLaboral = (emp.sueldo === null || emp.sueldo === undefined || emp.sueldo === "") || !emp.fecha_ingreso || !emp.sede_id || !emp.puesto || !emp.clabe_bancaria;
+  return missingPersonal || missingLaboral;
+};
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return "—";
@@ -292,6 +303,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     const payload = {
       ...form,
       sueldo: form.sueldo === "" ? null : Number(form.sueldo),
+      clabe_bancaria: form.clabe_bancaria || null,
      actas_administrativas: Number(form.actas_administrativas || 0),
      fecha_ingreso: form.fecha_ingreso || null,
      fecha_nacimiento: form.fecha_nacimiento || null,
@@ -303,7 +315,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       dia_capacitacion: form.dia_capacitacion || null,
       fecha_montaje: form.fecha_montaje || null,
       historial_bajas: form.historial_bajas || null,
-      hospedaje: form.hospedaje ? true : false
+      hospedaje: form.hospedaje ? true : false,
+      seguro: form.seguro ? true : false
      };
 
     console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
@@ -442,9 +455,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       Fecha Ingreso {renderSortIcon("fecha_ingreso")}
                     </div>
                   </TableHead>
-                  <TableHead className="text-right cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("sueldo")}>
-                    <div className="flex items-center justify-end gap-1.5">
-                      Sueldo {renderSortIcon("sueldo")}
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("fecha_nacimiento")}>
+                    <div className="flex items-center gap-1.5">
+                      Edad {renderSortIcon("fecha_nacimiento")}
                     </div>
                   </TableHead>
                   <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("servicio_ubicacion")}>
@@ -452,16 +465,25 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       Servicio {renderSortIcon("servicio_ubicacion")}
                     </div>
                   </TableHead>
-                  <TableHead>Uniformes</TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("telefono")}>
+                    <div className="flex items-center gap-1.5">
+                      Teléfono {renderSortIcon("telefono")}
+                    </div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("seguro")}>
+                    <div className="flex items-center gap-1.5">
+                      Seguro {renderSortIcon("seguro")}
+                    </div>
+                  </TableHead>
                   <TableHead className="text-center">Actas</TableHead>
                   
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedActivos.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
                 ) : (
                   sortedActivos.map((item) => (
                     <TableRow
@@ -469,15 +491,25 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                       onClick={() => setViewEmpleado(item)}
                     >
-                      <TableCell className="font-medium">{item.nombre_completo}</TableCell>
+                      <TableCell className="font-medium flex items-center gap-1.5">
+                        {item.nombre_completo}
+                        {hasPendingInfo(item) && (
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-500 fill-red-100 flex-shrink-0" title="Información personal o laboral pendiente" />
+                        )}
+                      </TableCell>
                       <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                       <TableCell>{item.puesto || "—"}</TableCell>
                       <TableCell>{item.fecha_ingreso || "—"}</TableCell>
-                      <TableCell className="text-right">
-                        {item.sueldo != null ? `$${Number(item.sueldo).toLocaleString("es-MX")}` : "—"}
+                      <TableCell>
+                        {calcularEdad(item.fecha_nacimiento)}
                       </TableCell>
                       <TableCell>{item.servicio_ubicacion || "—"}</TableCell>
-                      <TableCell className="truncate max-w-[150px]">{item.uniformes || "Ninguno"}</TableCell>
+                      <TableCell>{item.telefono || "—"}</TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.seguro ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                          {item.seguro ? "SI" : "NO"}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-center">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.actas_administrativas > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                           {item.actas_administrativas || 0}
@@ -762,6 +794,19 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   }
                 />
               </div>
+              
+              <div>
+                <Label>CLABE Bancaria</Label>
+                <Input
+                  value={form.clabe_bancaria || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      clabe_bancaria: e.target.value,
+                    })
+                  }
+                />
+              </div>
 
               <div>
                 <Label>Teléfono</Label>
@@ -1014,6 +1059,22 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 />
               </div>
 
+              {form.fecha_baja && (
+                <div>
+                  <Label className="text-destructive font-semibold">Fecha de Baja</Label>
+                  <Input
+                    type="date"
+                    value={form.fecha_baja}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        fecha_baja: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              )}
+
               <div>
                 <Label>Medio de Reclutamiento</Label>
                 <Input
@@ -1067,6 +1128,24 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     })
                   }
                 />
+              </div>
+
+              <div className="flex items-center space-x-2 pt-8 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  id="seguro"
+                  checked={!!form.seguro}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      seguro: e.target.checked,
+                    })
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <Label htmlFor="seguro" className="cursor-pointer font-semibold text-sm">
+                  ¿Dado de alta en el seguro? (IMSS)
+                </Label>
               </div>
 
               {sedes.find((s) => s.id === form.sede_id)?.nombre?.toLowerCase() === "monterrey" && (
@@ -1222,6 +1301,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             </p>
           </div>
         )}
+
+        <div>
+          <Label>Seguro (IMSS)</Label>
+          <p className={`text-sm font-semibold ${viewEmpleado?.seguro ? "text-emerald-600" : "text-red-500"}`}>
+            {viewEmpleado?.seguro ? "Sí" : "No"}
+          </p>
+        </div>
 
         {viewEmpleado?.motivo_baja && (
           <div>
@@ -1384,6 +1470,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           <Label>Infonavit</Label>
           <p className="text-sm text-muted-foreground">
             {viewEmpleado?.infonavit || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>CLABE Bancaria</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.clabe_bancaria || "—"}
           </p>
         </div>
 

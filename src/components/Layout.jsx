@@ -8,7 +8,7 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { User as UserIcon, Key, Mail, AlertTriangle } from "lucide-react";
+import { User as UserIcon, Key, Mail, AlertTriangle, Eye } from "lucide-react";
 import { sercoApi } from "@/api/sercoClient";
 
 const flatNavItems = [
@@ -25,6 +25,7 @@ const navigationSections = [
       { to: "/servicios/plantilla", label: "Plantilla", icon: Clock, module: "turnos" },
       { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
       { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
+      { to: "/supervisiones", label: "Supervisiones", icon: Eye, module: "supervisiones" },
     ]
   },
   {
