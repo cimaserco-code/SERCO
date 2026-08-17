@@ -18,6 +18,7 @@ import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
+import { generateContractPDF } from "@/lib/contratoTemplate";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -82,6 +83,22 @@ export default function Empleados() {
   const [motivoBajaInput, setMotivoBajaInput] = useState("");
   const [sortField, setSortField] = useState("nombre_completo");
   const [sortDirection, setSortDirection] = useState("asc");
+
+  // Contract Generation States
+  const [contractEmp, setContractEmp] = useState(null);
+  const [contractForm, setContractForm] = useState({
+    bono_mensual: "2000",
+    beneficiario: "",
+    parentesco: "",
+    porcentaje: "100",
+    duracion_meses: "3"
+  });
+
+  const handleGenerateContract = () => {
+    if (!contractEmp) return;
+    generateContractPDF(contractEmp, contractForm, sedes);
+    setContractEmp(null);
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -1630,6 +1647,24 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 </Button>
               )}
 
+              <Button
+                variant="outline"
+                className="border-indigo-300 text-indigo-600 hover:bg-indigo-50"
+                onClick={() => {
+                  setContractEmp(viewEmpleado);
+                  setContractForm({
+                    bono_mensual: "2000",
+                    beneficiario: viewEmpleado.contacto_emergencia || "",
+                    parentesco: viewEmpleado.parentesco || "",
+                    porcentaje: "100",
+                    duracion_meses: "3"
+                  });
+                }}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Contrato
+              </Button>
+
               <Button onClick={() => setViewEmpleado(null)}>
                 Cerrar
               </Button>
@@ -1638,6 +1673,66 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
           </DialogContent>
         </Dialog>
+
+      {/* Contract Input Dialog */}
+      <Dialog open={!!contractEmp} onOpenChange={(v) => !v && setContractEmp(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generar Contrato PDF</DialogTitle>
+            <DialogDescription>
+              Completa los datos adicionales para la generación del contrato de {contractEmp?.nombre_completo}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div>
+              <Label>Bono Mensual ($)</Label>
+              <Input
+                type="number"
+                value={contractForm.bono_mensual}
+                onChange={(e) => setContractForm({ ...contractForm, bono_mensual: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Nombre del Beneficiario</Label>
+              <Input
+                value={contractForm.beneficiario}
+                onChange={(e) => setContractForm({ ...contractForm, beneficiario: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Parentesco</Label>
+                <Input
+                  value={contractForm.parentesco}
+                  onChange={(e) => setContractForm({ ...contractForm, parentesco: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Porcentaje (%)</Label>
+                <Input
+                  type="number"
+                  value={contractForm.porcentaje}
+                  onChange={(e) => setContractForm({ ...contractForm, porcentaje: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Duración del Contrato (Meses)</Label>
+              <Input
+                type="number"
+                value={contractForm.duracion_meses}
+                onChange={(e) => setContractForm({ ...contractForm, duracion_meses: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContractEmp(null)}>Cancelar</Button>
+            <Button onClick={handleGenerateContract}>Generar PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}

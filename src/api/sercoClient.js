@@ -62,12 +62,16 @@ class EntityService {
       for (const key of Object.keys(queryObj)) {
         const val = queryObj[key];
         if (val !== undefined && val !== null) {
-          if (typeof val === 'object' && '$in' in val) {
-            query = query.in(key, val['$in']);
-          } else if (typeof val === 'object' && '$gte' in val) {
-            query = query.gte(key, val['$gte']);
-          } else if (typeof val === 'object' && '$lte' in val) {
-            query = query.lte(key, val['$lte']);
+          if (typeof val === 'object' && val !== null) {
+            if ('$in' in val) {
+              query = query.in(key, val['$in']);
+            }
+            if ('$gte' in val) {
+              query = query.gte(key, val['$gte']);
+            }
+            if ('$lte' in val) {
+              query = query.lte(key, val['$lte']);
+            }
           } else {
             query = query.eq(key, val);
           }
