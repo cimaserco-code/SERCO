@@ -16,9 +16,7 @@ const tableMap = {
   Comunicado: 'comunicados',
   Nominas: 'nominas',
   Vacante: 'vacantes',
-  SolicitudInventario: 'solicitudes_inventario',
-  Rondin: 'rondines',
-  ReporteSupervision: 'reportes_supervision'
+  SolicitudInventario: 'solicitudes_inventario'
 };
 
 function formatSupabaseError(error) {
@@ -62,16 +60,8 @@ class EntityService {
       for (const key of Object.keys(queryObj)) {
         const val = queryObj[key];
         if (val !== undefined && val !== null) {
-          if (typeof val === 'object' && val !== null) {
-            if ('$in' in val) {
-              query = query.in(key, val['$in']);
-            }
-            if ('$gte' in val) {
-              query = query.gte(key, val['$gte']);
-            }
-            if ('$lte' in val) {
-              query = query.lte(key, val['$lte']);
-            }
+          if (typeof val === 'object' && '$in' in val) {
+            query = query.in(key, val['$in']);
           } else {
             query = query.eq(key, val);
           }
@@ -85,6 +75,44 @@ class EntityService {
       query = query.order(actualCol, { ascending: !isDesc });
     }
     const { data, error } = await query;
+    if (error) throw formatSupabaseError(error);
+    return data;
+  }
+
+  async listByMonth(startDate, endDate) {
+    let query = supabase
+      .from(this.tableName)
+      .select('id, empleado_id, fecha, estado, sede_id')
+      .gte('fecha', startDate)
+      .lt('fecha', endDate);
+
+    const { data, error } = await query;
+
+    if (error) throw formatSupabaseError(error);
+    return data;
+  }
+
+  async filterSelect(queryObj, columns) {
+    let query = supabase
+      .from(this.tableName)
+      .select(columns);
+
+    if (queryObj) {
+      for (const key of Object.keys(queryObj)) {
+        const val = queryObj[key];
+
+        if (val !== undefined && val !== null) {
+          if (typeof val === 'object' && '$in' in val) {
+            query = query.in(key, val['$in']);
+          } else {
+            query = query.eq(key, val);
+          }
+        }
+      }
+    }
+
+    const { data, error } = await query;
+
     if (error) throw formatSupabaseError(error);
     return data;
   }
@@ -226,6 +254,11 @@ export const sercoApi = {
         email,
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+          data: {
+            role: 'user',
+            nombre: email.split('@')[0]
+          }}
           data: {
             role: 'user',
             nombre: email.split('@')[0]
