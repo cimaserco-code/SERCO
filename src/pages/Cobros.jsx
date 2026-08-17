@@ -242,6 +242,24 @@ export default function Cobros() {
 
     }
 
+  const handleQuickPay = async (id) => {
+    try {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      const todayStr = `${yyyy}-${mm}-${dd}`;
+
+      await sercoApi.entities.Cobro.update(id, {
+        estado: "pagado",
+        fecha_pago: todayStr
+      });
+      await load();
+    } catch (e) {
+      console.error("Error al registrar pago rápido:", e);
+    }
+  };
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -433,13 +451,14 @@ export default function Cobros() {
               <TableHead>Estado</TableHead>
               <TableHead>Fecha Límite</TableHead>
               <TableHead>Fecha Pago</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
             ) : (
               filtered.map((item) => (
                 <TableRow 
@@ -456,6 +475,22 @@ export default function Cobros() {
                   <TableCell>{estadoBadge(item.estado)}</TableCell>
                   <TableCell>{item.fecha_limite_pago || "—"}</TableCell>
                   <TableCell>{item.fecha_pago || "—"}</TableCell>
+                  <TableCell className="text-right">
+                    {item.estado === "pendiente" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 border-emerald-300 hover:bg-emerald-50 text-emerald-600 font-semibold gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickPay(item.id);
+                        }}
+                      >
+                        <DollarSign className="w-3.5 h-3.5" />
+                        Pago
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))
             )}
