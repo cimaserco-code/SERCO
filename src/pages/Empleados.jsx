@@ -84,6 +84,9 @@ export default function Empleados() {
   const [sortField, setSortField] = useState("nombre_completo");
   const [sortDirection, setSortDirection] = useState("asc");
 
+  // Save Error Notification
+  const [saveError, setSaveError] = useState("");
+
   // Contract Generation States
   const [contractEmp, setContractEmp] = useState(null);
   const [contractForm, setContractForm] = useState({
@@ -247,6 +250,7 @@ export default function Empleados() {
   };
 
   function openCreate() {
+    setSaveError("");
     setEditing(null);
     setForm({ ...emptyForm, sede_id: defaultSedeId });
     setModalOpen(true);
@@ -265,6 +269,7 @@ export default function Empleados() {
       hospedaje: !!item.hospedaje,
       seguro: !!item.seguro
     });
+    setSaveError("");
     setModalOpen(true);
   }
 
@@ -315,6 +320,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
   console.log("ENTRÓ A GUARDAR", form);
 
   setSaving(true);
+  setSaveError("");
 
   try {
     const payload = {
@@ -350,7 +356,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     await load();
 
   } catch (error) {
-  console.error("ERROR COMPLETO:", JSON.stringify(error, null, 2));
+    console.error("ERROR COMPLETO:", JSON.stringify(error, null, 2));
+    setSaveError(error.message || "Error al guardar el empleado. Verifica los campos.");
   } finally {
     setSaving(false);
   }
@@ -1204,6 +1211,12 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           </div>
 
         </div>
+
+        {saveError && (
+          <div className="mx-6 mb-3 p-3 bg-red-50 text-red-600 border border-red-200 rounded text-sm font-medium">
+            {saveError}
+          </div>
+        )}
 
         <DialogFooter>
           <Button
