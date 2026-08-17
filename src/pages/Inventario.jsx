@@ -337,21 +337,19 @@ function eliminarVariante(index) {
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     {!defaultSedeId && <TableHead>Sede</TableHead>}
-                    <TableHead>Categoría</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead>Descripción</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={!defaultSedeId ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={!defaultSedeId ? 3 : 2} className="text-center text-muted-foreground py-8">
                         Cargando...
                       </TableCell>
                     </TableRow>
                   ) : tabFiltered.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={!defaultSedeId ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={!defaultSedeId ? 3 : 2} className="text-center text-muted-foreground py-8">
                         No hay artículos en esta categoría
                       </TableCell>
                     </TableRow>
@@ -366,9 +364,7 @@ function eliminarVariante(index) {
                         {!defaultSedeId && (
                           <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                         )}
-                        <TableCell>{item.categoria || "—"}</TableCell>
                         <TableCell className="text-right">{getDisplayCantidad(item)}</TableCell>
-                        <TableCell className="max-w-[250px] truncate">{item.descripcion || "—"}</TableCell>
                       </TableRow>
                     ))
                   )}
