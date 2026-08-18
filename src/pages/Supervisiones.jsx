@@ -118,6 +118,17 @@ export default function Supervisiones() {
     return s ? s.nombre : "—";
   };
 
+  // Filtrar supervisores: solo rol "Supervisor" y de la sede activa
+  const supervisoresParaRondin = React.useMemo(() => {
+    if (!defaultSedeId) {
+      return supervisores.filter(s => s.role === "Supervisor");
+    }
+    return supervisores.filter(s => 
+      s.role === "Supervisor" &&
+      s.sede_ids?.includes(defaultSedeId)
+    );
+  }, [supervisores, defaultSedeId]);
+
   // Rondin Handlers
   const openCreateRondin = () => {
     setSaveRondinError("");
@@ -438,11 +449,15 @@ export default function Supervisiones() {
                   required
                 >
                   <option value="" disabled>Selecciona un supervisor...</option>
-                  {supervisores.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name?.split("|")[0].trim() || s.email}
-                    </option>
-                  ))}
+                  {supervisoresParaRondin.length > 0 ? (
+                    supervisoresParaRondin.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name?.split("|")[0].trim() || s.email}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No hay supervisores disponibles para esta sede</option>
+                  )}
                 </select>
               </div>
 
