@@ -20,7 +20,7 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
 
-const emptyRondin = { supervisor_id: "", servicio_id: "", fecha: "", hora: "", sede_id: "" };
+const emptyRondin = { supervisor_id: "", servicio_id: "", fecha: "", hora: "", sede_id: "", comentarios: "" };
 const emptyReporte = { supervisor_id: "", servicio_id: "", fecha: "", hora: "", reporte: "", sede_id: "" };
 
 export default function Supervisiones() {
@@ -71,6 +71,21 @@ export default function Supervisiones() {
         sercoApi.entities.User.list().catch(() => []),
         sercoApi.entities.Sede.list().catch(() => [])
       ]);
+      console.log("=== USUARIOS CARGADOS ===");
+      console.log("Total usuarios:", usersList?.length);
+      console.log("Usuarios completos:", usersList);
+      if (usersList?.length > 0) {
+        console.log("Primer usuario estructura:", {
+          id: usersList[0].id,
+          email: usersList[0].email,
+          role: usersList[0].role,
+          full_name: usersList[0].full_name,
+          sede_ids: usersList[0].sede_ids,
+          sede_id: usersList[0].sede_id,
+          ...usersList[0]
+        });
+      }
+      console.log("=== FIN USUARIOS ===");
       console.log("SUPERVISIONES DIAGNOSTIC:", {
         rondines: rData?.length,
         reportes: repData?.length,
@@ -118,16 +133,35 @@ export default function Supervisiones() {
     return s ? s.nombre : "—";
   };
 
-  // Filtrar supervisores: solo rol "Supervisor" y de la sede activa
+  // Filtrar supervisores: solo rol "Supervisor" y de las sedes del usuario
   const supervisoresParaRondin = React.useMemo(() => {
-    if (!defaultSedeId) {
-      return supervisores.filter(s => s.role === "Supervisor");
-    }
-    return supervisores.filter(s => 
-      s.role === "Supervisor" &&
-      s.sede_ids?.includes(defaultSedeId)
-    );
-  }, [supervisores, defaultSedeId]);
+    console.log("=== FILTRO SUPERVISORES DEBUG ===");
+    console.log("Total supervisores cargados:", supervisores.length);
+    console.log("defaultSedeId:", defaultSedeId);
+    console.log("sedeFilter:", sedeFilter);
+    console.log("user.sede_ids:", user?.sede_ids);
+    
+    const userSedeIds = user?.sede_ids || (user?.sede_id ? [user?.sede_id] : []);
+    console.log("Calculado userSedeIds:", userSedeIds);
+    
+    const filtered = supervisores.filter(s => {
+      const isRolSupervisor = s.role === "Supervisor";
+      const hasValidSedeIds = s.sede_ids && Array.isArray(s.sede_ids) && s.sede_ids.length > 0;
+      const sharesSede = hasValidSedeIds && userSedeIds.some(sId => s.sede_ids.includes(sId));
+      
+      const passes = isRolSupervisor && sharesSede;
+      if (!passes) {
+        console.log(`❌ ${s.email}: role="${s.role}" (ok=${isRolSupervisor}), sede_ids=${JSON.stringify(s.sede_ids)} (ok=${sharesSede})`);
+      } else {
+        console.log(`✓ ${s.email}: PASA filtro`);
+      }
+      return passes;
+    });
+    
+    console.log("Total que pasan filtro:", filtered.length);
+    console.log("=== FIN DEBUG ===");
+    return filtered;
+  }, [supervisores, user?.sede_ids, user?.sede_id]);
 
   // Rondin Handlers
   const openCreateRondin = () => {
@@ -152,7 +186,8 @@ export default function Supervisiones() {
       servicio_id: item.servicio_id || "",
       fecha: item.fecha || "",
       hora: item.hora || "",
-      sede_id: item.sede_id || defaultSedeId || ""
+      sede_id: item.sede_id || defaultSedeId || "",
+      comentarios: item.comentarios || ""
     });
     setSaveRondinError("");
     setRondinModalOpen(true);
@@ -385,8 +420,8 @@ export default function Supervisiones() {
                   <TableRow>
                     <TableHead>Supervisor</TableHead>
                     <TableHead>Servicio</TableHead>
-                    <TableHead>Fecha / Hora</TableHead>
-                    <TableHead>Reporte / Observaciones</TableHead>
+                    <TableHead>Tiempo</TableHead>
+                    <TableHead>Reporte</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -477,13 +512,7 @@ export default function Supervisiones() {
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <SedeSelector
-                  value={rondinForm.sede_id}
-                  onChange={(v) => setRondinForm({ ...rondinForm, sede_id: v })}
-                  sedes={sedes}
-                />
-              </div>
+             
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -506,6 +535,17 @@ export default function Supervisiones() {
                     required
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="rondin-comentarios">Comentarios</Label>
+                <Textarea
+                  id="rondin-comentarios"
+                  value={rondinForm.comentarios || ""}
+                  onChange={(e) => setRondinForm({ ...rondinForm, comentarios: e.target.value })}
+                  placeholder="Ingresa comentarios sobre el rondín"
+                  className="min-h-[100px]"
+                />
               </div>
             </div>
             
@@ -561,13 +601,7 @@ export default function Supervisiones() {
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <SedeSelector
-                  value={reporteForm.sede_id}
-                  onChange={(v) => setReporteForm({ ...reporteForm, sede_id: v })}
-                  sedes={sedes}
-                />
-              </div>
+              
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
