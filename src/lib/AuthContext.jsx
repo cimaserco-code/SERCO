@@ -11,16 +11,17 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [isInitialCheck, setIsInitialCheck] = useState(true);
   const [appPublicSettings, setAppPublicSettings] = useState({ id: 'supabase', public_settings: {} });
 
   useEffect(() => {
     // Check initial auth session
-    checkUserAuth();
+    checkUserAuth(true);
 
     // Subscribe to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session) {
-        await checkUserAuth();
+        await checkUserAuth(false);
       } else {
         setUser(null);
         setIsAuthenticated(false);
@@ -34,9 +35,11 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  const checkUserAuth = async () => {
+  const checkUserAuth = async (isInitial = false) => {
     try {
-      setIsLoadingAuth(true);
+      if (isInitial) {
+        setIsLoadingAuth(true);
+      }
       const currentUser = await sercoApi.auth.me();
       if (currentUser) {
         setUser(currentUser);
@@ -45,13 +48,19 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setIsAuthenticated(false);
       }
-      setIsLoadingAuth(false);
+      if (isInitial) {
+        setIsLoadingAuth(false);
+        setIsInitialCheck(false);
+      }
       setAuthChecked(true);
     } catch (error) {
       console.error('User auth check failed:', error);
       setUser(null);
       setIsAuthenticated(false);
-      setIsLoadingAuth(false);
+      if (isInitial) {
+        setIsLoadingAuth(false);
+        setIsInitialCheck(false);
+      }
       setAuthChecked(true);
     }
   };
