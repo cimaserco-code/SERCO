@@ -25,7 +25,7 @@ const emptyForm = { nombre: "", categoria: "", cantidad: "", descripcion: "", ub
 
 export default function Inventario() {
   const { user } = useAuth();
-  const { sedeFilter, defaultSedeId } = useSedeScope();
+  const { sedeFilter, defaultSedeId, userSedeIds } = useSedeScope();
   const { canView, can } = usePermissions();
   const [items, setItems] = useState([]);
   const [variantes, setVariantes] = useState([]);
@@ -263,15 +263,22 @@ function eliminarVariante(index) {
     return !cat.includes("uniforme") && !cat.includes("papeler");
   });
 
-  const canViewSolicitudes = ["finanzas", "ceo", "director", "admin"].includes(user?.role?.toLowerCase());
+  const canViewSolicitudes = ["finanzas", "ceo", "director", "admin", "administrador", "super administrador", "supervisor"].includes(user?.role?.toLowerCase());
 
   const filteredSolicitudes = solicitudes.filter(sol => {
-    if (defaultSedeId && sol.sede_id !== defaultSedeId) return false;
+    if (defaultSedeId && sol.sede_id && sol.sede_id !== defaultSedeId) return false;
     if (search) {
       const q = search.toLowerCase();
       return (sol.item_nombre || "").toLowerCase().includes(q) || (sol.solicitante_nombre || "").toLowerCase().includes(q);
     }
     return true;
+  });
+  
+  console.log("INVENTARIO SOLICITUDES FILTERING:", {
+    raw_sols: solicitudes,
+    filtered_sols: filteredSolicitudes,
+    defaultSedeId,
+    userSedeIds
   });
 
   if (!canView("inventario")) return <AccessRestricted />;

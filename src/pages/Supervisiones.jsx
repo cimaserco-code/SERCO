@@ -30,6 +30,12 @@ export default function Supervisiones() {
 
   const [activeTab, setActiveTab] = useState("rondin");
   const [rondines, setRondines] = useState([]);
+  const [sortField, setSortField] = useState("nombre_completo");
+  const [sortDirection, setSortDirection] = useState("asc");
+
+  // Error notifications
+  const [saveRondinError, setSaveRondinError] = useState("");
+  const [saveReporteError, setSaveReporteError] = useState("");
   const [reportes, setReportes] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [supervisores, setSupervisores] = useState([]);
@@ -59,12 +65,21 @@ export default function Supervisiones() {
     setLoading(true);
     try {
       const [rData, repData, servs, usersList, sedesList] = await Promise.all([
-        sercoApi.entities.Rondin.filter(sedeFilter, "-created_date"),
-        sercoApi.entities.ReporteSupervision.filter(sedeFilter, "-created_date"),
-        sercoApi.entities.Servicio.filter(sedeFilter),
-        sercoApi.entities.User.list(),
-        sercoApi.entities.Sede.list()
+        sercoApi.entities.Rondin.filter(sedeFilter, "-created_date").catch(() => []),
+        sercoApi.entities.ReporteSupervision.filter(sedeFilter, "-created_date").catch(() => []),
+        sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
+        sercoApi.entities.User.list().catch(() => []),
+        sercoApi.entities.Sede.list().catch(() => [])
       ]);
+      console.log("SUPERVISIONES DIAGNOSTIC:", {
+        rondines: rData?.length,
+        reportes: repData?.length,
+        servicios: servs?.length,
+        supervisores: usersList?.length,
+        sedes: sedesList?.length,
+        sedeFilter,
+        user
+      });
       setRondines(rData || []);
       setReportes(repData || []);
       setServicios(servs || []);
@@ -89,8 +104,13 @@ export default function Supervisiones() {
   // Helpers
   const getSupervisorName = (id) => {
     const s = supervisores.find((u) => u.id === id);
-    if (!s) return "—";
-    return s.full_name?.split("|")[0].trim() || s.email;
+    if (s) {
+      return s.full_name?.split("|")[0].trim() || s.email;
+    }
+    if (id === user?.id) {
+      return user?.full_name || user?.email || "—";
+    }
+    return "—";
   };
 
   const getServicioName = (id) => {
@@ -100,6 +120,7 @@ export default function Supervisiones() {
 
   // Rondin Handlers
   const openCreateRondin = () => {
+    setSaveRondinError("");
     setEditingRondin(null);
     const today = new Date().toISOString().split("T")[0];
     const nowTime = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -122,12 +143,14 @@ export default function Supervisiones() {
       hora: item.hora || "",
       sede_id: item.sede_id || defaultSedeId || ""
     });
+    setSaveRondinError("");
     setRondinModalOpen(true);
   };
 
   const handleSaveRondin = async (e) => {
     e.preventDefault();
     setSavingRondin(true);
+    setSaveRondinError("");
     try {
       const payload = {
         ...rondinForm,
@@ -144,6 +167,7 @@ export default function Supervisiones() {
       loadData();
     } catch (err) {
       console.error(err);
+      setSaveRondinError(err.message || "Error al guardar el rondín.");
     } finally {
       setSavingRondin(false);
     }
@@ -162,6 +186,7 @@ export default function Supervisiones() {
 
   // Reporte Handlers
   const openCreateReporte = () => {
+    setSaveReporteError("");
     setEditingReporte(null);
     const today = new Date().toISOString().split("T")[0];
     const nowTime = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -177,6 +202,7 @@ export default function Supervisiones() {
   };
 
   const openEditReporte = (item) => {
+    setSaveReporteError("");
     setEditingReporte(item);
     setReporteForm({
       supervisor_id: item.supervisor_id || "",
@@ -192,6 +218,7 @@ export default function Supervisiones() {
   const handleSaveReporte = async (e) => {
     e.preventDefault();
     setSavingReporte(true);
+    setSaveReporteError("");
     try {
       const payload = {
         ...reporteForm,
@@ -208,6 +235,7 @@ export default function Supervisiones() {
       loadData();
     } catch (err) {
       console.error(err);
+      setSaveReporteError(err.message || "Error al guardar el reporte.");
     } finally {
       setSavingReporte(false);
     }
@@ -465,6 +493,13 @@ export default function Supervisiones() {
                 </div>
               </div>
             </div>
+            
+            {saveRondinError && (
+              <div className="mx-6 mb-3 p-3 bg-red-50 text-red-600 border border-red-200 rounded text-sm font-medium">
+                {saveRondinError}
+              </div>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRondinModalOpen(false)}>
                 Cancelar
@@ -554,6 +589,13 @@ export default function Supervisiones() {
                 />
               </div>
             </div>
+
+            {saveReporteError && (
+              <div className="mx-6 mb-3 p-3 bg-red-50 text-red-600 border border-red-200 rounded text-sm font-medium">
+                {saveReporteError}
+              </div>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setReporteModalOpen(false)}>
                 Cancelar

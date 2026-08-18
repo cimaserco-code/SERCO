@@ -16,7 +16,9 @@ const tableMap = {
   Comunicado: 'comunicados',
   Nominas: 'nominas',
   Vacante: 'vacantes',
-  SolicitudInventario: 'solicitudes_inventario'
+  SolicitudInventario: 'solicitudes_inventario',
+  Rondin: 'rondines',
+  ReporteSupervision: 'reportes_supervision'
 };
 
 function formatSupabaseError(error) {
@@ -255,10 +257,6 @@ export const sercoApi = {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`,
-          data: {
-            role: 'user',
-            nombre: email.split('@')[0]
-          }}
           data: {
             role: 'user',
             nombre: email.split('@')[0]
