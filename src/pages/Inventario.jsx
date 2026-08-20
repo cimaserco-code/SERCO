@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search, ClipboardList, Check, X } from "lucide-react";
 import {
@@ -43,7 +43,8 @@ export default function Inventario() {
   // Requests (Solicitudes) States
   const [solicitudes, setSolicitudes] = useState([]);
   const [solicitarModalOpen, setSolicitarModalOpen] = useState(false);
-  const [solicitudForm, setSolicitudForm] = useState({ inventario_item_id: "", item_nombre: "", cantidad: "1", comentarios: "", sede_id: "" });
+  const [solicitudForm, setSolicitudForm] = useState({ inventario_item_id: "", item_nombre: "", cantidad: "1", comentarios: "", sede_id: "", color: "", talla: "" });
+  const [solicitudError, setSolicitudError] = useState("");
 
   useEffect(() => { load(); }, []);
 
@@ -55,36 +56,58 @@ export default function Inventario() {
       sercoApi.entities.InventarioItem.filter(sedeFilter, "-created_date"),
       sercoApi.entities.InventarioVariante.list("-created_date"),
       sercoApi.entities.Sede.list(),
-      sercoApi.entities.SolicitudInventario.list("-created_date").catch(() => []),
+      sercoApi.entities.SolicitudInventario.list("-created_at").catch(() => []),
     ]);
 
     setItems(data);
     setVariantes(vars);
     setSedes(s);
     setSolicitudes(sols);
+    console.log("SOLICITUDES RECIBIDAS:", sols);
   } finally {
     setLoading(false);
   }
 }
   const openSolicitar = () => {
+    setSolicitudError("");
     setSolicitudForm({
       inventario_item_id: "",
       item_nombre: "",
       cantidad: "1",
       comentarios: "",
-      sede_id: defaultSedeId || (sedes[0]?.id || "")
+      sede_id: defaultSedeId || (sedes[0]?.id || ""),
+      color: "",
+      talla: ""
     });
     setSolicitarModalOpen(true);
   };
 
   const handleSaveSolicitud = async () => {
     if (!solicitudForm.item_nombre && !solicitudForm.inventario_item_id) return;
+    const selectedItem = items.find(i => i.id === solicitudForm.inventario_item_id);
+    const isUniforme = selectedItem?.categoria === "Uniforme";
+    const selectedVariant = variantes.find(v =>
+      v.inventario_item_id === solicitudForm.inventario_item_id &&
+      v.color === solicitudForm.color &&
+      v.talla === solicitudForm.talla
+    );
+
+    if (isUniforme && (!selectedVariant || Number(selectedVariant.cantidad) <= 0)) {
+      setSolicitudError("Selecciona un color y una talla disponibles.");
+      return;
+    }
+
+    if (isUniforme && Number(solicitudForm.cantidad || 0) > Number(selectedVariant.cantidad)) {
+      setSolicitudError(`Solo hay ${selectedVariant.cantidad} unidad(es) disponibles para esta combinación.`);
+      return;
+    }
+
     setSaving(true);
+    setSolicitudError("");
     try {
-      let finalItemNombre = solicitudForm.item_nombre;
-      if (solicitudForm.inventario_item_id) {
-        const matchedItem = items.find(i => i.id === solicitudForm.inventario_item_id);
-        if (matchedItem) finalItemNombre = matchedItem.nombre;
+      let finalItemNombre = selectedItem?.nombre || solicitudForm.item_nombre;
+      if (isUniforme) {
+        finalItemNombre = `${finalItemNombre} - ${solicitudForm.color} - Talla ${solicitudForm.talla}`;
       }
 
       await sercoApi.entities.SolicitudInventario.create({
@@ -101,6 +124,7 @@ export default function Inventario() {
       await load();
     } catch (e) {
       console.error(e);
+      setSolicitudError(e.message || "No se pudo enviar la solicitud.");
     } finally {
       setSaving(false);
     }
@@ -243,6 +267,32 @@ function eliminarVariante(index) {
   } finally {
     setSaving(false);
   }
+
+  const formColores = useMemo(
+    () => [...new Set(formVariantes.map((v) => v.color.trim()).filter(Boolean))],
+    [formVariantes]
+  );
+  const formTallas = useMemo(
+    () => [...new Set(formVariantes.map((v) => v.talla.trim()).filter(Boolean))],
+    [formVariantes]
+  );
+
+  function agregarColor() {
+    setFormVariantes([...formVariantes, { color: "", talla: "", cantidad: "" }]);
+  }
+
+  function agregarTalla() {
+    setFormVariantes([...formVariantes, { color: "", talla: "", cantidad: "" }]);
+  }
+
+  function actualizarCelda(color, talla, cantidad) {
+    const index = formVariantes.findIndex((v) => v.color === color && v.talla === talla);
+    if (index === -1) {
+      setFormVariantes([...formVariantes, { color, talla, cantidad }]);
+      return;
+    }
+    actualizarVariante(index, "cantidad", cantidad);
+  }
 }
 
   async function handleDelete() {
@@ -265,14 +315,21 @@ function eliminarVariante(index) {
 
   const canViewSolicitudes = ["finanzas", "ceo", "director", "admin", "administrador", "super administrador", "supervisor"].includes(user?.role?.toLowerCase());
 
-  const filteredSolicitudes = solicitudes.filter(sol => {
-    if (defaultSedeId && sol.sede_id && sol.sede_id !== defaultSedeId) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (sol.item_nombre || "").toLowerCase().includes(q) || (sol.solicitante_nombre || "").toLowerCase().includes(q);
-    }
-    return true;
-  });
+const filteredSolicitudes = solicitudes.filter(sol => {
+  if (userSedeIds?.length > 0 && sol.sede_id && !userSedeIds.includes(sol.sede_id)) {
+    return false;
+  }
+
+  if (search) {
+    const q = search.toLowerCase();
+    return (
+      (sol.item_nombre || "").toLowerCase().includes(q) ||
+      (sol.solicitante_nombre || "").toLowerCase().includes(q)
+    );
+  }
+
+  return true;
+});
   
   console.log("INVENTARIO SOLICITUDES FILTERING:", {
     raw_sols: solicitudes,
@@ -494,81 +551,50 @@ function eliminarVariante(index) {
               <Input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
             </div>
             {form.categoria === "Uniforme" && (
-  <div className="space-y-3">
-    <div className="flex items-center justify-between">
-      <Label>Variantes</Label>
-
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={agregarVariante}
-      >
+  <div className="space-y-4">
+    <div className="flex justify-between items-center">
+      <Label>Variantes por color y talla</Label>
+      <Button type="button" variant="outline" size="sm" onClick={agregarVariante}>
         <Plus className="w-4 h-4 mr-1" />
-        Agregar variante
+        Agregar combinación
       </Button>
     </div>
 
-    {formVariantes.length === 0 ? (
-      <p className="text-sm text-muted-foreground">
-        No hay variantes agregadas.
-      </p>
-    ) : (
-      <div className="space-y-2">
-        {formVariantes.map((variante, index) => (
-          <div
-            key={variante.id || index}
-            className="grid grid-cols-[1fr_1fr_100px_auto] gap-2 items-end"
+    <div className="space-y-2">
+      {formVariantes.map((v, index) => (
+        <div key={v.id || index} className="grid grid-cols-[1fr_1fr_100px_auto] gap-2">
+          <Input
+            placeholder="Color"
+            value={v.color}
+            onChange={(e) => actualizarVariante(index, "color", e.target.value)}
+          />
+
+          <Input
+            placeholder="Talla"
+            value={v.talla}
+            onChange={(e) => actualizarVariante(index, "talla", e.target.value)}
+          />
+
+          <Input
+            type="number"
+            min="0"
+            placeholder="Cantidad"
+            value={v.cantidad}
+            onChange={(e) => actualizarVariante(index, "cantidad", e.target.value)}
+          />
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-destructive"
+            onClick={() => eliminarVariante(index)}
           >
-            <div>
-              <Label className="text-xs">Color</Label>
-              <Input
-                value={variante.color}
-                onChange={(e) =>
-                  actualizarVariante(index, "color", e.target.value)
-                }
-                placeholder="Ej. Azul"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs">Talla</Label>
-              <Input
-                value={variante.talla}
-                onChange={(e) =>
-                  actualizarVariante(index, "talla", e.target.value)
-                }
-                placeholder="Ej. M"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs">Cantidad</Label>
-              <Input
-                type="number"
-                min="0"
-                value={variante.cantidad}
-                onChange={(e) =>
-                  actualizarVariante(index, "cantidad", e.target.value)
-                }
-                placeholder="0"
-              />
-            </div>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="text-destructive"
-              onClick={() => eliminarVariante(index)}
-              title="Eliminar variante"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
-    )}
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      ))}
+    </div>
   </div>
 )}
           </div>
@@ -603,13 +629,17 @@ function eliminarVariante(index) {
               <Select
                 value={solicitudForm.inventario_item_id}
                 onValueChange={(v) => {
-                  const matched = items.find(i => i.id === v);
-                  setSolicitudForm({
-                    ...solicitudForm,
-                    inventario_item_id: v,
-                    item_nombre: matched ? matched.nombre : solicitudForm.item_nombre
-                  });
-                }}
+  const matched = items.find(i => i.id === v);
+
+  setSolicitudForm(prev => ({
+    ...prev,
+    inventario_item_id: v === "none" ? "" : v,
+    item_nombre: matched ? matched.nombre : "",
+    color: "",
+    talla: "",
+    cantidad: "1"
+  }));
+}}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="-- Seleccionar del Inventario --" />
@@ -633,7 +663,137 @@ function eliminarVariante(index) {
                 />
               </div>
             )}
+            {solicitudForm.inventario_item_id &&
+  solicitudForm.inventario_item_id !== "none" &&
+  items.find(i => i.id === solicitudForm.inventario_item_id)?.categoria === "Uniforme" && (() => {
+    const variantesUniforme = variantes.filter(
+      v => v.inventario_item_id === solicitudForm.inventario_item_id
+    );
 
+    const colores = [...new Set(
+      variantesUniforme
+        .map(v => v.color)
+        .filter(Boolean)
+    )];
+
+    const tallas = [...new Set(
+      variantesUniforme
+        .map(v => v.talla)
+        .filter(Boolean)
+    )];
+
+    const getVariante = (color, talla) =>
+      variantesUniforme.find(
+        v =>
+          v.color === color &&
+          v.talla === talla
+      );
+
+    return (
+      <div className="space-y-5 rounded-lg border bg-muted/20 p-4">
+
+        {/* COLOR */}
+        <div>
+          <Label className="mb-2 block">Color</Label>
+
+          <div className="flex flex-wrap gap-2">
+            {colores.map(color => {
+              const seleccionado = solicitudForm.color === color;
+
+              return (
+                <Button
+                  key={color}
+                  type="button"
+                  variant={seleccionado ? "default" : "outline"}
+                  className="min-w-[90px]"
+                  onClick={() =>
+                    setSolicitudForm(prev => ({
+                      ...prev,
+                      color,
+                      talla: ""
+                    }))
+                  }
+                >
+                  {color}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* TALLA */}
+        {solicitudForm.color && (
+          <div>
+            <Label className="mb-2 block">Talla</Label>
+
+            <div className="flex flex-wrap gap-2">
+              {tallas.map(talla => {
+                const variante = getVariante(
+                  solicitudForm.color,
+                  talla
+                );
+
+                const disponible =
+                  variante &&
+                  Number(variante.cantidad) > 0;
+
+                const seleccionado =
+                  solicitudForm.talla === talla;
+
+                return (
+                  <button
+                    key={talla}
+                    type="button"
+                    disabled={!disponible}
+                    onClick={() =>
+                      setSolicitudForm(prev => ({
+                        ...prev,
+                        talla
+                      }))
+                    }
+                    className={`
+                      relative min-w-[52px] rounded-md border px-4 py-2 text-sm font-medium
+                      transition
+                      ${seleccionado
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : disponible
+                          ? "bg-background hover:bg-muted"
+                          : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
+                      }
+                    `}
+                  >
+                    {talla}
+
+                    {!disponible && (
+                      <span className="pointer-events-none absolute left-1/2 top-1/2 h-[1px] w-[calc(100%-8px)] -translate-x-1/2 -translate-y-1/2 rotate-[-35deg] bg-muted-foreground" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* STOCK */}
+            {solicitudForm.talla && (() => {
+              const variante = getVariante(
+                solicitudForm.color,
+                solicitudForm.talla
+              );
+
+              if (!variante) return null;
+
+              return (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {Number(variante.cantidad) > 0
+                    ? `${variante.cantidad} disponible(s)`
+                    : "No disponible"}
+                </p>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+    );
+  })()}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Cantidad *</Label>
