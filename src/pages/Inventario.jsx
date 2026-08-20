@@ -43,7 +43,7 @@ export default function Inventario() {
   // Requests (Solicitudes) States
   const [solicitudes, setSolicitudes] = useState([]);
   const [solicitarModalOpen, setSolicitarModalOpen] = useState(false);
-  const [solicitudForm, setSolicitudForm] = useState({ inventario_item_id: "", item_nombre: "", cantidad: "1", comentarios: "", sede_id: "", color: "", talla: "" });
+  const [solicitudForm, setSolicitudForm] = useState({ inventario_item_id: "", item_nombre: "", cantidad: "1", comentarios: "", sede_id: "", color: "", talla: "",costo: "" });
   const [solicitudError, setSolicitudError] = useState("");
 
   useEffect(() => { load(); }, []);
@@ -77,7 +77,8 @@ export default function Inventario() {
       comentarios: "",
       sede_id: defaultSedeId || (sedes[0]?.id || ""),
       color: "",
-      talla: ""
+      talla: "",
+      costo:""
     });
     setSolicitarModalOpen(true);
   };
@@ -114,6 +115,7 @@ export default function Inventario() {
         inventario_item_id: solicitudForm.inventario_item_id || null,
         item_nombre: finalItemNombre,
         cantidad: Number(solicitudForm.cantidad || 1),
+        costo: solicitudForm.costo === "" ? null : Number(solicitudForm.costo),
         comentarios: solicitudForm.comentarios,
         sede_id: solicitudForm.sede_id || defaultSedeId,
         solicitante_nombre: user?.full_name || user?.email || "Usuario",
@@ -448,6 +450,7 @@ const filteredSolicitudes = solicitudes.filter(sol => {
                     <TableHead>Artículo / Pedido</TableHead>
                     {!defaultSedeId && <TableHead>Sede</TableHead>}
                     <TableHead className="text-right">Cantidad</TableHead>
+                    <TableHead className="text-right">Costo</TableHead>
                     <TableHead>Solicitado por</TableHead>
                     <TableHead>Comentarios</TableHead>
                     <TableHead>Estado</TableHead>
@@ -473,6 +476,14 @@ const filteredSolicitudes = solicitudes.filter(sol => {
                         <TableCell className="font-medium">{sol.item_nombre}</TableCell>
                         {!defaultSedeId && <TableCell>{sedeNombre(sol.sede_id)}</TableCell>}
                         <TableCell className="text-right font-semibold">{sol.cantidad}</TableCell>
+                        <TableCell className="text-right">
+                          {sol.costo != null
+                            ? `$${Number(sol.costo).toLocaleString("es-MX", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              })}`
+                            : "—"}
+                        </TableCell>
                         <TableCell>{sol.solicitante_nombre}</TableCell>
                         <TableCell className="max-w-[200px] truncate" title={sol.comentarios}>
                           {sol.comentarios || "—"}
@@ -794,6 +805,22 @@ const filteredSolicitudes = solicitudes.filter(sol => {
       </div>
     );
   })()}
+                        <div>
+              <Label>Costo</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={solicitudForm.costo}
+                onChange={(e) =>
+                  setSolicitudForm({
+                    ...solicitudForm,
+                    costo: e.target.value
+                  })
+                }
+                placeholder="Ej. 450.00"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Cantidad *</Label>
