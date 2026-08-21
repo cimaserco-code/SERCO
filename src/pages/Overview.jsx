@@ -24,7 +24,11 @@ import {
   FileText,
   CheckCircle2,
   Clock,
-  Calculator
+  Calculator,
+  Smartphone,
+  Car,
+  ShieldCheck,
+  ClipboardList
 } from "lucide-react";
 
 export default function Overview() {
@@ -48,8 +52,13 @@ export default function Overview() {
     docs: [],
     cobros: [],
     egresos: [],
+    saldos: [],
+    mantenimientos: [],
     asistencias: [],
-    nominas: []
+    nominas: [],
+    rondines: [],
+    reportes: [],
+    solicitudes: []
   });
 
   useEffect(() => {
@@ -59,19 +68,38 @@ export default function Overview() {
   async function load() {
     setLoading(true);
     try {
-      const [emp, serv, inv, docs, cobros, egresos, asistencias, noms, seds] = await Promise.all([
+      const [emp, serv, inv, docs, cobros, egresos, saldos, mantenimientos, asistencias, noms, rondines, reportes, sols, seds] = await Promise.all([
         (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("servicios") ? sercoApi.entities.Servicio.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("inventario") ? sercoApi.entities.InventarioItem.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("documentos") ? sercoApi.entities.Documento.list() : Promise.resolve([])).catch(() => []),
         (canView("cobros") ? sercoApi.entities.Cobro.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") ? sercoApi.entities.Egreso.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (canView("egresos") && sercoApi.entities.Saldo ? sercoApi.entities.Saldo.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (canView("egresos") && sercoApi.entities.Mantenimiento ? sercoApi.entities.Mantenimiento.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("asistencias") ? sercoApi.entities.Asistencia.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (sercoApi.entities.Nominas ? sercoApi.entities.Nominas.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (canView("supervisiones") && sercoApi.entities.Rondin ? sercoApi.entities.Rondin.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (canView("supervisiones") && sercoApi.entities.ReporteSupervision ? sercoApi.entities.ReporteSupervision.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (canView("inventario") && sercoApi.entities.SolicitudInventario ? sercoApi.entities.SolicitudInventario.list() : Promise.resolve([])).catch(() => []),
         sercoApi.entities.Sede.list().catch(() => [])
       ]);
 
-      setRawData({ emp, serv, inv, docs, cobros, egresos, asistencias, nominas: noms });
+      setRawData({
+        emp,
+        serv,
+        inv,
+        docs,
+        cobros,
+        egresos,
+        saldos,
+        mantenimientos,
+        asistencias,
+        nominas: noms,
+        rondines,
+        reportes,
+        solicitudes: sols
+      });
       setSedes(seds);
     } catch (e) {
       console.error(e);
@@ -113,8 +141,13 @@ export default function Overview() {
   const filteredInv = selectedSedeId === "all" ? rawData.inv : rawData.inv.filter(i => i.sede_id === selectedSedeId);
   const filteredCobros = selectedSedeId === "all" ? rawData.cobros : rawData.cobros.filter(c => c.sede_id === selectedSedeId);
   const filteredEgresos = selectedSedeId === "all" ? rawData.egresos : rawData.egresos.filter(e => e.sede_id === selectedSedeId);
+  const filteredSaldos = selectedSedeId === "all" ? rawData.saldos : rawData.saldos.filter(s => s.sede_id === selectedSedeId);
+  const filteredMantenimientos = selectedSedeId === "all" ? rawData.mantenimientos : rawData.mantenimientos.filter(m => m.sede_id === selectedSedeId);
   const filteredAsistencias = selectedSedeId === "all" ? rawData.asistencias : rawData.asistencias.filter(a => a.sede_id === selectedSedeId);
   const filteredNominas = selectedSedeId === "all" ? rawData.nominas : (rawData.nominas || []).filter(n => n.sede_id === selectedSedeId);
+  const filteredRondines = selectedSedeId === "all" ? rawData.rondines : rawData.rondines.filter(r => r.sede_id === selectedSedeId);
+  const filteredReportes = selectedSedeId === "all" ? rawData.reportes : rawData.reportes.filter(r => r.sede_id === selectedSedeId);
+  const filteredSolicitudes = selectedSedeId === "all" ? rawData.solicitudes : rawData.solicitudes.filter(s => s.sede_id === selectedSedeId);
 
   // Stats calculation
   const empActivos = filteredEmp.filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)).length;
@@ -123,6 +156,7 @@ export default function Overview() {
     (e.fecha_ingreso && e.fecha_ingreso.slice(0, 7) === currentMonth) || 
     (e.fecha_reingreso && e.fecha_reingreso.slice(0, 7) === currentMonth)
   ).length;
+  const empConSeguro = filteredEmp.filter(e => e.seguro && (!e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja))).length;
 
   const servActivos = filteredServ.filter(s => (s.estado || "activo").toLowerCase() === "activo").length;
   const servInactivos = filteredServ.filter(s => 
@@ -134,21 +168,34 @@ export default function Overview() {
   const totalCobrado = monthlyCobros.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
   const totalPendiente = monthlyCobros.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
 
-  const monthlyEgresos = filteredEgresos.filter(e => e.mes === currentMonth);
-  const totalEgresos = monthlyEgresos.reduce((sum, e) => sum + (Number(e.monto) || 0), 0);
+  // Egresos breakdown
+  const monthlyEgresos = filteredEgresos.filter(e => (e.mes === currentMonth || (e.fecha && e.fecha.slice(0, 7) === currentMonth)));
+  const totalEgresosDirectos = monthlyEgresos.reduce((sum, e) => sum + (Number(e.monto) || 0), 0);
+
+  const monthlySaldos = filteredSaldos.filter(s => (s.mes === currentMonth || (s.fecha && s.fecha.slice(0, 7) === currentMonth)));
+  const totalSaldos = monthlySaldos.reduce((sum, s) => sum + (Number(s.monto) || 0), 0);
+
+  const monthlyMantenimientos = filteredMantenimientos.filter(m => (m.mes === currentMonth || (m.fecha && m.fecha.slice(0, 7) === currentMonth)));
+  const totalMantenimientos = monthlyMantenimientos.reduce((sum, m) => sum + (Number(m.monto) || 0), 0);
+
+  const totalEgresosCombinado = totalEgresosDirectos + totalSaldos + totalMantenimientos;
 
   const inventarioItems = filteredInv.length;
   const inventarioTotalStock = filteredInv.reduce((sum, i) => sum + (Number(i.cantidad) || 0), 0);
+  const solsPendientes = filteredSolicitudes.filter(s => s.estado === 'pendiente').length;
 
   const monthlyAsistencias = filteredAsistencias.filter(a => a.fecha && a.fecha.slice(0, 7) === currentMonth);
   const asistOk = monthlyAsistencias.filter(a => a.estado === "A" || a.estado === "E").length;
   const asistFaltas = monthlyAsistencias.filter(a => a.estado === "F").length;
 
-  const netBalance = totalCobrado - totalEgresos;
+  const netBalance = totalCobrado - totalEgresosCombinado;
 
   const monthlyNominas = filteredNominas.filter(n => n.mes && n.mes.startsWith(currentMonth));
   const totalNominasPagadas = monthlyNominas.reduce((sum, n) => sum + (Number(n.total_pagado) || 0), 0);
   const totalNominasEmpleados = new Set(monthlyNominas.map(n => n.empleado_id)).size;
+
+  const monthlyRondines = filteredRondines.filter(r => (r.fecha && r.fecha.slice(0, 7) === currentMonth) || (r.created_date && r.created_date.slice(0, 7) === currentMonth)).length;
+  const monthlyReportes = filteredReportes.filter(r => (r.fecha && r.fecha.slice(0, 7) === currentMonth) || (r.created_date && r.created_date.slice(0, 7) === currentMonth)).length;
 
   const availableSedes = isSuperAdmin
     ? sedes
@@ -261,8 +308,24 @@ export default function Overview() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-sm text-muted-foreground">Total Gastado</span>
-              <span className="font-bold text-rose-600">${loading ? "—" : totalEgresos.toLocaleString("es-MX")}</span>
+              <span className="text-sm text-muted-foreground">Egresos Generales</span>
+              <span className="font-semibold text-rose-600">${loading ? "—" : totalEgresosDirectos.toLocaleString("es-MX")}</span>
+            </div>
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <Smartphone className="w-3.5 h-3.5" /> Saldos (Celulares)
+              </span>
+              <span className="font-semibold text-slate-700">${loading ? "—" : totalSaldos.toLocaleString("es-MX")}</span>
+            </div>
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <Car className="w-3.5 h-3.5" /> Mantenimiento (Carros)
+              </span>
+              <span className="font-semibold text-slate-700">${loading ? "—" : totalMantenimientos.toLocaleString("es-MX")}</span>
+            </div>
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm font-semibold">Total Gastado</span>
+              <span className="font-bold text-rose-600">${loading ? "—" : totalEgresosCombinado.toLocaleString("es-MX")}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Flujo Neto (Cobrado - Gastos)</span>
@@ -286,11 +349,15 @@ export default function Overview() {
               <span className="font-semibold text-blue-600">{loading ? "—" : empActivos}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-sm text-muted-foreground">Altas</span>
+              <span className="text-sm text-muted-foreground">Con Seguro (IMSS)</span>
+              <span className="font-semibold text-emerald-600">{loading ? "—" : empConSeguro}</span>
+            </div>
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm text-muted-foreground">Altas del Mes</span>
               <span className="font-semibold text-sky-600">{loading ? "—" : empAltas}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Bajas Registradas</span>
+              <span className="text-sm text-muted-foreground">Bajas del Mes</span>
               <span className="font-semibold text-muted-foreground">{loading ? "—" : empBajas}</span>
             </div>
           </CardContent>
@@ -309,8 +376,31 @@ export default function Overview() {
               <span className="font-semibold text-indigo-600">{loading ? "—" : servActivos}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Suspendidos</span>
+              <span className="text-sm text-muted-foreground">Suspendidos / Inactivos</span>
               <span className="font-semibold text-muted-foreground">{loading ? "—" : servInactivos}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Supervisiones (Rondines y Reportes) */}
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/supervisiones")}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-amber-500" /> Supervisiones
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" /> Rondines del Mes
+              </span>
+              <span className="font-semibold text-amber-600">{loading ? "—" : monthlyRondines}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <ClipboardList className="w-3.5 h-3.5" /> Reportes de Supervisión
+              </span>
+              <span className="font-semibold text-indigo-600">{loading ? "—" : monthlyReportes}</span>
             </div>
           </CardContent>
         </Card>
@@ -334,16 +424,16 @@ export default function Overview() {
           </CardContent>
         </Card>
 
-        {/* Inventario & Documentos */}
+        {/* Inventario & Almacén */}
         <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/inventario")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-bold flex items-center gap-2">
-              <Package className="w-5 h-5 text-violet-500" /> Almacén
+              <Package className="w-5 h-5 text-violet-500" /> Almacén e Inventario
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-sm text-muted-foreground">Artículos en Inventario</span>
+              <span className="text-sm text-muted-foreground">Artículos en Catálogo</span>
               <span className="font-semibold text-violet-600">{loading ? "—" : inventarioItems}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
@@ -351,10 +441,10 @@ export default function Overview() {
               <span className="font-semibold text-violet-600">{loading ? "—" : inventarioTotalStock}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <FileText className="w-4 h-4 text-muted-foreground" /> Documentos y Plantillas
+              <span className="text-sm text-muted-foreground">Solicitudes Pendientes</span>
+              <span className={`font-semibold ${solsPendientes > 0 ? "text-amber-600" : "text-muted-foreground"}`}>
+                {loading ? "—" : `${solsPendientes} pendiente(s)`}
               </span>
-              <span className="font-semibold text-muted-foreground">{loading ? "—" : rawData.docs.length}</span>
             </div>
           </CardContent>
         </Card>
@@ -374,6 +464,25 @@ export default function Overview() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Colaboradores Calculados</span>
               <span className="font-semibold text-slate-700">{loading ? "—" : totalNominasEmpleados}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Documentos */}
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/documentos")}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <FileText className="w-5 h-5 text-cyan-600" /> Documentos y Plantillas
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between items-center border-b pb-2">
+              <span className="text-sm text-muted-foreground">Documentos Registrados</span>
+              <span className="font-semibold text-cyan-600">{loading ? "—" : rawData.docs.length}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Acceso rápido</span>
+              <span className="text-xs text-primary font-medium">Ver repositorio →</span>
             </div>
           </CardContent>
         </Card>

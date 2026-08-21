@@ -18,7 +18,9 @@ const tableMap = {
   Vacante: 'vacantes',
   SolicitudInventario: 'solicitudes_inventario',
   Rondin: 'rondines',
-  ReporteSupervision: 'reportes_supervision'
+  ReporteSupervision: 'reportes_supervision',
+  Saldo: 'saldos',
+  Mantenimiento: 'mantenimientos'
 };
 
 function formatSupabaseError(error) {

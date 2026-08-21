@@ -56,6 +56,7 @@ const emptyForm = {
   infonavit: "",
   medio_reclutamiento: "",
   dia_capacitacion: "",
+  dia_capacitacion_2: "",
   fecha_montaje: "",
   hospedaje: false,
   seguro: false,
@@ -86,6 +87,9 @@ export default function Empleados() {
 
   // Save Error Notification
   const [saveError, setSaveError] = useState("");
+
+  // IMSS Baja Alert
+  const [imssAlertEmpleado, setImssAlertEmpleado] = useState(null);
 
   // Contract Generation States
   const [contractEmp, setContractEmp] = useState(null);
@@ -213,7 +217,8 @@ export default function Empleados() {
       "Uniformes",
       "Actas Administrativas",
       "Teléfono",
-      "Día de Capacitación",
+      "Día de Capacitación 1",
+      "Día de Capacitación 2",
       "Medio de Reclutamiento",
       "Hospedaje",
       "Historial de Bajas",
@@ -231,6 +236,7 @@ export default function Empleados() {
       emp.actas_administrativas || 0,
       emp.telefono || "",
       emp.dia_capacitacion || "",
+      emp.dia_capacitacion_2 || "",
       emp.medio_reclutamiento || "",
       emp.hospedaje ? "Sí" : "No",
       emp.historial_bajas || "",
@@ -336,6 +342,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       infonavit: form.infonavit || null,
       medio_reclutamiento: form.medio_reclutamiento || null,
       dia_capacitacion: form.dia_capacitacion || null,
+      dia_capacitacion_2: form.dia_capacitacion_2 || null,
       fecha_montaje: form.fecha_montaje || null,
       historial_bajas: form.historial_bajas || null,
       hospedaje: form.hospedaje ? true : false,
@@ -346,6 +353,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
     if (editing) {
       await sercoApi.entities.Empleado.update(editing.id, payload);
+      if (payload.seguro && payload.fecha_baja && !editing.fecha_baja) {
+        setImssAlertEmpleado({ ...editing, ...payload });
+      }
     } else {
       await sercoApi.entities.Empleado.create(payload);
     }
@@ -381,6 +391,12 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         historial_bajas: newHistorial,
         motivo_baja: motivoBajaInput || null
       });
+
+      // Show IMSS alert if employee was registered in IMSS
+      if (emp?.seguro) {
+        setImssAlertEmpleado(emp);
+      }
+
       setBajaConfirmId(null);
       setMotivoBajaInput("");
       await load();
@@ -729,6 +745,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     <SelectItem value="Casado">Casado(a)</SelectItem>
                     <SelectItem value="Divorciado">Divorciado(a)</SelectItem>
                     <SelectItem value="Viudo">Viudo(a)</SelectItem>
+                    <SelectItem value="Separado">Separado(a)</SelectItem>
+                    <SelectItem value="Conyuge">Cónyuge</SelectItem>
                     <SelectItem value="Union Libre">Unión libre</SelectItem>
                   </SelectContent>
 
@@ -1113,7 +1131,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </div>
 
               <div>
-                <Label>Día de Capacitación</Label>
+                <Label>Día de Capacitación 1</Label>
                 <Input
                   type="date"
                   value={form.dia_capacitacion}
@@ -1121,6 +1139,20 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     setForm({
                       ...form,
                       dia_capacitacion: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Día de Capacitación 2</Label>
+                <Input
+                  type="date"
+                  value={form.dia_capacitacion_2}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      dia_capacitacion_2: e.target.value,
                     })
                   }
                 />
@@ -1389,9 +1421,16 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         </div>
 
         <div>
-          <Label>Día de Capacitación</Label>
+          <Label>Día de Capacitación 1</Label>
           <p className="text-sm text-muted-foreground">
             {viewEmpleado?.dia_capacitacion || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Día de Capacitación 2</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.dia_capacitacion_2 || "—"}
           </p>
         </div>
 
@@ -1781,6 +1820,45 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         loadingLabel="Guardando..."
         onConfirm={handleConfirmReingreso}
       />
+
+      {/* IMSS Baja Alert Dialog */}
+      <Dialog open={!!imssAlertEmpleado} onOpenChange={(v) => !v && setImssAlertEmpleado(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="h-5 w-5" />
+              ⚠️ Alerta: Dar de baja del IMSS
+            </DialogTitle>
+            <DialogDescription>
+              Este empleado está dado de alta en el seguro (IMSS). Es necesario tramitar su baja del seguro social.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-2">
+            <p className="font-semibold text-orange-800">
+              {imssAlertEmpleado?.nombre_completo}
+            </p>
+            <p className="text-sm text-orange-700">
+              <strong>NSS:</strong> {imssAlertEmpleado?.nss || "No registrado"}
+            </p>
+            <p className="text-sm text-orange-700">
+              <strong>CURP:</strong> {imssAlertEmpleado?.curp || "No registrado"}
+            </p>
+            <p className="text-sm text-orange-700">
+              <strong>Puesto:</strong> {imssAlertEmpleado?.puesto || "—"}
+            </p>
+            <div className="mt-3 pt-3 border-t border-orange-200">
+              <p className="text-sm font-semibold text-orange-900">
+                📋 Recuerda dar de baja a este empleado ante el IMSS lo antes posible para evitar cargos adicionales.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setImssAlertEmpleado(null)} className="w-full bg-orange-600 hover:bg-orange-700 text-white">
+              Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
