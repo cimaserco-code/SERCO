@@ -134,22 +134,22 @@ export default function Asistencias() {
     setSaving(true);
     try {
       const emp = employees.find(e => e.id === employeeId);
-      if (found) {
-        if (estado === null) {
+      if (estado === null) {
+        if (found) {
           await sercoApi.entities.Asistencia.delete(found.id);
-        } else {
-          await sercoApi.entities.Asistencia.update(found.id, { 
-            estado,
-            sede_id: emp?.sede_id || null 
-          });
         }
-      } else if (estado !== null) {
-        await sercoApi.entities.Asistencia.create({
+      } else if (found) {
+        await sercoApi.entities.Asistencia.update(found.id, { 
+          estado,
+          sede_id: emp?.sede_id || null 
+        });
+      } else {
+        await sercoApi.entities.Asistencia.upsert({
           empleado_id: employeeId,
           fecha: dateStr,
           estado,
           sede_id: emp?.sede_id || null
-        });
+        }, 'empleado_id,fecha');
       }
       // Reload from DB to verify sync
       const [yearStr, monthStr] = currentMonth.split("-");

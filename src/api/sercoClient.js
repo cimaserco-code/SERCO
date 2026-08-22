@@ -64,8 +64,25 @@ class EntityService {
       for (const key of Object.keys(queryObj)) {
         const val = queryObj[key];
         if (val !== undefined && val !== null) {
-          if (typeof val === 'object' && '$in' in val) {
-            query = query.in(key, val['$in']);
+          if (typeof val === 'object' && !Array.isArray(val)) {
+            if ('$in' in val && Array.isArray(val['$in'])) {
+              query = query.in(key, val['$in']);
+            }
+            if ('$gte' in val) {
+              query = query.gte(key, val['$gte']);
+            }
+            if ('$lte' in val) {
+              query = query.lte(key, val['$lte']);
+            }
+            if ('$gt' in val) {
+              query = query.gt(key, val['$gt']);
+            }
+            if ('$lt' in val) {
+              query = query.lt(key, val['$lt']);
+            }
+            if ('$ne' in val) {
+              query = query.neq(key, val['$ne']);
+            }
           } else {
             query = query.eq(key, val);
           }
@@ -106,8 +123,25 @@ class EntityService {
         const val = queryObj[key];
 
         if (val !== undefined && val !== null) {
-          if (typeof val === 'object' && '$in' in val) {
-            query = query.in(key, val['$in']);
+          if (typeof val === 'object' && !Array.isArray(val)) {
+            if ('$in' in val && Array.isArray(val['$in'])) {
+              query = query.in(key, val['$in']);
+            }
+            if ('$gte' in val) {
+              query = query.gte(key, val['$gte']);
+            }
+            if ('$lte' in val) {
+              query = query.lte(key, val['$lte']);
+            }
+            if ('$gt' in val) {
+              query = query.gt(key, val['$gt']);
+            }
+            if ('$lt' in val) {
+              query = query.lt(key, val['$lt']);
+            }
+            if ('$ne' in val) {
+              query = query.neq(key, val['$ne']);
+            }
           } else {
             query = query.eq(key, val);
           }
@@ -117,6 +151,13 @@ class EntityService {
 
     const { data, error } = await query;
 
+    if (error) throw formatSupabaseError(error);
+    return data;
+  }
+
+  async upsert(payload, onConflict) {
+    const options = onConflict ? { onConflict } : {};
+    const { data, error } = await supabase.from(this.tableName).upsert(payload, options).select().single();
     if (error) throw formatSupabaseError(error);
     return data;
   }
