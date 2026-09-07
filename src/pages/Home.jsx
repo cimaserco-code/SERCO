@@ -64,6 +64,18 @@ export default function Home() {
     }
   };
 
+  const formatTimeAndDate = (rawDateOrIso, horaFallback = "") => {
+    if (horaFallback) return horaFallback;
+    if (!rawDateOrIso) return "Hoy";
+    try {
+      const d = new Date(rawDateOrIso);
+      if (isNaN(d.getTime())) return rawDateOrIso;
+      return d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return horaFallback || "Hoy";
+    }
+  };
+
   // Normalize role matching to lowercase
   const role = (user?.role || "").toLowerCase();
   
@@ -133,12 +145,16 @@ export default function Home() {
         // 1. Finanzas: Material de inventario solicitado (pendiente)
         if (role === "finanzas" || isSuperUser) {
           (sols || []).filter(s => s.estado === 'pendiente').forEach(s => {
+            const rawTime = s.created_at || s.fecha || null;
             alertsList.push({
               id: `sol-${s.id}`,
               type: 'info',
+              categoria: 'Material',
               title: 'Material Solicitado',
-              description: `${s.solicitante_nombre} solicitó ${s.cantidad} unidad(es) de ${s.item_nombre}.`,
-              time: 'Material'
+              description: `${s.solicitante_nombre || 'Personal'} solicitó ${s.cantidad} unidad(es) de ${s.item_nombre}.`,
+              autor: s.solicitante_nombre || 'Sistema',
+              hora: formatTimeAndDate(rawTime, s.hora || ""),
+              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
           });
         }
@@ -147,12 +163,16 @@ export default function Home() {
         if (isRh || isSuperUser) {
           (vacs || []).filter(v => v.estado === 'abierta').forEach(v => {
             const servName = serv.find(s => s.id === v.servicio_id)?.nombre || "Servicio";
+            const rawTime = v.created_at || v.fecha_creacion || null;
             alertsList.push({
               id: `vac-${v.id}`,
               type: 'warning',
+              categoria: 'Vacante',
               title: 'Nueva Vacante',
               description: `Se abrió vacante para ${v.puesto} (${v.turno}) en ${servName}.`,
-              time: 'Vacante'
+              autor: v.creado_por || v.usuario || 'RH',
+              hora: formatTimeAndDate(rawTime, v.hora || ""),
+              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
           });
         }
@@ -164,13 +184,17 @@ export default function Home() {
             return date && date.slice(0, 7) === currentMonth;
           });
           recentHires.forEach(e => {
-            const byUser = e.usuario_alta ? ` (registrado por ${e.usuario_alta})` : '';
+            const rawTime = e.created_at || e.fecha_ingreso || null;
+            const author = e.usuario_alta || 'RH';
             alertsList.push({
               id: `alta-${e.id}`,
               type: 'success',
+              categoria: 'Alta',
               title: 'Alta de Personal',
-              description: `${e.nombre_completo} se incorporó como ${e.puesto || 'Personal'}${byUser}.`,
-              time: 'Alta'
+              description: `${e.nombre_completo} se incorporó como ${e.puesto || 'Personal'}.`,
+              autor: author,
+              hora: formatTimeAndDate(rawTime, e.hora_ingreso || ""),
+              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
           });
         }
@@ -181,14 +205,18 @@ export default function Home() {
             return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
           });
           recentBajas.forEach(e => {
-            const byUser = e.usuario_baja ? ` por ${e.usuario_baja}` : '';
+            const rawTime = e.fecha_hora_baja || e.updated_at || e.fecha_baja || null;
+            const author = e.usuario_baja || 'RH';
             const motivoText = e.motivo_baja ? ` (Motivo: ${e.motivo_baja})` : '';
             alertsList.push({
               id: `baja-${e.id}`,
               type: 'danger',
+              categoria: 'Baja',
               title: 'Baja de Personal',
-              description: `${e.nombre_completo} fue dado de baja${byUser}${motivoText}.`,
-              time: 'Baja'
+              description: `${e.nombre_completo} fue dado de baja${motivoText}.`,
+              autor: author,
+              hora: formatTimeAndDate(rawTime, e.hora_baja || ""),
+              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
           });
         }
@@ -196,17 +224,24 @@ export default function Home() {
         // 5. Movimientos / Asignaciones en Plantilla (Supervisor / RH / Superusuarios)
         if (isSupervisor || isRh || isSuperUser) {
           (turnos || []).forEach(t => {
-            const byUser = t.usuario_asignacion || t.creado_por ? ` por ${t.usuario_asignacion || t.creado_por}` : '';
+            const author = t.usuario_asignacion || t.creado_por || 'Supervisor';
             const turnoLabel = t.turno === 'matutino' ? 'Matutino' : t.turno === 'vespertino' ? 'Vespertino' : 'Cubre Descansos';
+            const rawTime = t.fecha_asignacion || t.created_at || null;
             alertsList.push({
               id: `turno-${t.id}`,
               type: 'info',
+              categoria: 'Plantilla',
               title: 'Movimiento de Plantilla',
-              description: `${t.empleado_nombre} asignado a ${t.servicio_nombre} (${turnoLabel})${byUser}.`,
-              time: 'Plantilla'
+              description: `${t.empleado_nombre} asignado a ${t.servicio_nombre} (${turnoLabel}).`,
+              autor: author,
+              hora: formatTimeAndDate(rawTime, t.hora || ""),
+              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
           });
         }
+
+        // Ordenar las alertas de más recientes a más antiguas
+        alertsList.sort((a, b) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0));
 
         setNotifications(alertsList);
 
@@ -532,18 +567,31 @@ export default function Home() {
                   notifications.map((notif) => (
                     <div 
                       key={notif.id} 
-                      className={`flex gap-3 text-sm p-3 rounded-lg border bg-card/60 hover:bg-muted/50 transition-all duration-200 border-l-4 ${
+                      className={`flex flex-col gap-2 text-sm p-3 rounded-lg border bg-card/60 hover:bg-muted/50 transition-all duration-200 border-l-4 shadow-sm ${
                         notif.type === 'danger' ? 'border-l-red-500' : 
                         notif.type === 'warning' ? 'border-l-amber-500' : 
                         notif.type === 'success' ? 'border-l-emerald-500' : 'border-l-blue-500'
                       }`}
                     >
-                      <div className="space-y-1.5 flex-1">
-                        <p className="font-semibold text-xs leading-none text-foreground">{notif.title}</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed">{notif.description}</p>
-                        <span className="text-[9px] bg-muted px-2 py-0.5 rounded font-medium text-muted-foreground inline-block">
-                          {notif.time}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-bold text-xs leading-none text-foreground">{notif.title}</p>
+                        {notif.hora && (
+                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium shrink-0">
+                            <Clock className="w-3 h-3 text-muted-foreground/70" />
+                            {notif.hora}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{notif.description}</p>
+                      <div className="flex items-center justify-between pt-1 border-t border-border/50 text-[10px]">
+                        <span className="bg-muted px-2 py-0.5 rounded font-medium text-muted-foreground inline-block">
+                          {notif.categoria || notif.time}
                         </span>
+                        {notif.autor && (
+                          <span className="text-muted-foreground font-medium truncate max-w-[150px]" title={notif.autor}>
+                            Por: <strong className="text-foreground font-semibold">{notif.autor}</strong>
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))

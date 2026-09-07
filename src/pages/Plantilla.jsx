@@ -108,6 +108,10 @@ export default function Plantilla() {
       const serv = servicios.find((s) => s.id === addModalData.servicioId);
       const currentUserName = user?.full_name || user?.nombre || (user?.email ? user.email.split('@')[0] : "Usuario");
 
+      const now = new Date();
+      const horaStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+      const isoStr = now.toISOString();
+
       try {
         await sercoApi.entities.AsignacionTurno.create({
           empleado_nombre: newEmpleado,
@@ -117,15 +121,29 @@ export default function Plantilla() {
           turno: addModalData.turno,
           usuario_asignacion: currentUserName,
           creado_por: currentUserName,
+          hora: horaStr,
+          fecha_asignacion: isoStr,
         });
       } catch {
-        await sercoApi.entities.AsignacionTurno.create({
-          empleado_nombre: newEmpleado,
-          servicio_id: addModalData.servicioId,
-          servicio_nombre: serv?.nombre || "",
-          sede_id: serv?.sede_id || "",
-          turno: addModalData.turno,
-        });
+        try {
+          await sercoApi.entities.AsignacionTurno.create({
+            empleado_nombre: newEmpleado,
+            servicio_id: addModalData.servicioId,
+            servicio_nombre: serv?.nombre || "",
+            sede_id: serv?.sede_id || "",
+            turno: addModalData.turno,
+            usuario_asignacion: currentUserName,
+            creado_por: currentUserName,
+          });
+        } catch {
+          await sercoApi.entities.AsignacionTurno.create({
+            empleado_nombre: newEmpleado,
+            servicio_id: addModalData.servicioId,
+            servicio_nombre: serv?.nombre || "",
+            sede_id: serv?.sede_id || "",
+            turno: addModalData.turno,
+          });
+        }
       }
 
       // Sincronizar automáticamente con el módulo de Empleados

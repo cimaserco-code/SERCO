@@ -28,6 +28,7 @@ import {
   Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { toast } from "@/components/ui/use-toast";
 
 const emptyForm = {
   nombre_completo: "",
@@ -45,6 +46,7 @@ const emptyForm = {
   nss: "",
   sede_id: "",
   fecha_baja: "",
+  motivo_baja: "",
   actas_administrativas: "0",
   uniformes: "",
   sexo: "",
@@ -96,6 +98,9 @@ export default function Empleados() {
   const [bajaConfirmId, setBajaConfirmId] = useState(null);
   const [reingresoConfirmId, setReingresoConfirmId] = useState(null);
   const [motivoBajaInput, setMotivoBajaInput] = useState("");
+  const [editMotivoEmpleado, setEditMotivoEmpleado] = useState(null);
+  const [editMotivoText, setEditMotivoText] = useState("");
+  const [savingMotivo, setSavingMotivo] = useState(false);
   const [sortField, setSortField] = useState("nombre_completo");
   const [sortDirection, setSortDirection] = useState("asc");
   const [serviceComboboxOpen, setServiceComboboxOpen] = useState(false);
@@ -289,6 +294,7 @@ export default function Empleados() {
       referencia_telefono: item.referencia_telefono || "",
       actas_administrativas: String(item.actas_administrativas ?? 0),
       fecha_baja: item.fecha_baja || "",
+      motivo_baja: item.motivo_baja || "",
       uniformes: item.uniformes || "",
       hospedaje: !!item.hospedaje,
       seguro: !!item.seguro
@@ -362,6 +368,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         fecha_ingreso: form.fecha_ingreso || null,
         fecha_nacimiento: form.fecha_nacimiento || null,
         fecha_baja: form.fecha_baja || null,
+        motivo_baja: form.motivo_baja || null,
         fecha_reingreso: form.fecha_reingreso || null,
         uniformes: form.uniformes || null,
         infonavit: form.infonavit || null,
@@ -586,6 +593,51 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     }
   }
 
+  function openEditMotivo(emp) {
+    setEditMotivoEmpleado(emp);
+    setEditMotivoText(emp?.motivo_baja || "");
+  }
+
+  async function handleSaveMotivo() {
+    if (!editMotivoEmpleado) return;
+    setSavingMotivo(true);
+    try {
+      const currentUserName = user?.full_name || user?.nombre || (user?.email ? user.email.split('@')[0] : "Usuario");
+      const updatePayload = {
+        motivo_baja: editMotivoText || null,
+        usuario_modificacion_baja: currentUserName,
+      };
+      try {
+        await sercoApi.entities.Empleado.update(editMotivoEmpleado.id, updatePayload);
+      } catch {
+        await sercoApi.entities.Empleado.update(editMotivoEmpleado.id, {
+          motivo_baja: editMotivoText || null,
+        });
+      }
+
+      setItems((prev) =>
+        prev.map((e) => (e.id === editMotivoEmpleado.id ? { ...e, motivo_baja: editMotivoText } : e))
+      );
+      if (viewEmpleado && viewEmpleado.id === editMotivoEmpleado.id) {
+        setViewEmpleado((prev) => ({ ...prev, motivo_baja: editMotivoText }));
+      }
+      setEditMotivoEmpleado(null);
+      toast({
+        title: "Motivo actualizado",
+        description: `Se actualizó el motivo de baja para ${editMotivoEmpleado.nombre_completo}.`,
+      });
+    } catch (err) {
+      console.error("Error al actualizar motivo de baja:", err);
+      toast({
+        title: "Error al actualizar",
+        description: err.message || "No se pudo actualizar el motivo.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingMotivo(false);
+    }
+  }
+
   async function handleConfirmReingreso() {
     try {
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -781,17 +833,18 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       Fecha Baja {renderSortIcon("fecha_baja")}
                     </div>
                   </TableHead>
+                  <TableHead className="min-w-[180px]">Motivo de Baja</TableHead>
                   <TableHead>Días Laborados</TableHead>
                   <TableHead className="text-right">Finiquito Est.</TableHead>
                   <TableHead className="text-center">Actas</TableHead>
-                  
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedBajas.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
                 ) : (
                   sortedBajas.map((item) => {
                     const est = getFiniquitoEstimation(item.fecha_ingreso, item.fecha_baja, item.sueldo);
@@ -805,6 +858,24 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                         <TableCell>{item.fecha_ingreso || "—"}</TableCell>
                         <TableCell className="text-destructive font-semibold">{item.fecha_baja || "—"}</TableCell>
+                        <TableCell className="max-w-[220px]" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between gap-1.5 group">
+                            <span className="truncate text-xs text-muted-foreground" title={item.motivo_baja || "Sin motivo especificado"}>
+                              {item.motivo_baja || <span className="italic opacity-60">Sin motivo</span>}
+                            </span>
+                            {can("empleados", "edit") && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-60 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary shrink-0"
+                                onClick={() => openEditMotivo(item)}
+                                title="Editar motivo de baja"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{est ? `${est.days} días` : "—"}</TableCell>
                         <TableCell className="text-right font-medium text-emerald-600">
                           {est ? `$${est.total.toLocaleString("es-MX")}` : "—"}
@@ -818,7 +889,17 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                           <div className="flex justify-end gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            
+                            {can("empleados", "edit") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs px-2 text-primary hover:bg-primary/10"
+                                onClick={() => openEditMotivo(item)}
+                                title="Editar motivo de baja"
+                              >
+                                <Pencil className="w-3 h-3 mr-1" /> Editar Motivo
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1497,6 +1578,22 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 </div>
               )}
 
+              {form.fecha_baja && (
+                <div className="sm:col-span-2">
+                  <Label className="text-destructive font-semibold">Motivo de la Baja</Label>
+                  <Textarea
+                    placeholder="Describe el motivo de la baja..."
+                    value={form.motivo_baja || ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        motivo_baja: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              )}
+
               <div>
                 <Label>Medio de Reclutamiento</Label>
                 <Input
@@ -1751,11 +1848,23 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           </p>
         </div>
 
-        {viewEmpleado?.motivo_baja && (
-          <div>
-            <Label>Motivo de la Baja</Label>
-            <p className="text-sm text-muted-foreground font-semibold text-rose-600">
-              {viewEmpleado.motivo_baja}
+        {(viewEmpleado?.fecha_baja || viewEmpleado?.motivo_baja) && (
+          <div className="col-span-2 p-3 rounded-lg border bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900 mt-2">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <Label className="text-xs font-semibold text-rose-800 dark:text-rose-300">Motivo de la Baja</Label>
+              {can("empleados", "edit") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-xs px-2 text-rose-700 border-rose-300 hover:bg-rose-100 dark:text-rose-300 dark:border-rose-800 dark:hover:bg-rose-900/40"
+                  onClick={() => openEditMotivo(viewEmpleado)}
+                >
+                  <Pencil className="w-3 h-3 mr-1" /> Editar motivo
+                </Button>
+              )}
+            </div>
+            <p className="text-sm text-rose-950 dark:text-rose-100 font-medium">
+              {viewEmpleado.motivo_baja || <span className="italic text-muted-foreground text-xs">Sin motivo especificado</span>}
             </p>
           </div>
         )}
@@ -2204,6 +2313,38 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           <DialogFooter>
             <Button onClick={() => setImssAlertEmpleado(null)} className="w-full bg-orange-600 hover:bg-orange-700 text-white">
               Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Motivo Baja Dialog */}
+      <Dialog open={!!editMotivoEmpleado} onOpenChange={(v) => !v && setEditMotivoEmpleado(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <Pencil className="w-4 h-4 text-primary" /> Editar Motivo de Baja
+            </DialogTitle>
+            <DialogDescription>
+              Empleado: <strong className="text-foreground">{editMotivoEmpleado?.nombre_completo}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-3">
+            <Label htmlFor="modal-edit-motivo-text">Motivo de la Baja</Label>
+            <Textarea
+              id="modal-edit-motivo-text"
+              rows={4}
+              placeholder="Escribe o actualiza el motivo detallado de la baja..."
+              value={editMotivoText}
+              onChange={(e) => setEditMotivoText(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditMotivoEmpleado(null)} disabled={savingMotivo}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveMotivo} disabled={savingMotivo}>
+              {savingMotivo ? "Guardando..." : "Guardar Cambios"}
             </Button>
           </DialogFooter>
         </DialogContent>
