@@ -187,11 +187,11 @@ export default function Layout() {
 
       return (
         <div key={section.title} className="pt-2 border-t border-sidebar-border first:border-0 first:pt-0">
-          <Collapsible defaultOpen>
-            <CollapsibleTrigger className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+          <Collapsible defaultOpen={false}>
+            <CollapsibleTrigger className="group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
               <SectionIcon className="w-4 h-4 shrink-0" />
               <span>{section.title}</span>
-              <ChevronDown className="w-4 h-4 ml-auto transition-transform" />
+              <ChevronDown className="w-4 h-4 ml-auto transition-transform duration-200 group-data-[state=open]:rotate-180" />
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="mt-1 space-y-1 ml-4 border-l border-sidebar-border pl-3">
@@ -226,11 +226,11 @@ export default function Layout() {
   const renderAdminNav = (onNavigate) =>
     canView("administracion") && (
       <div className="pt-3 mt-3 border-t border-sidebar-border">
-        <Collapsible defaultOpen>
-          <CollapsibleTrigger className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+        <Collapsible defaultOpen={false}>
+          <CollapsibleTrigger className="group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
             <Shield className="w-4 h-4 shrink-0" />
             Administración
-            <ChevronDown className="w-4 h-4 ml-auto transition-transform" />
+            <ChevronDown className="w-4 h-4 ml-auto transition-transform duration-200 group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="mt-1 space-y-1 ml-4 border-l border-sidebar-border pl-3">

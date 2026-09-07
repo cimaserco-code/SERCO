@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -18,17 +18,25 @@ import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
-import { generateContractPDF } from "@/lib/contratoTemplate";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 const emptyForm = {
   nombre_completo: "",
   clabe_bancaria: "",
+  banco: "",
   fecha_ingreso: "",
   sueldo: "",
   servicio_ubicacion: "",
+  turno: "matutino",
   puesto: "",
   telefono: "",
   email: "",
@@ -60,6 +68,12 @@ const emptyForm = {
   fecha_montaje: "",
   hospedaje: false,
   seguro: false,
+  beneficiario: "",
+  carta_militar: "No",
+  referencia: "",
+  referencia_telefono: "",
+  usuario_alta: "",
+  usuario_baja: "",
 };
 
 export default function Empleados() {
@@ -84,28 +98,13 @@ export default function Empleados() {
   const [motivoBajaInput, setMotivoBajaInput] = useState("");
   const [sortField, setSortField] = useState("nombre_completo");
   const [sortDirection, setSortDirection] = useState("asc");
+  const [serviceComboboxOpen, setServiceComboboxOpen] = useState(false);
 
   // Save Error Notification
   const [saveError, setSaveError] = useState("");
 
   // IMSS Baja Alert
   const [imssAlertEmpleado, setImssAlertEmpleado] = useState(null);
-
-  // Contract Generation States
-  const [contractEmp, setContractEmp] = useState(null);
-  const [contractForm, setContractForm] = useState({
-    bono_mensual: "2000",
-    beneficiario: "",
-    parentesco: "",
-    porcentaje: "100",
-    duracion_meses: "3"
-  });
-
-  const handleGenerateContract = () => {
-    if (!contractEmp) return;
-    generateContractPDF(contractEmp, contractForm, sedes);
-    setContractEmp(null);
-  };
 
   useEffect(() => { load(); }, []);
 
@@ -213,6 +212,12 @@ export default function Empleados() {
       "Puesto",
       "Fecha de Ingreso",
       "Sueldo",
+      "Banco",
+      "CLABE Bancaria",
+      "Beneficiario",
+      "Cartilla Militar",
+      "Referencia",
+      "Tel. Referencia",
       "Ubicación de Servicio",
       "Uniformes",
       "Actas Administrativas",
@@ -231,6 +236,12 @@ export default function Empleados() {
       emp.puesto || "",
       emp.fecha_ingreso || "",
       emp.sueldo ? `$${emp.sueldo}` : "—",
+      emp.banco || "",
+      emp.clabe_bancaria || "",
+      emp.beneficiario || "",
+      emp.carta_militar || "No",
+      emp.referencia || "",
+      emp.referencia_telefono || "",
       emp.servicio_ubicacion || "Sin Asignar",
       emp.uniformes || "Sin uniformes",
       emp.actas_administrativas || 0,
@@ -259,6 +270,7 @@ export default function Empleados() {
     setSaveError("");
     setEditing(null);
     setForm({ ...emptyForm, sede_id: defaultSedeId });
+    setServiceComboboxOpen(false);
     setModalOpen(true);
   }
 
@@ -267,8 +279,14 @@ export default function Empleados() {
     setForm({ 
       ...emptyForm, 
       ...item, 
+      turno: item.turno || "matutino",
       sueldo: item.sueldo ?? "",
       clabe_bancaria: item.clabe_bancaria || "",
+      banco: item.banco || "",
+      beneficiario: item.beneficiario || "",
+      carta_militar: item.carta_militar || "No",
+      referencia: item.referencia || "",
+      referencia_telefono: item.referencia_telefono || "",
       actas_administrativas: String(item.actas_administrativas ?? 0),
       fecha_baja: item.fecha_baja || "",
       uniformes: item.uniformes || "",
@@ -276,6 +294,7 @@ export default function Empleados() {
       seguro: !!item.seguro
     });
     setSaveError("");
+    setServiceComboboxOpen(false);
     setModalOpen(true);
   }
 
@@ -323,56 +342,192 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 }
   
   async function handleSave() {
-  console.log("ENTRÓ A GUARDAR", form);
+    console.log("ENTRÓ A GUARDAR", form);
 
-  setSaving(true);
-  setSaveError("");
+    setSaving(true);
+    setSaveError("");
 
-  try {
-    const payload = {
-      ...form,
-      sueldo: form.sueldo === "" ? null : Number(form.sueldo),
-      clabe_bancaria: form.clabe_bancaria || null,
-     actas_administrativas: Number(form.actas_administrativas || 0),
-     fecha_ingreso: form.fecha_ingreso || null,
-     fecha_nacimiento: form.fecha_nacimiento || null,
-      fecha_baja: form.fecha_baja || null,
-      fecha_reingreso: form.fecha_reingreso || null,
-      uniformes: form.uniformes || null,
-      infonavit: form.infonavit || null,
-      medio_reclutamiento: form.medio_reclutamiento || null,
-      dia_capacitacion: form.dia_capacitacion || null,
-      dia_capacitacion_2: form.dia_capacitacion_2 || null,
-      fecha_montaje: form.fecha_montaje || null,
-      historial_bajas: form.historial_bajas || null,
-      hospedaje: form.hospedaje ? true : false,
-      seguro: form.seguro ? true : false
-     };
+    try {
+      const payload = {
+        ...form,
+        turno: form.turno || "matutino",
+        sueldo: form.sueldo === "" ? null : Number(form.sueldo),
+        clabe_bancaria: form.clabe_bancaria || null,
+        banco: form.banco || null,
+        beneficiario: form.beneficiario || null,
+        carta_militar: form.carta_militar || "No",
+        referencia: form.referencia || null,
+        referencia_telefono: form.referencia_telefono || null,
+        actas_administrativas: Number(form.actas_administrativas || 0),
+        fecha_ingreso: form.fecha_ingreso || null,
+        fecha_nacimiento: form.fecha_nacimiento || null,
+        fecha_baja: form.fecha_baja || null,
+        fecha_reingreso: form.fecha_reingreso || null,
+        uniformes: form.uniformes || null,
+        infonavit: form.infonavit || null,
+        medio_reclutamiento: form.medio_reclutamiento || null,
+        dia_capacitacion: form.dia_capacitacion || null,
+        dia_capacitacion_2: form.dia_capacitacion_2 || null,
+        fecha_montaje: form.fecha_montaje || null,
+        historial_bajas: form.historial_bajas || null,
+        hospedaje: form.hospedaje ? true : false,
+        seguro: form.seguro ? true : false
+      };
 
-    console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
+      const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
 
-    if (editing) {
-      await sercoApi.entities.Empleado.update(editing.id, payload);
-      if (payload.seguro && payload.fecha_baja && !editing.fecha_baja) {
-        setImssAlertEmpleado({ ...editing, ...payload });
+      console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
+
+      if (editing) {
+        if (payload.fecha_baja && !editing.fecha_baja) {
+          payload.usuario_baja = currentUserName;
+        }
+        try {
+          await sercoApi.entities.Empleado.update(editing.id, payload);
+        } catch (err) {
+          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+            const fallback = { ...payload };
+            delete fallback.usuario_alta;
+            delete fallback.usuario_baja;
+            delete fallback.banco;
+            delete fallback.beneficiario;
+            delete fallback.carta_militar;
+            delete fallback.referencia;
+            delete fallback.referencia_telefono;
+            delete fallback.turno;
+            await sercoApi.entities.Empleado.update(editing.id, fallback);
+          } else {
+            throw err;
+          }
+        }
+        if (payload.seguro && payload.fecha_baja && !editing.fecha_baja) {
+          setImssAlertEmpleado({ ...editing, ...payload });
+        }
+      } else {
+        payload.usuario_alta = currentUserName;
+        try {
+          await sercoApi.entities.Empleado.create(payload);
+        } catch (err) {
+          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+            const fallback = { ...payload };
+            delete fallback.usuario_alta;
+            delete fallback.usuario_baja;
+            delete fallback.banco;
+            delete fallback.beneficiario;
+            delete fallback.carta_militar;
+            delete fallback.referencia;
+            delete fallback.referencia_telefono;
+            delete fallback.turno;
+            await sercoApi.entities.Empleado.create(fallback);
+          } else {
+            throw err;
+          }
+        }
       }
-    } else {
-      await sercoApi.entities.Empleado.create(payload);
+
+      // Sincronización automática con Plantilla (AsignacionTurno)
+      const empName = payload.nombre_completo;
+      if (empName) {
+        const isBaja = Boolean(payload.fecha_baja && (!payload.fecha_reingreso || payload.fecha_baja > payload.fecha_reingreso));
+        const matchedServ = servicios.find((s) => s.nombre === payload.servicio_ubicacion);
+
+        try {
+          const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: empName }).catch(() => []);
+
+          if (isBaja || !matchedServ) {
+            // Si es baja o no es un servicio registrado en Plantilla (ej. "Cubredescansos", "Oficina", o sin asignar), limpiar turnos de plantilla
+            for (const asig of existingAsigs) {
+              await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+            }
+          } else if (matchedServ) {
+            const targetTurno = form.turno || "matutino";
+            const targetSedeId = matchedServ.sede_id || payload.sede_id || "";
+
+            if (existingAsigs.length > 0) {
+              const [firstAsig, ...rest] = existingAsigs;
+              await sercoApi.entities.AsignacionTurno.update(firstAsig.id, {
+                servicio_id: matchedServ.id,
+                servicio_nombre: matchedServ.nombre,
+                sede_id: targetSedeId,
+                turno: targetTurno,
+                empleado_nombre: empName,
+                usuario_asignacion: currentUserName,
+                creado_por: currentUserName,
+              }).catch(async () => {
+                await sercoApi.entities.AsignacionTurno.delete(firstAsig.id).catch(() => {});
+                await sercoApi.entities.AsignacionTurno.create({
+                  servicio_id: matchedServ.id,
+                  servicio_nombre: matchedServ.nombre,
+                  sede_id: targetSedeId,
+                  turno: targetTurno,
+                  empleado_nombre: empName,
+                  usuario_asignacion: currentUserName,
+                  creado_por: currentUserName,
+                }).catch(async () => {
+                  await sercoApi.entities.AsignacionTurno.create({
+                    servicio_id: matchedServ.id,
+                    servicio_nombre: matchedServ.nombre,
+                    sede_id: targetSedeId,
+                    turno: targetTurno,
+                    empleado_nombre: empName,
+                  }).catch(() => {});
+                });
+              });
+              for (const dup of rest) {
+                await sercoApi.entities.AsignacionTurno.delete(dup.id).catch(() => {});
+              }
+            } else {
+              try {
+                await sercoApi.entities.AsignacionTurno.create({
+                  servicio_id: matchedServ.id,
+                  servicio_nombre: matchedServ.nombre,
+                  sede_id: targetSedeId,
+                  turno: targetTurno,
+                  empleado_nombre: empName,
+                  usuario_asignacion: currentUserName,
+                  creado_por: currentUserName,
+                });
+              } catch {
+                await sercoApi.entities.AsignacionTurno.create({
+                  servicio_id: matchedServ.id,
+                  servicio_nombre: matchedServ.nombre,
+                  sede_id: targetSedeId,
+                  turno: targetTurno,
+                  empleado_nombre: empName,
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.warn("No se pudo sincronizar automáticamente con Plantilla:", syncErr);
+        }
+      }
+
+      console.log("GUARDADO CORRECTAMENTE");
+
+      setModalOpen(false);
+      await load();
+
+    } catch (error) {
+      console.error("ERROR COMPLETO:", JSON.stringify(error, null, 2));
+      setSaveError(error.message || "Error al guardar el empleado. Verifica los campos.");
+    } finally {
+      setSaving(false);
     }
-
-    console.log("GUARDADO CORRECTAMENTE");
-
-    setModalOpen(false);
-    await load();
-
-  } catch (error) {
-    console.error("ERROR COMPLETO:", JSON.stringify(error, null, 2));
-    setSaveError(error.message || "Error al guardar el empleado. Verifica los campos.");
-  } finally {
-    setSaving(false);
   }
-}
+
   async function handleDelete() {
+    const empToDelete = items.find((e) => e.id === deleteId);
+    if (empToDelete?.nombre_completo) {
+      try {
+        const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: empToDelete.nombre_completo }).catch(() => []);
+        for (const asig of existingAsigs) {
+          await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+        }
+      } catch (err) {
+        console.warn("Error al limpiar asignaciones de plantilla:", err);
+      }
+    }
     await sercoApi.entities.Empleado.delete(deleteId);
     setDeleteId(null);
     await load();
@@ -381,16 +536,42 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
   async function handleConfirmBaja() {
     try {
       const todayStr = new Date().toISOString().slice(0, 10);
+      const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
       const emp = items.find((e) => e.id === bajaConfirmId);
       const prevHistorial = emp?.historial_bajas ? emp.historial_bajas + ", " : "";
       const newHistorial = prevHistorial + todayStr;
 
-      await sercoApi.entities.Empleado.update(bajaConfirmId, {
-        fecha_baja: todayStr,
-        fecha_reingreso: null,
-        historial_bajas: newHistorial,
-        motivo_baja: motivoBajaInput || null
-      });
+      if (emp?.nombre_completo) {
+        try {
+          const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: emp.nombre_completo }).catch(() => []);
+          for (const asig of existingAsigs) {
+            await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+          }
+        } catch (err) {
+          console.warn("Error al limpiar asignaciones en baja:", err);
+        }
+      }
+
+      try {
+        await sercoApi.entities.Empleado.update(bajaConfirmId, {
+          fecha_baja: todayStr,
+          fecha_reingreso: null,
+          historial_bajas: newHistorial,
+          motivo_baja: motivoBajaInput || null,
+          usuario_baja: currentUserName
+        });
+      } catch (err) {
+        if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+          await sercoApi.entities.Empleado.update(bajaConfirmId, {
+            fecha_baja: todayStr,
+            fecha_reingreso: null,
+            historial_bajas: newHistorial,
+            motivo_baja: motivoBajaInput || null
+          });
+        } else {
+          throw err;
+        }
+      }
 
       // Show IMSS alert if employee was registered in IMSS
       if (emp?.seguro) {
@@ -408,9 +589,22 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
   async function handleConfirmReingreso() {
     try {
       const todayStr = new Date().toISOString().slice(0, 10);
-      await sercoApi.entities.Empleado.update(reingresoConfirmId, {
-        fecha_reingreso: todayStr
-      });
+      const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
+      try {
+        await sercoApi.entities.Empleado.update(reingresoConfirmId, {
+          fecha_reingreso: todayStr,
+          usuario_alta: currentUserName,
+          usuario_baja: null
+        });
+      } catch (err) {
+        if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+          await sercoApi.entities.Empleado.update(reingresoConfirmId, {
+            fecha_reingreso: todayStr
+          });
+        } else {
+          throw err;
+        }
+      }
       setReingresoConfirmId(null);
       await load();
     } catch (e) {
@@ -838,8 +1032,23 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </div>
               
               <div>
+                <Label>Banco</Label>
+                <Input
+                  placeholder="Ej. BBVA, Santander, Banorte..."
+                  value={form.banco || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      banco: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
                 <Label>CLABE Bancaria</Label>
                 <Input
+                  placeholder="18 dígitos"
                   value={form.clabe_bancaria || ""}
                   onChange={(e) =>
                     setForm({
@@ -874,6 +1083,41 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     setForm({
                       ...form,
                       email: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Cartilla Militar</Label>
+                <Select
+                  value={form.carta_militar || "No"}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...form,
+                      carta_militar: v,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Sí">Sí</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Beneficiario</Label>
+                <Input
+                  placeholder="Nombre completo del beneficiario"
+                  value={form.beneficiario || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      beneficiario: e.target.value,
                     })
                   }
                 />
@@ -1013,6 +1257,47 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
           </div>
 
+          {/* REFERENCIAS */}
+          <div>
+
+            <h3 className="font-semibold border-b pb-2 mb-4">
+              Referencias
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+              <div>
+                <Label>Referencia</Label>
+                <Input
+                  placeholder="Ej. Juan Pérez (Ex-jefe / Conocido)"
+                  value={form.referencia}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      referencia: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Número de Contacto de Referencia</Label>
+                <Input
+                  placeholder="10 dígitos"
+                  value={form.referencia_telefono}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      referencia_telefono: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+            </div>
+
+          </div>
+
           {/* INFORMACIÓN LABORAL */}
 
           <div>
@@ -1036,41 +1321,136 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 />
               </div>
 
-              <div>
+              <div className="flex flex-col gap-1.5">
                 <Label>Servicio</Label>
+                <Popover open={serviceComboboxOpen} onOpenChange={setServiceComboboxOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={serviceComboboxOpen}
+                      className="w-full justify-between font-normal h-10 px-3 bg-background"
+                    >
+                      <span className="truncate">
+                        {form.servicio_ubicacion
+                          ? form.servicio_ubicacion
+                          : "Selecciona o busca un servicio..."}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[280px] p-0" align="start">
+                    <Command
+                      filter={(value, search) => {
+                        const normalize = (str) =>
+                          (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                        return normalize(value).includes(normalize(search)) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder="Escribe para buscar servicio..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontró ningún servicio.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="ninguno sin asignar"
+                            onSelect={() => {
+                              setForm({ ...form, servicio_ubicacion: "" });
+                              setServiceComboboxOpen(false);
+                            }}
+                            className="cursor-pointer text-muted-foreground"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                !form.servicio_ubicacion ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            Ninguno / Sin asignar
+                          </CommandItem>
 
+                          <CommandItem
+                            value="cubredescansos"
+                            onSelect={() => {
+                              setForm({ ...form, servicio_ubicacion: "Cubredescansos" });
+                              setServiceComboboxOpen(false);
+                            }}
+                            className="cursor-pointer font-medium"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 text-primary",
+                                form.servicio_ubicacion === "Cubredescansos"
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            Cubredescansos
+                          </CommandItem>
+
+                          <CommandItem
+                            value="oficina"
+                            onSelect={() => {
+                              setForm({ ...form, servicio_ubicacion: "Oficina" });
+                              setServiceComboboxOpen(false);
+                            }}
+                            className="cursor-pointer font-medium"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 text-primary",
+                                form.servicio_ubicacion === "Oficina"
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            Oficina
+                          </CommandItem>
+
+                          {servicios
+                            .filter((s) => s.nombre !== "Cubredescansos" && s.nombre !== "Oficina")
+                            .map((s) => (
+                              <CommandItem
+                                key={s.id}
+                                value={s.nombre}
+                                onSelect={() => {
+                                  setForm({ ...form, servicio_ubicacion: s.nombre });
+                                  setServiceComboboxOpen(false);
+                                }}
+                                className="cursor-pointer font-medium"
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4 text-primary",
+                                    form.servicio_ubicacion === s.nombre
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                {s.nombre}
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div>
+                <Label>Turno en Plantilla</Label>
                 <Select
-                  value={form.servicio_ubicacion || ""}
-                  onValueChange={(val) =>
-                    setForm({
-                      ...form,
-                      servicio_ubicacion: val === "none" ? "" : val,
-                    })
-                  }
+                  value={form.turno || "matutino"}
+                  onValueChange={(val) => setForm({ ...form, turno: val })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un servicio..." />
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Selecciona turno" />
                   </SelectTrigger>
-
                   <SelectContent>
-
-                    <SelectItem value="none">
-                      Ninguno / Sin asignar
-                    </SelectItem>
-
-                    {servicios.map((s) => (
-                      <SelectItem
-                        key={s.id}
-                        value={s.nombre}
-                      >
-                        {s.nombre}
-                      </SelectItem>
-                    ))}
-
+                    <SelectItem value="matutino">Matutino</SelectItem>
+                    <SelectItem value="vespertino">Vespertino</SelectItem>
+                    <SelectItem value="cubre_descansos">Cubre Descansos</SelectItem>
                   </SelectContent>
-
                 </Select>
-
               </div>
 
               <div>
@@ -1543,9 +1923,30 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         </div>
 
         <div>
+          <Label>Banco</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.banco || "—"}
+          </p>
+        </div>
+
+        <div>
           <Label>CLABE Bancaria</Label>
           <p className="text-sm text-muted-foreground">
             {viewEmpleado?.clabe_bancaria || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Cartilla Militar</Label>
+          <p className="text-sm text-muted-foreground font-medium">
+            {viewEmpleado?.carta_militar || "No"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Beneficiario</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.beneficiario || "—"}
           </p>
         </div>
 
@@ -1639,6 +2040,32 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       </div>
     </div>
 
+    {/* Referencias */}
+
+    <div>
+      <h3 className="font-semibold text-base border-b pb-2">
+        Referencias
+      </h3>
+
+      <div className="grid grid-cols-2 gap-4 mt-3">
+
+        <div>
+          <Label>Referencia</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.referencia || "—"}
+          </p>
+        </div>
+
+        <div>
+          <Label>Teléfono de Contacto</Label>
+          <p className="text-sm text-muted-foreground">
+            {viewEmpleado?.referencia_telefono || "—"}
+          </p>
+        </div>
+
+      </div>
+    </div>
+
   </div>
             
             <DialogFooter>
@@ -1699,24 +2126,6 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 </Button>
               )}
 
-              <Button
-                variant="outline"
-                className="border-indigo-300 text-indigo-600 hover:bg-indigo-50"
-                onClick={() => {
-                  setContractEmp(viewEmpleado);
-                  setContractForm({
-                    bono_mensual: "2000",
-                    beneficiario: viewEmpleado.contacto_emergencia || "",
-                    parentesco: viewEmpleado.parentesco || "",
-                    porcentaje: "100",
-                    duracion_meses: "3"
-                  });
-                }}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Contrato
-              </Button>
-
               <Button onClick={() => setViewEmpleado(null)}>
                 Cerrar
               </Button>
@@ -1725,66 +2134,6 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
           </DialogContent>
         </Dialog>
-
-      {/* Contract Input Dialog */}
-      <Dialog open={!!contractEmp} onOpenChange={(v) => !v && setContractEmp(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Generar Contrato PDF</DialogTitle>
-            <DialogDescription>
-              Completa los datos adicionales para la generación del contrato de {contractEmp?.nombre_completo}.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <div>
-              <Label>Bono Mensual ($)</Label>
-              <Input
-                type="number"
-                value={contractForm.bono_mensual}
-                onChange={(e) => setContractForm({ ...contractForm, bono_mensual: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Nombre del Beneficiario</Label>
-              <Input
-                value={contractForm.beneficiario}
-                onChange={(e) => setContractForm({ ...contractForm, beneficiario: e.target.value })}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Parentesco</Label>
-                <Input
-                  value={contractForm.parentesco}
-                  onChange={(e) => setContractForm({ ...contractForm, parentesco: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Porcentaje (%)</Label>
-                <Input
-                  type="number"
-                  value={contractForm.porcentaje}
-                  onChange={(e) => setContractForm({ ...contractForm, porcentaje: e.target.value })}
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Duración del Contrato (Meses)</Label>
-              <Input
-                type="number"
-                value={contractForm.duracion_meses}
-                onChange={(e) => setContractForm({ ...contractForm, duracion_meses: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setContractEmp(null)}>Cancelar</Button>
-            <Button onClick={handleGenerateContract}>Generar PDF</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}

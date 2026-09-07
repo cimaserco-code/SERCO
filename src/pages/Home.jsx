@@ -127,6 +127,8 @@ export default function Home() {
         const isDirector = role === "director";
         const isAdmin = role === "admin";
         const isSuperUser = isCeo || isDirector || isAdmin;
+        const isSupervisor = role === "supervisor";
+        const isRh = role === "rh" || role === "reclutador";
 
         // 1. Finanzas: Material de inventario solicitado (pendiente)
         if (role === "finanzas" || isSuperUser) {
@@ -141,8 +143,8 @@ export default function Home() {
           });
         }
 
-        // 2. RH / Reclutador: Nuevas vacantes abiertas
-        if (role === "rh" || role === "reclutador" || isSuperUser) {
+        // 2. RH / Reclutador / Superusuarios: Nuevas vacantes abiertas
+        if (isRh || isSuperUser) {
           (vacs || []).filter(v => v.estado === 'abierta').forEach(v => {
             const servName = serv.find(s => s.id === v.servicio_id)?.nombre || "Servicio";
             alertsList.push({
@@ -155,50 +157,53 @@ export default function Home() {
           });
         }
 
-        // 3. RH: Bajas de empleados (Supervisor dio de baja a alguien)
-        if (role === "rh" || isSuperUser) {
-          const recentBajas = (emp || []).filter(e => {
-            return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
-          });
-          recentBajas.forEach(e => {
-            alertsList.push({
-              id: `baja-rh-${e.id}`,
-              type: 'danger',
-              title: 'Empleado de Baja (RH)',
-              description: `${e.nombre_completo} fue dado de baja (Motivo: ${e.motivo_baja || 'No especificado'}).`,
-              time: 'Baja'
-            });
-          });
-        }
-
-        // 4. Supervisor: Altas y Bajas de empleados
-        if (role === "supervisor" || isSuperUser) {
-          // Altas
+        // 3. Altas de personal (RH / Supervisor / Superusuarios)
+        if (isSupervisor || isRh || isSuperUser) {
           const recentHires = (emp || []).filter(e => {
             const date = e.fecha_ingreso || e.fecha_reingreso;
             return date && date.slice(0, 7) === currentMonth;
           });
           recentHires.forEach(e => {
+            const byUser = e.usuario_alta ? ` (registrado por ${e.usuario_alta})` : '';
             alertsList.push({
-              id: `alta-sup-${e.id}`,
+              id: `alta-${e.id}`,
               type: 'success',
               title: 'Alta de Personal',
-              description: `${e.nombre_completo} se incorporó como ${e.puesto || 'Personal'}.`,
+              description: `${e.nombre_completo} se incorporó como ${e.puesto || 'Personal'}${byUser}.`,
               time: 'Alta'
             });
           });
+        }
 
-          // Bajas
+        // 4. Bajas de personal (RH / Supervisor / Superusuarios)
+        if (isSupervisor || isRh || isSuperUser) {
           const recentBajas = (emp || []).filter(e => {
             return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
           });
           recentBajas.forEach(e => {
+            const byUser = e.usuario_baja ? ` por ${e.usuario_baja}` : '';
+            const motivoText = e.motivo_baja ? ` (Motivo: ${e.motivo_baja})` : '';
             alertsList.push({
-              id: `baja-sup-${e.id}`,
+              id: `baja-${e.id}`,
               type: 'danger',
               title: 'Baja de Personal',
-              description: `${e.nombre_completo} fue dado de baja.`,
+              description: `${e.nombre_completo} fue dado de baja${byUser}${motivoText}.`,
               time: 'Baja'
+            });
+          });
+        }
+
+        // 5. Movimientos / Asignaciones en Plantilla (Supervisor / RH / Superusuarios)
+        if (isSupervisor || isRh || isSuperUser) {
+          (turnos || []).forEach(t => {
+            const byUser = t.usuario_asignacion || t.creado_por ? ` por ${t.usuario_asignacion || t.creado_por}` : '';
+            const turnoLabel = t.turno === 'matutino' ? 'Matutino' : t.turno === 'vespertino' ? 'Vespertino' : 'Cubre Descansos';
+            alertsList.push({
+              id: `turno-${t.id}`,
+              type: 'info',
+              title: 'Movimiento de Plantilla',
+              description: `${t.empleado_nombre} asignado a ${t.servicio_nombre} (${turnoLabel})${byUser}.`,
+              time: 'Plantilla'
             });
           });
         }

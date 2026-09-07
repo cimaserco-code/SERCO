@@ -170,7 +170,7 @@ function cleanAddressForGeocoding(address, sedeName) {
 }
 
 const emptyForm = {
-  nombre: "", direccion: "", admin_nombre: "", telefono: "",correo:"",fecha_inicio: "", estado: "activo", fecha_baja: "", sede_id: "",
+  nombre: "", direccion: "", admin_nombre: "", telefono: "", telefono_2: "", correo: "", correo_2: "", fecha_inicio: "", estado: "activo", fecha_baja: "", sede_id: "",
   dia_costo: "", dia_pago: "", costo: "", pago: "", turnos_autorizados: ""
 };
 
@@ -290,7 +290,11 @@ export default function Servicios() {
     const coincideBusqueda =
       (item.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
       (item.admin_nombre || "").toLowerCase().includes(search.toLowerCase()) ||
-      (item.direccion || "").toLowerCase().includes(search.toLowerCase());
+      (item.direccion || "").toLowerCase().includes(search.toLowerCase()) ||
+      (item.telefono || "").includes(search) ||
+      (item.telefono_2 || "").includes(search) ||
+      (item.correo || "").toLowerCase().includes(search.toLowerCase()) ||
+      (item.correo_2 || "").toLowerCase().includes(search.toLowerCase());
  
     const statusNormalized = (item.estado || "activo").toLowerCase();
     const coincideEstado = activeTab === "activos"
@@ -312,6 +316,10 @@ export default function Servicios() {
     setForm({ 
       ...emptyForm, 
       ...item, 
+      telefono: item.telefono || "",
+      telefono_2: item.telefono_2 || "",
+      correo: item.correo || "",
+      correo_2: item.correo_2 || "",
       estado: item.estado || "activo",
       fecha_baja: item.fecha_baja ?? "",
       latitud: item.latitud ?? "",
@@ -345,7 +353,9 @@ export default function Servicios() {
         direccion: (form.direccion || "").trim() || null,
         admin_nombre: (form.admin_nombre || "").trim() || null,
         telefono: (form.telefono || "").trim() || null,
+        telefono_2: (form.telefono_2 || "").trim() || null,
         correo: (form.correo || "").trim() || null,
+        correo_2: (form.correo_2 || "").trim() || null,
         estado: form.estado || "activo",
         fecha_inicio: form.fecha_inicio || null,
         fecha_baja: form.estado === "suspendido" ? (form.fecha_baja || null) : null,
@@ -360,10 +370,32 @@ export default function Servicios() {
       let savedItem = null;
 
       if (editing) {
-        savedItem = await sercoApi.entities.Servicio.update(editing.id, payload);
+        try {
+          savedItem = await sercoApi.entities.Servicio.update(editing.id, payload);
+        } catch (err) {
+          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+            const fallback = { ...payload };
+            delete fallback.telefono_2;
+            delete fallback.correo_2;
+            savedItem = await sercoApi.entities.Servicio.update(editing.id, fallback);
+          } else {
+            throw err;
+          }
+        }
         toast({ title: "Servicio actualizado con éxito" });
       } else {
-        savedItem = await sercoApi.entities.Servicio.create(payload);
+        try {
+          savedItem = await sercoApi.entities.Servicio.create(payload);
+        } catch (err) {
+          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+            const fallback = { ...payload };
+            delete fallback.telefono_2;
+            delete fallback.correo_2;
+            savedItem = await sercoApi.entities.Servicio.create(fallback);
+          } else {
+            throw err;
+          }
+        }
 
         try {
           const [startYear, startMonth] = (payload.fecha_inicio || "").split("-");
@@ -665,17 +697,35 @@ export default function Servicios() {
               <Label>Administrador</Label>
               <Input value={form.admin_nombre} onChange={(e) => setForm({ ...form, admin_nombre: e.target.value })} />
             </div>
-            <div>
-              <Label>Teléfono</Label>
-              <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Teléfono 1</Label>
+                <Input placeholder="Teléfono principal" value={form.telefono || ""} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+              </div>
+              <div>
+                <Label>Teléfono 2 (Opcional)</Label>
+                <Input placeholder="Teléfono secundario" value={form.telefono_2 || ""} onChange={(e) => setForm({ ...form, telefono_2: e.target.value })} />
+              </div>
             </div>
-            <div>
-              <Label>Correo</Label>
-              <Input
-                type="email"
-                value={form.correo}
-                onChange={(e) => setForm({ ...form, correo: e.target.value })}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Correo 1</Label>
+                <Input
+                  type="email"
+                  placeholder="correo@ejemplo.com"
+                  value={form.correo || ""}
+                  onChange={(e) => setForm({ ...form, correo: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Correo 2 (Opcional)</Label>
+                <Input
+                  type="email"
+                  placeholder="correo2@ejemplo.com"
+                  value={form.correo_2 || ""}
+                  onChange={(e) => setForm({ ...form, correo_2: e.target.value })}
+                />
+              </div>
             </div>
             <div>
               <div>
@@ -749,18 +799,34 @@ export default function Servicios() {
               </p>
             </div>
 
-            <div>
-              <Label>Teléfono</Label>
-              <p className="text-sm text-muted-foreground">
-                {viewItem?.telefono || "—"}
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Teléfono 1</Label>
+                <p className="text-sm text-muted-foreground">
+                  {viewItem?.telefono || "—"}
+                </p>
+              </div>
+              <div>
+                <Label>Teléfono 2</Label>
+                <p className="text-sm text-muted-foreground">
+                  {viewItem?.telefono_2 || "—"}
+                </p>
+              </div>
             </div>
 
-            <div>
-              <Label>Correo</Label>
-              <p className="text-sm text-muted-foreground">
-                {viewItem?.correo || "—"}
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Correo 1</Label>
+                <p className="text-sm text-muted-foreground">
+                  {viewItem?.correo || "—"}
+                </p>
+              </div>
+              <div>
+                <Label>Correo 2</Label>
+                <p className="text-sm text-muted-foreground">
+                  {viewItem?.correo_2 || "—"}
+                </p>
+              </div>
             </div>
 
             <div>

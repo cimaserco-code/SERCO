@@ -12,19 +12,61 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
+import { useToast } from "@/components/ui/use-toast";
 
 const emptyEgresoForm = { concepto: "", descripcion: "", monto: "", fecha: "", sede_id: "" };
-const emptySaldoForm = { numero_telefono: "", responsable: "", monto: "", fecha: "", sede_id: "", notas: "" };
+const emptySaldoForm = {
+  numero_telefono: "",
+  nombre: "",
+  responsable: "",
+  servicio: "",
+  compania: "Telcel",
+  monto: "50",
+  fecha: "",
+  sede_id: "",
+};
 const emptyMantenimientoForm = { vehiculo: "", tipo_mantenimiento: "", descripcion: "", monto: "", fecha: "", kilometraje: "", sede_id: "", taller: "" };
+
+function parseSaldoMetadata(saldo) {
+  let compania = saldo.compania || "";
+  let servicio = saldo.servicio || "";
+  let nombre = saldo.nombre || saldo.responsable || "";
+
+  if ((!compania || !servicio) && saldo.notas) {
+    try {
+      if (saldo.notas.startsWith("{") && saldo.notas.endsWith("}")) {
+        const parsed = JSON.parse(saldo.notas);
+        if (parsed.compania) compania = parsed.compania;
+        if (parsed.servicio) servicio = parsed.servicio;
+        if (parsed.nombre && !nombre) nombre = parsed.nombre;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return {
+    ...saldo,
+    nombre: nombre || "—",
+    responsable: nombre || "—",
+    compania: compania || "—",
+    servicio: servicio || "—",
+  };
+}
 
 export default function Egresos() {
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("egresos");
 
   // Egresos state
@@ -40,6 +82,7 @@ export default function Egresos() {
 
   // Saldos state
   const [saldos, setSaldos] = useState([]);
+  const [servicios, setServicios] = useState([]);
   const [saldoLoading, setSaldoLoading] = useState(true);
   const [saldoSearch, setSaldoSearch] = useState("");
   const [saldoModalOpen, setSaldoModalOpen] = useState(false);
@@ -92,8 +135,12 @@ export default function Egresos() {
   async function loadSaldos() {
     setSaldoLoading(true);
     try {
-      const data = await sercoApi.entities.Saldo.filter({ ...sedeFilter, mes: currentMonth }, "-fecha").catch(() => []);
-      setSaldos(data);
+      const [data, sv] = await Promise.all([
+        sercoApi.entities.Saldo.filter({ ...sedeFilter, mes: currentMonth }, "-fecha").catch(() => []),
+        sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
+      ]);
+      setSaldos(data || []);
+      if (sv) setServicios(sv);
     } catch {
       setSaldos([]);
     } finally {
@@ -149,9 +196,12 @@ export default function Egresos() {
   const totalGastos = filtered.reduce((sum, item) => sum + (Number(item.monto) || 0), 0);
 
   // ── Saldos Filtered ──
-  const filteredSaldos = saldos.filter((s) =>
+  const filteredSaldos = saldos.map(parseSaldoMetadata).filter((s) =>
     (s.numero_telefono || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
-    (s.responsable || "").toLowerCase().includes(saldoSearch.toLowerCase())
+    (s.nombre || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
+    (s.responsable || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
+    (s.servicio || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
+    (s.compania || "").toLowerCase().includes(saldoSearch.toLowerCase())
   );
   const totalSaldos = filteredSaldos.reduce((sum, s) => sum + (Number(s.monto) || 0), 0);
 
@@ -208,13 +258,28 @@ export default function Egresos() {
   function openSaldoCreate() {
     setSaldoEditing(null);
     const today = new Date().toISOString().split("T")[0];
-    setSaldoForm({ ...emptySaldoForm, fecha: today, sede_id: defaultSedeId });
+    setSaldoForm({
+      ...emptySaldoForm,
+      fecha: today,
+      monto: "50",
+      compania: "Telcel",
+      sede_id: defaultSedeId,
+    });
     setSaldoModalOpen(true);
   }
 
   function openSaldoEdit(item) {
     setSaldoEditing(item);
-    setSaldoForm({ ...emptySaldoForm, ...item, monto: item.monto ?? "" });
+    const parsed = parseSaldoMetadata(item);
+    setSaldoForm({
+      ...emptySaldoForm,
+      ...item,
+      nombre: parsed.nombre !== "—" ? parsed.nombre : "",
+      responsable: parsed.responsable !== "—" ? parsed.responsable : "",
+      servicio: parsed.servicio !== "—" ? parsed.servicio : "",
+      compania: parsed.compania !== "—" ? parsed.compania : "Telcel",
+      monto: String(item.monto ?? "50"),
+    });
     setSaldoModalOpen(true);
   }
 
@@ -222,23 +287,75 @@ export default function Egresos() {
     setSaldoSaving(true);
     try {
       const mes = saldoForm.fecha ? saldoForm.fecha.slice(0, 7) : currentMonth;
-      const payload = { ...saldoForm, monto: saldoForm.monto === "" ? 0 : Number(saldoForm.monto), mes };
-      if (saldoEditing) {
-        await sercoApi.entities.Saldo.update(saldoEditing.id, payload);
-      } else {
-        await sercoApi.entities.Saldo.create(payload);
+      const metadataNotas = JSON.stringify({
+        compania: saldoForm.compania || "Telcel",
+        servicio: saldoForm.servicio || "",
+        nombre: saldoForm.nombre || saldoForm.responsable || "",
+      });
+
+      const fullPayload = {
+        ...saldoForm,
+        responsable: saldoForm.nombre || saldoForm.responsable || "",
+        monto: saldoForm.monto === "" ? 50 : Number(saldoForm.monto),
+        mes,
+        notas: metadataNotas,
+      };
+
+      try {
+        if (saldoEditing) {
+          await sercoApi.entities.Saldo.update(saldoEditing.id, fullPayload);
+        } else {
+          await sercoApi.entities.Saldo.create(fullPayload);
+        }
+      } catch (err) {
+        const msg = err?.message || String(err);
+        if (msg.includes("Could not find the") && msg.includes("column of 'saldos'")) {
+          const safePayload = {
+            numero_telefono: saldoForm.numero_telefono,
+            responsable: saldoForm.nombre || saldoForm.responsable || "",
+            monto: Number(saldoForm.monto) || 50,
+            fecha: saldoForm.fecha,
+            sede_id: saldoForm.sede_id || null,
+            mes,
+            notas: metadataNotas,
+          };
+          if (saldoEditing) {
+            await sercoApi.entities.Saldo.update(saldoEditing.id, safePayload);
+          } else {
+            await sercoApi.entities.Saldo.create(safePayload);
+          }
+        } else {
+          throw err;
+        }
       }
+
       setSaldoModalOpen(false);
       await loadSaldos();
+      toast({ title: "Saldo guardado con éxito" });
+    } catch (e) {
+      toast({
+        title: "Error al guardar saldo",
+        description: e?.message || "Ocurrió un error al guardar",
+        variant: "destructive",
+      });
     } finally {
       setSaldoSaving(false);
     }
   }
 
   async function handleSaldoDelete() {
-    await sercoApi.entities.Saldo.delete(saldoDeleteId);
-    setSaldoDeleteId(null);
-    await loadSaldos();
+    try {
+      await sercoApi.entities.Saldo.delete(saldoDeleteId);
+      setSaldoDeleteId(null);
+      await loadSaldos();
+      toast({ title: "Saldo eliminado" });
+    } catch (e) {
+      toast({
+        title: "Error al eliminar",
+        description: e?.message || "No se pudo eliminar el registro",
+        variant: "destructive",
+      });
+    }
   }
 
   // ── Mantenimiento CRUD ──
@@ -272,15 +389,31 @@ export default function Egresos() {
       }
       setMantenimientoModalOpen(false);
       await loadMantenimientos();
+      toast({ title: "Mantenimiento guardado con éxito" });
+    } catch (e) {
+      toast({
+        title: "Error al guardar mantenimiento",
+        description: e?.message || "Ocurrió un error al guardar",
+        variant: "destructive",
+      });
     } finally {
       setMantenimientoSaving(false);
     }
   }
 
   async function handleMantenimientoDelete() {
-    await sercoApi.entities.Mantenimiento.delete(mantenimientoDeleteId);
-    setMantenimientoDeleteId(null);
-    await loadMantenimientos();
+    try {
+      await sercoApi.entities.Mantenimiento.delete(mantenimientoDeleteId);
+      setMantenimientoDeleteId(null);
+      await loadMantenimientos();
+      toast({ title: "Mantenimiento eliminado" });
+    } catch (e) {
+      toast({
+        title: "Error al eliminar",
+        description: e?.message || "No se pudo eliminar el registro",
+        variant: "destructive",
+      });
+    }
   }
 
   if (!canView("egresos")) return <AccessRestricted />;
@@ -411,7 +544,7 @@ export default function Egresos() {
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar teléfono o responsable..."
+                  placeholder="Buscar teléfono, nombre o servicio..."
                   value={saldoSearch}
                   onChange={(e) => setSaldoSearch(e.target.value)}
                   className="pl-9 w-full sm:w-64"
@@ -430,18 +563,19 @@ export default function Egresos() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Teléfono</TableHead>
-                  <TableHead>Responsable</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Servicio</TableHead>
+                  <TableHead>Compañía</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead>Fecha</TableHead>
-                  <TableHead>Notas</TableHead>
                   {!defaultSedeId && <TableHead>Sede</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {saldoLoading ? (
-                  <TableRow><TableCell colSpan={!defaultSedeId ? 6 : 5} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : filteredSaldos.length === 0 ? (
-                  <TableRow><TableCell colSpan={!defaultSedeId ? 6 : 5} className="text-center text-muted-foreground py-8">No hay saldos registrados</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">No hay saldos registrados</TableCell></TableRow>
                 ) : (
                   filteredSaldos.map((s) => (
                     <TableRow
@@ -450,10 +584,26 @@ export default function Egresos() {
                       onClick={() => can("egresos", "edit") && openSaldoEdit(s)}
                     >
                       <TableCell className="font-medium">{s.numero_telefono || "—"}</TableCell>
-                      <TableCell>{s.responsable || "—"}</TableCell>
-                      <TableCell className="text-right font-medium">${(Number(s.monto) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="font-medium">{s.nombre || s.responsable || "—"}</TableCell>
+                      <TableCell>{s.servicio || "—"}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            s.compania === "Telcel"
+                              ? "border-blue-300 text-blue-700 bg-blue-50/50 dark:bg-blue-950/40 dark:text-blue-300 font-normal"
+                              : s.compania === "AT&T"
+                              ? "border-cyan-300 text-cyan-700 bg-cyan-50/50 dark:bg-cyan-950/40 dark:text-cyan-300 font-normal"
+                              : "border-slate-300 text-slate-700 dark:text-slate-300 font-normal"
+                          }
+                        >
+                          {s.compania || "—"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                        ${(Number(s.monto) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      </TableCell>
                       <TableCell>{s.fecha || "—"}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{s.notas || "—"}</TableCell>
                       {!defaultSedeId && <TableCell>{sedeNombre(s.sede_id)}</TableCell>}
                     </TableRow>
                   ))
@@ -598,30 +748,93 @@ export default function Egresos() {
             <DialogDescription>Registra la recarga de saldo al celular</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Número de Teléfono *</Label>
-                <Input value={saldoForm.numero_telefono} onChange={(e) => setSaldoForm({ ...saldoForm, numero_telefono: e.target.value })} placeholder="Ej: 228 123 4567" />
+                <Input
+                  value={saldoForm.numero_telefono}
+                  onChange={(e) => setSaldoForm({ ...saldoForm, numero_telefono: e.target.value })}
+                  placeholder="Ej: 228 123 4567"
+                />
               </div>
               <div>
-                <Label>Responsable *</Label>
-                <Input value={saldoForm.responsable} onChange={(e) => setSaldoForm({ ...saldoForm, responsable: e.target.value })} placeholder="Nombre del responsable" />
+                <Label>Nombre *</Label>
+                <Input
+                  value={saldoForm.nombre || saldoForm.responsable || ""}
+                  onChange={(e) => setSaldoForm({ ...saldoForm, nombre: e.target.value, responsable: e.target.value })}
+                  placeholder="Nombre de la persona"
+                />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Servicio</Label>
+                <Select
+                  value={saldoForm.servicio || "none"}
+                  onValueChange={(val) => setSaldoForm({ ...saldoForm, servicio: val === "none" ? "" : val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona servicio..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin asignar / General</SelectItem>
+                    <SelectItem value="Cubredescansos">Cubredescansos</SelectItem>
+                    <SelectItem value="Oficina">Oficina</SelectItem>
+                    {servicios.map((s) => (
+                      <SelectItem key={s.id} value={s.nombre}>
+                        {s.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Compañía Telefónica *</Label>
+                <Select
+                  value={saldoForm.compania || "Telcel"}
+                  onValueChange={(val) => setSaldoForm({ ...saldoForm, compania: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona compañía" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Telcel">Telcel</SelectItem>
+                    <SelectItem value="AT&T">AT&T</SelectItem>
+                    <SelectItem value="Movistar">Movistar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Monto *</Label>
-                <Input type="number" step="0.01" value={saldoForm.monto} onChange={(e) => setSaldoForm({ ...saldoForm, monto: e.target.value })} />
+                <Select
+                  value={String(saldoForm.monto || "50")}
+                  onValueChange={(val) => setSaldoForm({ ...saldoForm, monto: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona el monto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="50">$50.00 MXN</SelectItem>
+                    <SelectItem value="100">$100.00 MXN</SelectItem>
+                    <SelectItem value="150">$150.00 MXN</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Fecha *</Label>
-                <Input type="date" value={saldoForm.fecha} onChange={(e) => setSaldoForm({ ...saldoForm, fecha: e.target.value })} />
+                <Input
+                  type="date"
+                  value={saldoForm.fecha}
+                  onChange={(e) => setSaldoForm({ ...saldoForm, fecha: e.target.value })}
+                />
               </div>
             </div>
-            <div>
-              <Label>Notas</Label>
-              <Input value={saldoForm.notas} onChange={(e) => setSaldoForm({ ...saldoForm, notas: e.target.value })} placeholder="Observaciones opcionales" />
-            </div>
+
             {!defaultSedeId && (
               <div>
                 <SedeSelector
@@ -640,7 +853,17 @@ export default function Egresos() {
             )}
             <div className="flex gap-2 justify-end ml-auto">
               <Button variant="outline" onClick={() => setSaldoModalOpen(false)}>Cancelar</Button>
-              <Button onClick={handleSaldoSave} disabled={saldoSaving || !saldoForm.numero_telefono || !saldoForm.responsable || !saldoForm.monto || !saldoForm.fecha || (!defaultSedeId && !saldoForm.sede_id)}>
+              <Button
+                onClick={handleSaldoSave}
+                disabled={
+                  saldoSaving ||
+                  !saldoForm.numero_telefono ||
+                  !(saldoForm.nombre || saldoForm.responsable) ||
+                  !saldoForm.monto ||
+                  !saldoForm.fecha ||
+                  (!defaultSedeId && !saldoForm.sede_id)
+                }
+              >
                 {saldoSaving ? "Guardando..." : "Guardar"}
               </Button>
             </div>

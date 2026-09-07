@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, Check, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,23 +12,37 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
+} from "@/components/ui/command";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 import { useSedeScope } from "@/hooks/useSedeScope";
+import { generateContractPDF } from "@/lib/contratoTemplate";
+import { cn } from "@/lib/utils";
 
 const emptyForm = { titulo: "", contenido: "", sede_id: "" };
 
+const defaultContractForm = {
+  bono_mensual: "2000",
+  beneficiario: "",
+  parentesco: "",
+  porcentaje: "100",
+  duracion_meses: "3",
+};
 
 export default function Documentos() {
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
   const { toast } = useToast();
   const [items, setItems] = useState([]);
+  const [empleados, setEmpleados] = useState([]);
+  const [sedes, setSedes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -39,16 +53,28 @@ export default function Documentos() {
   const [deleteId, setDeleteId] = useState(null);
   const [viewItem, setViewItem] = useState(null);
 
+  // Contract Generation States
+  const [contractModalOpen, setContractModalOpen] = useState(false);
+  const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [empComboboxOpen, setEmpComboboxOpen] = useState(false);
+  const [contractForm, setContractForm] = useState(defaultContractForm);
+
   useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await sercoApi.entities.Documento.filter(
-        sedeFilter,
-        "-created_date"
-      );
+      const [data, emps, s] = await Promise.all([
+        sercoApi.entities.Documento.filter(sedeFilter, "-created_date"),
+        sercoApi.entities.Empleado.filter(sedeFilter, "nombre_completo"),
+        sercoApi.entities.Sede.list(),
+      ]);
       setItems(data);
+      const activeEmps = (emps || []).filter(
+        (e) => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)
+      );
+      setEmpleados(activeEmps.length > 0 ? activeEmps : (emps || []));
+      setSedes(s || []);
     } finally {
       setLoading(false);
     }
@@ -71,6 +97,43 @@ export default function Documentos() {
     setForm({ ...emptyForm, ...item });
     setFile(null);
     setModalOpen(true);
+  }
+
+  function openContractGenerator() {
+    setSelectedEmpId("");
+    setContractForm(defaultContractForm);
+    setEmpComboboxOpen(false);
+    setContractModalOpen(true);
+  }
+
+  function handleSelectEmployee(emp) {
+    setSelectedEmpId(emp.id);
+    setContractForm({
+      bono_mensual: "2000",
+      beneficiario: emp.beneficiario || emp.contacto_emergencia || "",
+      parentesco: emp.parentesco || "",
+      porcentaje: "100",
+      duracion_meses: "3",
+    });
+    setEmpComboboxOpen(false);
+  }
+
+  function handleGenerateContract() {
+    const emp = empleados.find((e) => e.id === selectedEmpId);
+    if (!emp) {
+      toast({
+        title: "Error",
+        description: "Por favor selecciona un empleado para generar el contrato.",
+        variant: "destructive",
+      });
+      return;
+    }
+    generateContractPDF(emp, contractForm, sedes);
+    setContractModalOpen(false);
+    toast({
+      title: "Contrato generado",
+      description: `Se ha descargado el contrato de ${emp.nombre_completo}.`,
+    });
   }
 
   async function handleSave() {
@@ -124,6 +187,7 @@ export default function Documentos() {
     setDeleteId(null);
     await load();
   }
+  const selectedEmpleadoObj = empleados.find((e) => e.id === selectedEmpId);
 
   if (!canView("documentos")) return <AccessRestricted />;
 
@@ -134,7 +198,7 @@ export default function Documentos() {
           <h2 className="text-2xl font-heading font-bold">Documentos</h2>
           <p className="text-sm text-muted-foreground mt-1">Plantillas de contratos, renuncias y más</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -144,6 +208,13 @@ export default function Documentos() {
               className="pl-9 w-full sm:w-64"
             />
           </div>
+          <Button
+            variant="outline"
+            className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 font-medium"
+            onClick={openContractGenerator}
+          >
+            <FileText className="w-4 h-4 mr-1.5 text-indigo-600" /> Generar Contrato
+          </Button>
           {can("documentos", "create") && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4 mr-1" /> Agregar
@@ -193,6 +264,137 @@ export default function Documentos() {
           ))}
         </div>
       )}
+
+      {/* Contract Generator Dialog */}
+      <Dialog open={contractModalOpen} onOpenChange={setContractModalOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generar Contrato Laboral</DialogTitle>
+            <DialogDescription>
+              Selecciona el empleado y completa los datos para descargar el contrato en PDF.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Searchable Empleado Combobox */}
+            <div className="flex flex-col gap-1.5">
+              <Label>Empleado *</Label>
+              <Popover open={empComboboxOpen} onOpenChange={setEmpComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={empComboboxOpen}
+                    className="w-full justify-between font-normal h-10 px-3 bg-background"
+                  >
+                    <span className="truncate">
+                      {selectedEmpleadoObj
+                        ? `${selectedEmpleadoObj.nombre_completo} (${selectedEmpleadoObj.puesto || "Sin puesto"})`
+                        : "Selecciona o busca un empleado..."}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[320px] p-0" align="start">
+                  <Command
+                    filter={(value, search) => {
+                      const normalize = (str) =>
+                        (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                      return normalize(value).includes(normalize(search)) ? 1 : 0;
+                    }}
+                  >
+                    <CommandInput placeholder="Escribe el nombre del empleado..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró ningún empleado.</CommandEmpty>
+                      <CommandGroup>
+                        {empleados.map((emp) => (
+                          <CommandItem
+                            key={emp.id}
+                            value={`${emp.nombre_completo} ${emp.puesto || ""} ${emp.curp || ""}`}
+                            onSelect={() => handleSelectEmployee(emp)}
+                            className="cursor-pointer font-medium"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 text-primary",
+                                selectedEmpId === emp.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex flex-col">
+                              <span>{emp.nombre_completo}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {emp.puesto || "Sin puesto"} · {emp.servicio_ubicacion || "Sin servicio"}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Bono Mensual Puntualidad ($)</Label>
+                <Input
+                  type="number"
+                  value={contractForm.bono_mensual}
+                  onChange={(e) => setContractForm({ ...contractForm, bono_mensual: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Duración Inicial (Meses)</Label>
+                <Input
+                  type="number"
+                  value={contractForm.duracion_meses}
+                  onChange={(e) => setContractForm({ ...contractForm, duracion_meses: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Beneficiario en caso de fallecimiento</Label>
+              <Input
+                value={contractForm.beneficiario}
+                placeholder="Nombre completo del beneficiario"
+                onChange={(e) => setContractForm({ ...contractForm, beneficiario: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Parentesco</Label>
+                <Input
+                  value={contractForm.parentesco}
+                  placeholder="Ej. Esposa, Madre, Hijo"
+                  onChange={(e) => setContractForm({ ...contractForm, parentesco: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Porcentaje (%)</Label>
+                <Input
+                  type="number"
+                  value={contractForm.porcentaje}
+                  onChange={(e) => setContractForm({ ...contractForm, porcentaje: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContractModalOpen(false)}>Cancelar</Button>
+            <Button 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
+              onClick={handleGenerateContract}
+              disabled={!selectedEmpId}
+            >
+              <FileText className="w-4 h-4 mr-1.5" /> Descargar PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create/Edit Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
