@@ -97,6 +97,7 @@ export default function Empleados() {
   const [viewEmpleado, setViewEmpleado] = useState(null);
   const [bajaConfirmId, setBajaConfirmId] = useState(null);
   const [reingresoConfirmId, setReingresoConfirmId] = useState(null);
+  const [fechaReingresoInput, setFechaReingresoInput] = useState(() => new Date().toISOString().slice(0, 10));
   const [motivoBajaInput, setMotivoBajaInput] = useState("");
   const [editMotivoEmpleado, setEditMotivoEmpleado] = useState(null);
   const [editMotivoText, setEditMotivoText] = useState("");
@@ -650,18 +651,18 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
   async function handleConfirmReingreso() {
     try {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const selectedDate = fechaReingresoInput || new Date().toISOString().slice(0, 10);
       const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
       try {
         await sercoApi.entities.Empleado.update(reingresoConfirmId, {
-          fecha_reingreso: todayStr,
+          fecha_reingreso: selectedDate,
           usuario_alta: currentUserName,
           usuario_baja: null
         });
       } catch (err) {
         if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
           await sercoApi.entities.Empleado.update(reingresoConfirmId, {
-            fecha_reingreso: todayStr
+            fecha_reingreso: selectedDate
           });
         } else {
           throw err;
@@ -900,15 +901,29 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                             onClick={(e) => e.stopPropagation()}
                           >
                             {can("empleados", "edit") && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs px-2 text-primary hover:bg-primary/10"
-                                onClick={() => openEditMotivo(item)}
-                                title="Editar motivo de baja"
-                              >
-                                <Pencil className="w-3 h-3 mr-1" /> Editar Motivo
-                              </Button>
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs px-2 text-primary hover:bg-primary/10"
+                                  onClick={() => openEditMotivo(item)}
+                                  title="Editar motivo de baja"
+                                >
+                                  <Pencil className="w-3 h-3 mr-1" /> Editar Motivo
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs px-2 text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+                                  onClick={() => {
+                                    setReingresoConfirmId(item.id);
+                                    setFechaReingresoInput(new Date().toISOString().slice(0, 10));
+                                  }}
+                                  title="Registrar reingreso con fecha"
+                                >
+                                  <Plus className="w-3 h-3 mr-1" /> Reingreso
+                                </Button>
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -1605,6 +1620,23 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               )}
 
               <div>
+                <Label className="font-semibold text-foreground">Fecha de Reingreso</Label>
+                <Input
+                  type="date"
+                  value={form.fecha_reingreso || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      fecha_reingreso: e.target.value,
+                    })
+                  }
+                />
+                <span className="text-[11px] text-muted-foreground">
+                  Opcional. Se utiliza si el colaborador reingresó a la empresa.
+                </span>
+              </div>
+
+              <div>
                 <Label>Medio de Reclutamiento</Label>
                 <Input
                   value={form.medio_reclutamiento}
@@ -2280,14 +2312,34 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       </ConfirmDialog>
       <ConfirmDialog
         open={!!reingresoConfirmId}
-        onOpenChange={(v) => !v && setReingresoConfirmId(null)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setReingresoConfirmId(null);
+            setFechaReingresoInput(new Date().toISOString().slice(0, 10));
+          }
+        }}
         title="¿Confirmar reingreso del empleado?"
-        description="Esta acción registrará el reingreso del empleado con la fecha de hoy automáticamente y lo moverá a la sección de activos."
+        description="Indica la fecha en que el colaborador se reincorpora. Se reactivará en la plantilla y asistencias."
         confirmLabel="Confirmar Reingreso"
         variant="success"
         loadingLabel="Guardando..."
         onConfirm={handleConfirmReingreso}
-      />
+      >
+        <div className="space-y-2 py-3 px-1">
+          <Label htmlFor="fecha-reingreso-confirm" className="font-semibold text-foreground">
+            Fecha de Reingreso
+          </Label>
+          <Input
+            id="fecha-reingreso-confirm"
+            type="date"
+            value={fechaReingresoInput}
+            onChange={(e) => setFechaReingresoInput(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Por defecto se sugiere la fecha de hoy, pero puedes elegir cualquier fecha exacta en que reingresó.
+          </p>
+        </div>
+      </ConfirmDialog>
 
       {/* IMSS Baja Alert Dialog */}
       <Dialog open={!!imssAlertEmpleado} onOpenChange={(v) => !v && setImssAlertEmpleado(null)}>
