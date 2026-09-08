@@ -73,7 +73,7 @@ export default function Overview() {
         (canView("servicios") ? sercoApi.entities.Servicio.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("inventario") ? sercoApi.entities.InventarioItem.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("documentos") ? sercoApi.entities.Documento.list() : Promise.resolve([])).catch(() => []),
-        (canView("cobros") ? sercoApi.entities.Cobro.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
+        (canView("cobros") ? sercoApi.entities.Cobro.filter({ ...sedeFilter, mes: currentMonth }) : Promise.resolve([])).catch(() => []),
         (canView("egresos") ? sercoApi.entities.Egreso.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") && sercoApi.entities.Saldo ? sercoApi.entities.Saldo.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") && sercoApi.entities.Mantenimiento ? sercoApi.entities.Mantenimiento.filter(sedeFilter) : Promise.resolve([])).catch(() => []),

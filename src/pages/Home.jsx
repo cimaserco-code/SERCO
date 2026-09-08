@@ -119,7 +119,7 @@ export default function Home() {
           sercoApi.entities.InventarioItem.filter(sedeFilter).catch(() => []),
           sercoApi.entities.Documento.list().catch(() => []),
           sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => []),
-          sercoApi.entities.Cobro.filter(sedeFilter).catch(() => []),
+          sercoApi.entities.Cobro.filter({ ...sedeFilter, mes: currentMonth }).catch(() => []),
           sercoApi.entities.Sede.list().catch(() => []),
           sercoApi.entities.Comunicado.list().catch(() => []),
           sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),

@@ -101,8 +101,13 @@ export default function Cobros() {
   async function load() {
     setLoading(true);
     try {
-      const [allCobros, allServicios, allSedes] = await Promise.all([
-        sercoApi.entities.Cobro.filter(sedeFilter, "-created_date"),
+      const cobroQuery = {
+        ...sedeFilter,
+        mes: currentMonth,
+      };
+
+      const [monthlyCobros, allServicios, allSedes] = await Promise.all([
+        sercoApi.entities.Cobro.filter(cobroQuery, "-created_date"),
         sercoApi.entities.Servicio.filter(sedeFilter, "-created_date"),
         sercoApi.entities.Sede.list(),
       ]);
@@ -135,43 +140,30 @@ export default function Cobros() {
       activeServicios.forEach((s) => {
         const startMonth = s.fecha_inicio ? s.fecha_inicio.substring(0, 7) : currentMonth;
         if (startMonth <= currentMonth) {
-          const targetMonths = getMonthsBetween(startMonth, currentMonth);
-
-          let lastMonto = 0;
-          let lastFechaLimite = null;
-
-          targetMonths.forEach((m) => {
-            const existing = allCobros.find((c) => c.servicio_id === s.id && c.mes === m);
-            if (existing) {
-              lastMonto = existing.monto ?? 0;
-              lastFechaLimite = existing.fecha_limite_pago || null;
-            } else {
-              const adjustedFechaLimite = adjustDateToMonth(lastFechaLimite, m);
-              allPendingCreates.push({
-                servicio_id: s.id,
-                servicio_nombre: s.nombre,
-                mes: m,
-                fecha_factura: null,
-                monto: lastMonto,
-                estado: "pendiente",
-                fecha_limite_pago: adjustedFechaLimite,
-                fecha_pago: null,
-                sede_id: s.sede_id,
-              });
-              lastFechaLimite = adjustedFechaLimite;
-            }
-          });
+          const existing = monthlyCobros.find((c) => c.servicio_id === s.id);
+          if (!existing) {
+            allPendingCreates.push({
+              servicio_id: s.id,
+              servicio_nombre: s.nombre,
+              mes: currentMonth,
+              fecha_factura: null,
+              monto: 0,
+              estado: "pendiente",
+              fecha_limite_pago: null,
+              fecha_pago: null,
+              sede_id: s.sede_id,
+            });
+          }
         }
       });
 
-      let nextCobros = allCobros;
+      let nextCobros = monthlyCobros;
       if (allPendingCreates.length > 0) {
-        await Promise.all(allPendingCreates.map((payload) => sercoApi.entities.Cobro.create(payload)));
-        nextCobros = await sercoApi.entities.Cobro.filter(sedeFilter, "-created_date");
+        await Promise.allSettled(allPendingCreates.map((payload) => sercoApi.entities.Cobro.create(payload)));
+        nextCobros = await sercoApi.entities.Cobro.filter(cobroQuery, "-created_date");
       }
 
-      const monthlyItems = nextCobros.filter((c) => c.mes === currentMonth);
-      setItems(monthlyItems);
+      setItems(nextCobros);
       setServicios(allServicios);
       setSedes(allSedes);
     } catch (e) {
@@ -278,8 +270,11 @@ export default function Cobros() {
           const newMonto = payload.monto;
           const newFechaLimite = payload.fecha_limite_pago;
 
-          const allOtherCobros = items.filter((c) => c.servicio_id === serviceId && c.id !== editing.id);
-          const subsequentPendingCobros = allOtherCobros.filter((c) => c.mes > editedMonth && c.estado === "pendiente");
+          const subsequentPendingCobros = await sercoApi.entities.Cobro.filter({
+            servicio_id: serviceId,
+            estado: "pendiente",
+            mes: { $gt: editedMonth },
+          });
 
           if (subsequentPendingCobros.length > 0) {
             await Promise.all(
