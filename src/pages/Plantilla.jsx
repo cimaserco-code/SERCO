@@ -106,7 +106,11 @@ export default function Plantilla() {
     setSaving(true);
     try {
       const serv = servicios.find((s) => s.id === addModalData.servicioId);
-      const currentUserName = user?.full_name || user?.nombre || (user?.email ? user.email.split('@')[0] : "Usuario");
+      const currentUserName = (user?.full_name && user.full_name.trim() !== "" && user.full_name !== "Yo")
+        ? user.full_name
+        : (user?.nombre && user.nombre.trim() !== "" && user.nombre !== "Prueba1" && user.nombre !== "Usuario")
+          ? user.nombre
+          : (user?.email ? user.email.split('@')[0] : "Personal Autorizado");
 
       const now = new Date();
       const horaStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
@@ -152,8 +156,6 @@ export default function Plantilla() {
         try {
           await sercoApi.entities.Empleado.update(matchedEmp.id, {
             servicio_ubicacion: serv?.nombre || "",
-            turno: addModalData.turno,
-            usuario_modificacion: currentUserName,
           });
         } catch {
           await sercoApi.entities.Empleado.update(matchedEmp.id, {

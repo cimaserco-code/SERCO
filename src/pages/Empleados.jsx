@@ -385,46 +385,40 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
       console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
 
+      // In the database table 'empleados', 'turno' belongs to AsignacionTurno (Plantilla) rather than empleados table.
+      // Omit 'turno' from the payload so Supabase does not fail with PGRST204 ("Could not find the 'turno' column").
+      const { turno: _unusedTurno, ...cleanPayload } = payload;
+
       if (editing) {
-        if (payload.fecha_baja && !editing.fecha_baja) {
-          payload.usuario_baja = currentUserName;
+        if (cleanPayload.fecha_baja && !editing.fecha_baja) {
+          cleanPayload.usuario_baja = currentUserName;
         }
         try {
-          await sercoApi.entities.Empleado.update(editing.id, payload);
+          await sercoApi.entities.Empleado.update(editing.id, cleanPayload);
         } catch (err) {
           if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
-            const fallback = { ...payload };
+            // Remove only optional audit columns if not present in older schemas
+            const fallback = { ...cleanPayload };
             delete fallback.usuario_alta;
             delete fallback.usuario_baja;
-            delete fallback.banco;
-            delete fallback.beneficiario;
-            delete fallback.carta_militar;
-            delete fallback.referencia;
-            delete fallback.referencia_telefono;
-            delete fallback.turno;
             await sercoApi.entities.Empleado.update(editing.id, fallback);
           } else {
             throw err;
           }
         }
-        if (payload.seguro && payload.fecha_baja && !editing.fecha_baja) {
-          setImssAlertEmpleado({ ...editing, ...payload });
+        if (cleanPayload.seguro && cleanPayload.fecha_baja && !editing.fecha_baja) {
+          setImssAlertEmpleado({ ...editing, ...cleanPayload });
         }
       } else {
-        payload.usuario_alta = currentUserName;
+        cleanPayload.usuario_alta = currentUserName;
         try {
-          await sercoApi.entities.Empleado.create(payload);
+          await sercoApi.entities.Empleado.create(cleanPayload);
         } catch (err) {
           if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
-            const fallback = { ...payload };
+            // Remove only optional audit columns if not present in older schemas
+            const fallback = { ...cleanPayload };
             delete fallback.usuario_alta;
             delete fallback.usuario_baja;
-            delete fallback.banco;
-            delete fallback.beneficiario;
-            delete fallback.carta_militar;
-            delete fallback.referencia;
-            delete fallback.referencia_telefono;
-            delete fallback.turno;
             await sercoApi.entities.Empleado.create(fallback);
           } else {
             throw err;
@@ -449,6 +443,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           } else if (matchedServ) {
             const targetTurno = form.turno || "matutino";
             const targetSedeId = matchedServ.sede_id || payload.sede_id || "";
+            const now = new Date();
+            const horaStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+            const isoStr = now.toISOString();
 
             if (existingAsigs.length > 0) {
               const [firstAsig, ...rest] = existingAsigs;
@@ -460,6 +457,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 empleado_nombre: empName,
                 usuario_asignacion: currentUserName,
                 creado_por: currentUserName,
+                hora: horaStr,
+                fecha_asignacion: isoStr,
               }).catch(async () => {
                 await sercoApi.entities.AsignacionTurno.delete(firstAsig.id).catch(() => {});
                 await sercoApi.entities.AsignacionTurno.create({
@@ -470,6 +469,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   empleado_nombre: empName,
                   usuario_asignacion: currentUserName,
                   creado_por: currentUserName,
+                  hora: horaStr,
+                  fecha_asignacion: isoStr,
                 }).catch(async () => {
                   await sercoApi.entities.AsignacionTurno.create({
                     servicio_id: matchedServ.id,
@@ -493,6 +494,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   empleado_nombre: empName,
                   usuario_asignacion: currentUserName,
                   creado_por: currentUserName,
+                  hora: horaStr,
+                  fecha_asignacion: isoStr,
                 });
               } catch {
                 await sercoApi.entities.AsignacionTurno.create({
@@ -559,13 +562,19 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         }
       }
 
+      const now = new Date();
+      const horaStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+      const isoStr = now.toISOString();
+
       try {
         await sercoApi.entities.Empleado.update(bajaConfirmId, {
           fecha_baja: todayStr,
           fecha_reingreso: null,
           historial_bajas: newHistorial,
           motivo_baja: motivoBajaInput || null,
-          usuario_baja: currentUserName
+          usuario_baja: currentUserName,
+          hora_baja: horaStr,
+          fecha_hora_baja: isoStr
         });
       } catch (err) {
         if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
@@ -573,7 +582,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             fecha_baja: todayStr,
             fecha_reingreso: null,
             historial_bajas: newHistorial,
-            motivo_baja: motivoBajaInput || null
+            motivo_baja: motivoBajaInput || null,
+            usuario_baja: currentUserName
           });
         } else {
           throw err;

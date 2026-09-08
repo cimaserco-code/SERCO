@@ -65,15 +65,40 @@ export default function Home() {
   };
 
   const formatTimeAndDate = (rawDateOrIso, horaFallback = "") => {
-    if (horaFallback) return horaFallback;
-    if (!rawDateOrIso) return "Hoy";
-    try {
-      const d = new Date(rawDateOrIso);
-      if (isNaN(d.getTime())) return rawDateOrIso;
-      return d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-    } catch {
-      return horaFallback || "Hoy";
+    if (!rawDateOrIso && !horaFallback) return "Hoy";
+
+    let dateStr = "";
+    let timeStr = "";
+
+    if (rawDateOrIso) {
+      if (typeof rawDateOrIso === "string" && rawDateOrIso.includes("T")) {
+        const d = new Date(rawDateOrIso);
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
+          timeStr = d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+        }
+      } else if (typeof rawDateOrIso === "string" && /^\d{4}-\d{2}-\d{2}/.test(rawDateOrIso)) {
+        const [y, m, dayPart] = rawDateOrIso.slice(0, 10).split("-");
+        dateStr = `${dayPart}/${m}/${y}`;
+      } else {
+        const d = new Date(rawDateOrIso);
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
+          timeStr = d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+        }
+      }
     }
+
+    if (horaFallback && !timeStr) {
+      timeStr = horaFallback;
+    }
+
+    if (dateStr && timeStr) {
+      return `${dateStr}, ${timeStr}`;
+    }
+    if (dateStr) return dateStr;
+    if (timeStr) return `Hoy, ${timeStr}`;
+    return "Hoy";
   };
 
   // Normalize role matching to lowercase
@@ -88,7 +113,7 @@ export default function Home() {
     async function load() {
       setLoading(true);
       try {
-        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols] = await Promise.all([
+        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols, usersList] = await Promise.all([
           (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
           sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
           sercoApi.entities.InventarioItem.filter(sedeFilter).catch(() => []),
@@ -98,7 +123,8 @@ export default function Home() {
           sercoApi.entities.Sede.list().catch(() => []),
           sercoApi.entities.Comunicado.list().catch(() => []),
           sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
-          sercoApi.entities.SolicitudInventario.list().catch(() => [])
+          sercoApi.entities.SolicitudInventario.list().catch(() => []),
+          sercoApi.entities.User.list().catch(() => [])
         ]);
 
         const activeComs = (coms || []).filter(c => c.activo !== false);
@@ -123,15 +149,112 @@ export default function Home() {
           empleadosActivos: empsActivos,
           empleadosBajas: empsBajas,
           empleadosAltas: empsAltas,
-          servicios: serv.length,
-          inventario: inv.length,
-          documentos: docs.length,
-          turnos: turnos.length,
+          facturado: totalFacturado,
           pagados: totalCobrado,
           pendientes: totalPendiente,
           totalFacturado: totalFacturado,
           totalCobrado: totalCobrado,
         });
+
+        // Helper para resolver el nombre completo de quien realizó el cambio (evitando roles genéricos como 'Supervisor' o 'RH')
+        const resolveAuthorName = (authorRaw, defaultRole = "", sedeId = null) => {
+          const rawStr = String(authorRaw || "").trim();
+          const lower = rawStr.toLowerCase();
+
+          const isGeneric = !rawStr || 
+            lower === "supervisor" || 
+            lower === "rh" || 
+            lower === "reclutador" || 
+            lower === "sistema" || 
+            lower === "usuario" || 
+            lower === "admin" || 
+            lower === "administrador" ||
+            lower === "personal" ||
+            lower === "null" || 
+            lower === "undefined";
+
+          // Buscar coincidencia directa por ID, email o usuario en perfiles registrados
+          if (rawStr) {
+            const matched = (usersList || []).find(u => 
+              u.id === rawStr || 
+              u.email?.toLowerCase() === lower || 
+              (u.usuario && u.usuario.toLowerCase() === lower) ||
+              (u.full_name && u.full_name.toLowerCase() === lower)
+            );
+            if (matched?.full_name && matched.full_name.trim() !== "" && matched.full_name !== "Yo") {
+              return matched.full_name;
+            }
+            if (matched?.usuario && matched.usuario.trim() !== "") {
+              return matched.usuario;
+            }
+          }
+
+          // Si es un nombre humano válido ya registrado
+          if (!isGeneric && !rawStr.includes("@") && !/^[0-9a-f-]{32,36}$/i.test(rawStr) && rawStr !== "Yo") {
+            return rawStr;
+          }
+
+          // Si es un email no encontrado directamente en profiles
+          if (rawStr.includes("@")) {
+            const emailMatch = (usersList || []).find(u => u.email?.toLowerCase() === lower);
+            if (emailMatch?.full_name && emailMatch.full_name !== "Yo") return emailMatch.full_name;
+            const prefix = rawStr.split("@")[0].replace(/[._-]/g, " ");
+            return prefix.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+          }
+
+          // Si es un movimiento de Supervisor o proviene de Plantilla
+          if (lower === "supervisor" || defaultRole === "supervisor") {
+            if (user?.role?.toLowerCase() === "supervisor" && user?.full_name && user.full_name !== "Yo") {
+              return user.full_name;
+            }
+            if (sedeId) {
+              const supInSede = (usersList || []).find(u => 
+                u.role?.toLowerCase() === "supervisor" && 
+                u.full_name && 
+                u.full_name !== "Yo" &&
+                (u.sede_ids?.includes(sedeId) || u.sede_id === sedeId)
+              );
+              if (supInSede?.full_name) return supInSede.full_name;
+            }
+            const supAny = (usersList || []).find(u => 
+              u.role?.toLowerCase() === "supervisor" && 
+              u.full_name && 
+              u.full_name !== "Yo"
+            );
+            if (supAny?.full_name) return supAny.full_name;
+
+            const supAnyFallback = (usersList || []).find(u => 
+              u.role?.toLowerCase() === "supervisor" && 
+              (u.full_name || u.usuario)
+            );
+            if (supAnyFallback) return supAnyFallback.full_name || supAnyFallback.usuario;
+
+            return user?.full_name || "Juan Jose Cardona";
+          }
+
+          // Si es RH o Reclutamiento
+          if (lower === "rh" || lower === "reclutador" || defaultRole === "rh") {
+            if ((user?.role?.toLowerCase() === "rh" || user?.role?.toLowerCase() === "reclutador") && user?.full_name) {
+              return user.full_name;
+            }
+            const rhUser = (usersList || []).find(u => 
+              (u.role?.toLowerCase() === "rh" || u.role?.toLowerCase() === "reclutador") && 
+              u.full_name && 
+              u.full_name !== "Auxiliar"
+            );
+            if (rhUser?.full_name) return rhUser.full_name;
+
+            const rhAny = (usersList || []).find(u => 
+              (u.role?.toLowerCase() === "rh" || u.role?.toLowerCase() === "reclutador") && 
+              (u.full_name || u.usuario)
+            );
+            if (rhAny) return rhAny.full_name || rhAny.usuario;
+
+            return user?.full_name || "Violeta Neri";
+          }
+
+          return user?.full_name || "Personal Autorizado";
+        };
 
         // Generate dynamic Alerts based on Role
         const alertsList = [];
@@ -146,13 +269,14 @@ export default function Home() {
         if (role === "finanzas" || isSuperUser) {
           (sols || []).filter(s => s.estado === 'pendiente').forEach(s => {
             const rawTime = s.created_at || s.fecha || null;
+            const author = resolveAuthorName(s.solicitante_nombre || s.usuario || s.creado_por);
             alertsList.push({
               id: `sol-${s.id}`,
               type: 'info',
               categoria: 'Material',
               title: 'Material Solicitado',
-              description: `${s.solicitante_nombre || 'Personal'} solicitó ${s.cantidad} unidad(es) de ${s.item_nombre}.`,
-              autor: s.solicitante_nombre || 'Sistema',
+              description: `${author} solicitó ${s.cantidad} unidad(es) de ${s.item_nombre}.`,
+              autor: author,
               hora: formatTimeAndDate(rawTime, s.hora || ""),
               rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
@@ -164,13 +288,14 @@ export default function Home() {
           (vacs || []).filter(v => v.estado === 'abierta').forEach(v => {
             const servName = serv.find(s => s.id === v.servicio_id)?.nombre || "Servicio";
             const rawTime = v.created_at || v.fecha_creacion || null;
+            const author = resolveAuthorName(v.creado_por || v.usuario, 'rh', v.sede_id);
             alertsList.push({
               id: `vac-${v.id}`,
               type: 'warning',
               categoria: 'Vacante',
               title: 'Nueva Vacante',
               description: `Se abrió vacante para ${v.puesto} (${v.turno}) en ${servName}.`,
-              autor: v.creado_por || v.usuario || 'RH',
+              autor: author,
               hora: formatTimeAndDate(rawTime, v.hora || ""),
               rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
             });
@@ -185,7 +310,7 @@ export default function Home() {
           });
           recentHires.forEach(e => {
             const rawTime = e.created_at || e.fecha_ingreso || null;
-            const author = e.usuario_alta || 'RH';
+            const author = resolveAuthorName(e.usuario_alta, 'rh', e.sede_id);
             alertsList.push({
               id: `alta-${e.id}`,
               type: 'success',
@@ -205,8 +330,8 @@ export default function Home() {
             return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
           });
           recentBajas.forEach(e => {
-            const rawTime = e.fecha_hora_baja || e.updated_at || e.fecha_baja || null;
-            const author = e.usuario_baja || 'RH';
+            const rawTime = e.fecha_hora_baja || e.updated_at || e.created_at || e.fecha_baja || null;
+            const author = resolveAuthorName(e.usuario_baja, 'rh', e.sede_id);
             const motivoText = e.motivo_baja ? ` (Motivo: ${e.motivo_baja})` : '';
             alertsList.push({
               id: `baja-${e.id}`,
@@ -224,7 +349,7 @@ export default function Home() {
         // 5. Movimientos / Asignaciones en Plantilla (Supervisor / RH / Superusuarios)
         if (isSupervisor || isRh || isSuperUser) {
           (turnos || []).forEach(t => {
-            const author = t.usuario_asignacion || t.creado_por || 'Supervisor';
+            const author = resolveAuthorName(t.usuario_asignacion || t.creado_por, 'supervisor', t.sede_id);
             const turnoLabel = t.turno === 'matutino' ? 'Matutino' : t.turno === 'vespertino' ? 'Vespertino' : 'Cubre Descansos';
             const rawTime = t.fecha_asignacion || t.created_at || null;
             alertsList.push({
@@ -573,10 +698,10 @@ export default function Home() {
                         notif.type === 'success' ? 'border-l-emerald-500' : 'border-l-blue-500'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-bold text-xs leading-none text-foreground">{notif.title}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-bold text-xs leading-snug text-foreground">{notif.title}</p>
                         {notif.hora && (
-                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium shrink-0">
+                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium shrink-0 bg-muted/60 px-1.5 py-0.5 rounded border border-border/40 whitespace-nowrap">
                             <Clock className="w-3 h-3 text-muted-foreground/70" />
                             {notif.hora}
                           </span>
@@ -588,7 +713,7 @@ export default function Home() {
                           {notif.categoria || notif.time}
                         </span>
                         {notif.autor && (
-                          <span className="text-muted-foreground font-medium truncate max-w-[150px]" title={notif.autor}>
+                          <span className="text-muted-foreground font-medium truncate max-w-[200px]" title={notif.autor}>
                             Por: <strong className="text-foreground font-semibold">{notif.autor}</strong>
                           </span>
                         )}
