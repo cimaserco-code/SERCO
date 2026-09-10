@@ -45,6 +45,7 @@ export default function Asistencias() {
   
   // Single active cell state for fast floating picker
   const [activeCell, setActiveCell] = useState(null); // { employeeId, employeeName, day, currentVal, rect }
+  const [secondaryAttendanceStates, setSecondaryAttendanceStates] = useState({});
 
   // Vacaciones Modal State
   const [vacacionesModalOpen, setVacacionesModalOpen] = useState(false);
@@ -55,6 +56,7 @@ export default function Asistencias() {
   });
   const [vacacionesSaving, setVacacionesSaving] = useState(false);
   const [empSearch, setEmpSearch] = useState("");
+  const [attendanceSearch, setAttendanceSearch] = useState("");
 
   // Index asistencias by `employeeId_YYYY-MM-DD` for O(1) instant lookups
   const asistenciasMap = useMemo(() => {
@@ -226,6 +228,19 @@ export default function Asistencias() {
     }
   };
 
+  const handleSetSecondaryEstado = (employeeId, day, estado) => {
+    const key = `${employeeId}_${currentMonth}-${String(day).padStart(2, '0')}`;
+    setSecondaryAttendanceStates((prev) => {
+      const next = { ...prev };
+      if (estado === null) {
+        delete next[key];
+      } else {
+        next[key] = estado;
+      }
+      return next;
+    });
+  };
+
   // Assign vacation range
   const handleSaveVacaciones = async () => {
     if (!vacacionesForm.empleado_id || !vacacionesForm.fecha_inicio || !vacacionesForm.fecha_fin) {
@@ -321,10 +336,20 @@ export default function Asistencias() {
            today.getDate() === dayNum;
   };
 
+  const filteredEmployees = useMemo(() => {
+    const search = attendanceSearch.trim().toLowerCase();
+    if (!search) return employees;
+
+    return employees.filter((emp) =>
+      (emp.nombre_completo || "").toLowerCase().includes(search) ||
+      (emp.servicio_ubicacion || "").toLowerCase().includes(search)
+    );
+  }, [employees, attendanceSearch]);
+
   if (!canView("asistencias")) return <AccessRestricted />;
 
   // Group employees by servicio_ubicacion
-  const groupedEmployees = employees.reduce((groups, emp) => {
+  const groupedEmployees = filteredEmployees.reduce((groups, emp) => {
     const serviceName = emp.servicio_ubicacion || "Sin Servicio Asignado";
     if (!groups[serviceName]) {
       groups[serviceName] = [];
@@ -335,7 +360,6 @@ export default function Asistencias() {
 
   const selectedVacationEmp = employees.find(e => e.id === vacacionesForm.empleado_id);
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
-
   const exportToExcel = () => {
     if (!employees || employees.length === 0) {
       toast({
@@ -459,6 +483,17 @@ export default function Asistencias() {
             <Download className="w-4 h-4 mr-1.5 text-emerald-600" /> Exportar Excel
           </Button>
 
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre o servicio..."
+              value={attendanceSearch}
+              onChange={(e) => setAttendanceSearch(e.target.value)}
+              className="pl-8 h-9 text-xs"
+              aria-label="Buscar asistencia por nombre o servicio"
+            />
+          </div>
+
           {/* Month Selector Carousel */}
           <div className="flex items-center gap-2 bg-card border rounded-lg p-1 self-start sm:self-auto shadow-sm">
             <Button variant="ghost" size="icon" onClick={() => handleMonthChange(-1)} className="h-8 w-8">
@@ -498,7 +533,7 @@ export default function Asistencias() {
             <TableHeader className="bg-slate-50 dark:bg-slate-900 border-b">
               <TableRow>
                 <TableHead className="sticky left-0 bg-slate-50 dark:bg-slate-900 z-10 min-w-[200px] border-r font-bold">
-                  Empleado ({employees.length})
+                  Empleado ({filteredEmployees.length})
                 </TableHead>
                 {daysArray.map((day) => {
                   const todayFlag = isToday(day);
@@ -526,10 +561,12 @@ export default function Asistencias() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : employees.length === 0 ? (
+              ) : filteredEmployees.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={daysInMonth + 1} className="text-center text-muted-foreground py-12">
-                    No hay empleados activos en la sede seleccionada.
+                    {attendanceSearch.trim()
+                      ? "No se encontraron empleados para la búsqueda."
+                      : "No hay empleados activos en la sede seleccionada."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -564,41 +601,54 @@ export default function Asistencias() {
                           const asig = asistenciasMap.get(`${emp.id}_${dateStr}`);
                           const currentVal = asig?.estado || null;
                           const todayFlag = isToday(day);
-                          const cfg = currentVal ? estadosConfig[currentVal] : null;
+                          const cellSlots = [0, 1];
 
                           return (
                             <TableCell 
                               key={day} 
-                              className={`p-0.5 text-center ${
+                              className={`p-0.5 text-center min-w-[36px] ${
                                 todayFlag ? "bg-primary/5 border-x border-primary/10" : ""
                               }`}
                             >
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  setActiveCell({
-                                    employeeId: emp.id,
-                                    employeeName: emp.nombre_completo,
-                                    day,
-                                    currentVal,
-                                    rect: {
-                                      top: rect.top,
-                                      bottom: rect.bottom,
-                                      left: rect.left,
-                                      right: rect.right
-                                    }
-                                  });
-                                }}
-                                className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto p-0 rounded flex items-center justify-center border transition-all cursor-pointer select-none text-[11px] font-bold ${
-                                  cfg 
-                                    ? cfg.color 
-                                    : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
-                                }`}
-                                title={`${emp.nombre_completo} - Día ${day}: ${currentVal ? estadosConfig[currentVal]?.name : "Sin registro"}`}
-                              >
-                                <span>{cfg ? cfg.label : "-"}</span>
-                              </button>
+                              <div className="flex flex-col gap-0.5">
+                                {cellSlots.map((slot) => {
+                                  const slotVal = slot === 1
+                                    ? secondaryAttendanceStates[`${emp.id}_${dateStr}`] || null
+                                    : currentVal;
+                                  const cfg = slotVal ? estadosConfig[slotVal] : null;
+
+                                  return (
+                                    <button
+                                      key={slot}
+                                      type="button"
+                                      onClick={(e) => {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        setActiveCell({
+                                          employeeId: emp.id,
+                                          employeeName: emp.nombre_completo,
+                                          day,
+                                          currentVal: slotVal,
+                                          isSecondary: slot === 1,
+                                          rect: {
+                                            top: rect.top,
+                                            bottom: rect.bottom,
+                                            left: rect.left,
+                                            right: rect.right
+                                          }
+                                        });
+                                      }}
+                                      className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto p-0 rounded flex items-center justify-center border transition-all cursor-pointer select-none text-[11px] font-bold ${
+                                        cfg 
+                                          ? cfg.color 
+                                          : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
+                                      }`}
+                                      title={`${emp.nombre_completo} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`}
+                                    >
+                                      <span>{cfg ? cfg.label : "-"}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </TableCell>
                           );
                         })}
@@ -651,7 +701,11 @@ export default function Asistencias() {
                     key={key}
                     type="button"
                     onClick={() => {
-                      handleSetEstado(activeCell.employeeId, activeCell.day, key);
+                      if (activeCell.isSecondary) {
+                        handleSetSecondaryEstado(activeCell.employeeId, activeCell.day, key);
+                      } else {
+                        handleSetEstado(activeCell.employeeId, activeCell.day, key);
+                      }
                       setActiveCell(null);
                     }}
                     className={`flex flex-col items-center justify-center p-2 rounded-lg transition-transform hover:scale-105 ${cfg.color} ${
@@ -672,7 +726,11 @@ export default function Asistencias() {
               <button
                 type="button"
                 onClick={() => {
-                  handleSetEstado(activeCell.employeeId, activeCell.day, null);
+                  if (activeCell.isSecondary) {
+                    handleSetSecondaryEstado(activeCell.employeeId, activeCell.day, null);
+                  } else {
+                    handleSetEstado(activeCell.employeeId, activeCell.day, null);
+                  }
                   setActiveCell(null);
                 }}
                 className="w-full text-xs py-1.5 rounded-md border border-dashed text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors font-medium text-center"
