@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { User as UserIcon, Key, Mail, AlertTriangle, Eye } from "lucide-react";
 import { sercoApi } from "@/api/sercoClient";
+import { formatUserDisplayName } from "@/lib/userNameFormatting";
 
 const flatNavItems = [
   { to: "/", label: "Inicio", icon: Home, module: "inicio" },
@@ -326,7 +327,7 @@ export default function Layout() {
           </div>
           {user && (
             <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold hidden sm:block">{user.full_name}</span>
+              <span className="text-sm font-semibold hidden sm:block">{formatUserDisplayName(user.full_name, user.role)}</span>
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize">
                 {user.role}
               </span>
@@ -380,7 +381,7 @@ export default function Layout() {
                   <span className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
                     <UserIcon className="w-3.5 h-3.5" /> Nombre Completo
                   </span>
-                  <span className="text-sm font-medium">{user?.full_name}</span>
+                  <span className="text-sm font-medium">{formatUserDisplayName(user?.full_name, user?.role)}</span>
                 </div>
                 <div className="flex justify-between items-center border-b pb-2">
                   <span className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">

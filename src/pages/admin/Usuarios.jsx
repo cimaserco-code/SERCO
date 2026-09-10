@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
+import { formatUserDisplayName } from "@/lib/userNameFormatting";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { Plus, Pencil, Search, Lock, KeyRound } from "lucide-react";
@@ -210,7 +211,7 @@ export default function Usuarios() {
             ) : (
               filtered.map((u) => (
                  <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.full_name || "—"}</TableCell>
+                  <TableCell className="font-medium">{formatUserDisplayName(u.full_name, u.role) || "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{u.usuario || u.email?.split("@")[0] || "—"}</TableCell>
                   <TableCell>{u.email || "—"}</TableCell>
                   <TableCell>

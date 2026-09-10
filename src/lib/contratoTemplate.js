@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { formatPersonName } from "@/lib/userNameFormatting";
 
 export function numeroALetras(num) {
   if (num === 0) return "CERO PESOS";
@@ -186,7 +187,7 @@ export function generateContractPDF(emp, params, sedes) {
       tempY += 4;
     });
 
-    const trabNameLines = doc.splitTextToSize(`${emp.nombre_completo}\nTrabajador`, contentWidth / 2 - 10);
+    const trabNameLines = doc.splitTextToSize(`${formatPersonName(emp.nombre_completo)}\nTrabajador`, contentWidth / 2 - 10);
     tempY = y;
     trabNameLines.forEach(line => {
       doc.text(line, pageWidth / 2 + 10, tempY);

@@ -19,6 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { formatPersonName } from "@/lib/userNameFormatting";
 
 export default function Nominas() {
   const { canView, can } = usePermissions();
@@ -1378,7 +1379,7 @@ function DetalleNominaModal({ emp, index, calc, mods, onUpdateField, onClose }) 
                 <SlidersHorizontal className="w-5 h-5 text-primary" /> Desglose de Nómina
               </DialogTitle>
               <DialogDescription className="mt-1">
-                Ajuste y consulta de los 39 campos de nómina para {emp.nombre_completo}
+                Ajuste y consulta de los 39 campos de nómina para {formatPersonName(emp.nombre_completo)}
               </DialogDescription>
             </div>
             <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1">

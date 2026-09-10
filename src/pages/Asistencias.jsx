@@ -13,6 +13,7 @@ import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { toast } from "@/components/ui/use-toast";
+import { formatPersonName } from "@/lib/userNameFormatting";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -289,7 +290,7 @@ export default function Asistencias() {
 
       toast({
         title: "Vacaciones asignadas",
-        description: `Se registraron ${datesToAssign.length} día(s) de vacaciones para ${emp?.nombre_completo || "el empleado"}.`,
+        description: `Se registraron ${datesToAssign.length} día(s) de vacaciones para ${formatPersonName(emp?.nombre_completo) || "el empleado"}.`,
       });
 
       setVacacionesModalOpen(false);
@@ -593,7 +594,7 @@ export default function Asistencias() {
                             className="text-primary hover:underline text-left font-semibold text-xs sm:text-sm focus:outline-none truncate block max-w-[190px]"
                             title="Ver resumen mensual de asistencia"
                           >
-                            {emp.nombre_completo}
+                            {formatPersonName(emp.nombre_completo)}
                           </button>
                         </TableCell>
                         {daysArray.map((day) => {
@@ -625,7 +626,7 @@ export default function Asistencias() {
                                         const rect = e.currentTarget.getBoundingClientRect();
                                         setActiveCell({
                                           employeeId: emp.id,
-                                          employeeName: emp.nombre_completo,
+                                          employeeName: formatPersonName(emp.nombre_completo),
                                           day,
                                           currentVal: slotVal,
                                           isSecondary: slot === 1,
@@ -642,7 +643,7 @@ export default function Asistencias() {
                                           ? cfg.color 
                                           : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
                                       }`}
-                                      title={`${emp.nombre_completo} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`}
+                                      title={`${formatPersonName(emp.nombre_completo)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`}
                                     >
                                       <span>{cfg ? cfg.label : "-"}</span>
                                     </button>
@@ -794,7 +795,7 @@ export default function Asistencias() {
                         }`}
                       >
                         <div className="space-y-0.5 truncate pr-2">
-                          <div className="truncate">{emp.nombre_completo}</div>
+                          <div className="truncate">{formatPersonName(emp.nombre_completo)}</div>
                           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                             {emp.servicio_ubicacion && (
                               <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">
@@ -840,7 +841,7 @@ export default function Asistencias() {
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground font-medium">Empleado:</span>
                   <span className="font-bold text-teal-800 dark:text-teal-200 truncate max-w-[180px]">
-                    {selectedVacationEmp.nombre_completo}
+                    {formatPersonName(selectedVacationEmp.nombre_completo)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -908,7 +909,7 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-primary" />
-            Resumen: {employee.nombre_completo}
+            Resumen: {formatPersonName(employee.nombre_completo)}
           </DialogTitle>
           <DialogDescription>
             Detalles de asistencia correspondientes a {monthName} de {year}

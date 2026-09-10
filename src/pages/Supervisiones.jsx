@@ -19,6 +19,7 @@ import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
+import { formatUserDisplayName } from "@/lib/userNameFormatting";
 
 const emptyRondin = { supervisor_id: "", servicio_id: "", fecha: "", hora: "", sede_id: "", comentarios: "" };
 const emptyReporte = { supervisor_id: "", servicio_id: "", fecha: "", hora: "", reporte: "", sede_id: "" };
@@ -120,10 +121,10 @@ export default function Supervisiones() {
   const getSupervisorName = (id) => {
     const s = supervisores.find((u) => u.id === id);
     if (s) {
-      return s.full_name?.split("|")[0].trim() || s.email;
+      return formatUserDisplayName(s.full_name?.split("|")[0].trim() || s.email, s.role);
     }
     if (id === user?.id) {
-      return user?.full_name || user?.email || "—";
+      return formatUserDisplayName(user?.full_name || user?.email || "—", user?.role);
     }
     return "—";
   };
@@ -487,7 +488,7 @@ export default function Supervisiones() {
                   {supervisoresParaRondin.length > 0 ? (
                     supervisoresParaRondin.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.full_name?.split("|")[0].trim() || s.email}
+                        {formatUserDisplayName(s.full_name?.split("|")[0].trim() || s.email, s.role)}
                       </option>
                     ))
                   ) : (

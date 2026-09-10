@@ -23,6 +23,7 @@ import AccessRestricted from "@/components/AccessRestricted";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 import { useSedeScope } from "@/hooks/useSedeScope";
+import { formatPersonName } from "@/lib/userNameFormatting";
 import { generateContractPDF } from "@/lib/contratoTemplate";
 import { cn } from "@/lib/utils";
 
@@ -132,7 +133,7 @@ export default function Documentos() {
     setContractModalOpen(false);
     toast({
       title: "Contrato generado",
-      description: `Se ha descargado el contrato de ${emp.nombre_completo}.`,
+      description: `Se ha descargado el contrato de ${formatPersonName(emp.nombre_completo)}.`,
     });
   }
 
@@ -289,7 +290,7 @@ export default function Documentos() {
                   >
                     <span className="truncate">
                       {selectedEmpleadoObj
-                        ? `${selectedEmpleadoObj.nombre_completo} (${selectedEmpleadoObj.puesto || "Sin puesto"})`
+                        ? `${formatPersonName(selectedEmpleadoObj.nombre_completo)} (${selectedEmpleadoObj.puesto || "Sin puesto"})`
                         : "Selecciona o busca un empleado..."}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -321,7 +322,7 @@ export default function Documentos() {
                               )}
                             />
                             <div className="flex flex-col">
-                              <span>{emp.nombre_completo}</span>
+                              <span>{formatPersonName(emp.nombre_completo)}</span>
                               <span className="text-xs text-muted-foreground">
                                 {emp.puesto || "Sin puesto"} · {emp.servicio_ubicacion || "Sin servicio"}
                               </span>

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
+import { formatUserDisplayName } from "@/lib/userNameFormatting";
 
 export default function Home() {
   const { user } = useAuth();
@@ -157,7 +158,7 @@ export default function Home() {
         });
 
         // Helper para resolver el nombre completo de quien realizó el cambio (evitando roles genéricos como 'Supervisor' o 'RH')
-        const resolveAuthorName = (authorRaw, defaultRole = "", sedeId = null) => {
+        const resolveRawAuthorName = (authorRaw, defaultRole = "", sedeId = null) => {
           const rawStr = String(authorRaw || "").trim();
           const lower = rawStr.toLowerCase();
 
@@ -256,6 +257,19 @@ export default function Home() {
           return user?.full_name || "Personal Autorizado";
         };
 
+        const resolveAuthorName = (authorRaw, defaultRole = "", sedeId = null) => {
+          const resolvedName = resolveRawAuthorName(authorRaw, defaultRole, sedeId);
+          const normalizedName = String(resolvedName || "").trim().toLowerCase();
+          const matchedUser = (usersList || []).find((u) =>
+            u.full_name?.trim().toLowerCase() === normalizedName ||
+            u.usuario?.trim().toLowerCase() === normalizedName
+          );
+          const resolvedRole = matchedUser?.role || (
+            resolvedName === user?.full_name ? user?.role : defaultRole
+          );
+          return formatUserDisplayName(resolvedName, resolvedRole);
+        };
+
         // Generate dynamic Alerts based on Role
         const alertsList = [];
         const isCeo = role === "ceo";
@@ -316,7 +330,7 @@ export default function Home() {
               type: 'success',
               categoria: 'Alta',
               title: 'Alta de Personal',
-              description: `${e.nombre_completo} se incorporó como ${e.puesto || 'Personal'}.`,
+              description: `${formatPersonName(e.nombre_completo)} se incorporó como ${e.puesto || 'Personal'}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, e.hora_ingreso || ""),
               rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
@@ -338,7 +352,7 @@ export default function Home() {
               type: 'danger',
               categoria: 'Baja',
               title: 'Baja de Personal',
-              description: `${e.nombre_completo} fue dado de baja${motivoText}.`,
+              description: `${formatPersonName(e.nombre_completo)} fue dado de baja${motivoText}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, e.hora_baja || ""),
               rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
@@ -415,7 +429,7 @@ export default function Home() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-heading font-bold">Bienvenido, {user?.full_name || "Usuario"}</h2>
+          <h2 className="text-2xl font-heading font-bold">Bienvenido, {formatUserDisplayName(user?.full_name, user?.role) || "Usuario"}</h2>
           <p className="text-muted-foreground text-sm mt-1">
             Rol: <span className="font-semibold uppercase text-primary">{user?.role || "Sin rol"}</span> · Resumen general de SERCO
           </p>

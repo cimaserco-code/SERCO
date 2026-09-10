@@ -23,6 +23,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
+import { formatPersonName } from "@/lib/userNameFormatting";
 import AccessRestricted from "@/components/AccessRestricted";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -662,7 +663,7 @@ export default function Plantilla() {
                           }`}
                         >
                           <div className="space-y-0.5">
-                            <div className="font-medium">{emp.nombre_completo}</div>
+                            <div className="font-medium">{formatPersonName(emp.nombre_completo)}</div>
                             <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
                               {emp.puesto && <span>{emp.puesto}</span>}
                               {emp.servicio_ubicacion ? (
@@ -803,4 +804,4 @@ export default function Plantilla() {
       />
     </div>
   );
-}
+}
