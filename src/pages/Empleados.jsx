@@ -30,7 +30,50 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 
+export function formatProperName(text) {
+  if (!text) return "";
+  return text
+    .trim()
+    .split(/\s+/)
+    .map((word) => {
+      if (!word) return "";
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+export function parseExistingNombre(item) {
+  if (!item) return { nombres: "", apellido_paterno: "", apellido_materno: "" };
+  if (item.nombres || item.apellido_paterno) {
+    return {
+      nombres: item.nombres || "",
+      apellido_paterno: item.apellido_paterno || "",
+      apellido_materno: item.apellido_materno || "",
+    };
+  }
+  const full = (item.nombre_completo || "").trim();
+  if (!full) return { nombres: "", apellido_paterno: "", apellido_materno: "" };
+
+  const parts = full.split(/\s+/);
+  if (parts.length === 1) {
+    return { nombres: parts[0], apellido_paterno: "", apellido_materno: "" };
+  } else if (parts.length === 2) {
+    return { apellido_paterno: parts[0], nombres: parts[1], apellido_materno: "" };
+  } else if (parts.length === 3) {
+    return { apellido_paterno: parts[0], apellido_materno: parts[1], nombres: parts[2] };
+  } else {
+    return {
+      apellido_paterno: parts[0],
+      apellido_materno: parts[1],
+      nombres: parts.slice(2).join(" "),
+    };
+  }
+}
+
 const emptyForm = {
+  nombres: "",
+  apellido_paterno: "",
+  apellido_materno: "",
   nombre_completo: "",
   clabe_bancaria: "",
   banco: "",
@@ -211,56 +254,126 @@ export default function Empleados() {
   };
 
   const exportToExcel = () => {
-    const listToExport = activeTab === "activos" ? activos : bajas;
+    const listToExport = activeTab === "activos" ? sortedActivos : sortedBajas;
     const headers = [
+      "Apellido Paterno",
+      "Apellido Materno",
+      "Nombre(s)",
       "Nombre Completo",
+      "Estado Laboral",
       "Sede",
       "Puesto",
+      "Servicio / Ubicación",
+      "Turno",
       "Fecha de Ingreso",
-      "Sueldo",
+      "Fecha de Reingreso",
+      "Días en Empresa",
+      "Sueldo Mensual",
       "Banco",
       "CLABE Bancaria",
+      "Teléfono",
+      "Correo Electrónico",
+      "CURP",
+      "RFC",
+      "NSS",
+      "Sexo",
+      "Fecha de Nacimiento",
+      "Edad",
+      "Estado Civil",
+      "Nivel de Estudios",
+      "Calle",
+      "Número",
+      "Colonia",
+      "Código Postal",
+      "Ciudad",
+      "Zona",
+      "Contacto de Emergencia",
+      "Teléfono de Emergencia",
+      "Parentesco Emergencia",
       "Beneficiario",
       "Cartilla Militar",
       "Referencia",
       "Tel. Referencia",
-      "Ubicación de Servicio",
-      "Uniformes",
-      "Actas Administrativas",
-      "Teléfono",
+      "Infonavit",
+      "Medio de Reclutamiento",
       "Día de Capacitación 1",
       "Día de Capacitación 2",
-      "Medio de Reclutamiento",
+      "Fecha Montaje",
       "Hospedaje",
+      "Seguro IMSS",
+      "Uniformes",
+      "Actas Administrativas",
+      "Fecha de Baja",
+      "Motivo de Baja",
       "Historial de Bajas",
-      "Motivo de Baja"
+      "Registrado Por",
+      "Baja Realizada Por"
     ];
 
-    const rows = listToExport.map(emp => [
-      emp.nombre_completo || "",
-      sedeNombre(emp.sede_id),
-      emp.puesto || "",
-      emp.fecha_ingreso || "",
-      emp.sueldo ? `$${emp.sueldo}` : "—",
-      emp.banco || "",
-      emp.clabe_bancaria || "",
-      emp.beneficiario || "",
-      emp.carta_militar || "No",
-      emp.referencia || "",
-      emp.referencia_telefono || "",
-      emp.servicio_ubicacion || "Sin Asignar",
-      emp.uniformes || "Sin uniformes",
-      emp.actas_administrativas || 0,
-      emp.telefono || "",
-      emp.dia_capacitacion || "",
-      emp.dia_capacitacion_2 || "",
-      emp.medio_reclutamiento || "",
-      emp.hospedaje ? "Sí" : "No",
-      emp.historial_bajas || "",
-      emp.motivo_baja || ""
-    ]);
+    const rows = listToExport.map((emp) => {
+      const parsed = parseExistingNombre(emp);
+      const isActivo = !emp.fecha_baja || (emp.fecha_reingreso && emp.fecha_reingreso >= emp.fecha_baja);
+      return [
+        emp.apellido_paterno || parsed.apellido_paterno || "",
+        emp.apellido_materno || parsed.apellido_materno || "",
+        emp.nombres || parsed.nombres || "",
+        emp.nombre_completo || "",
+        isActivo ? "Activo" : "Baja",
+        sedeNombre(emp.sede_id),
+        emp.puesto || "",
+        emp.servicio_ubicacion || "Sin Asignar",
+        emp.turno || "",
+        emp.fecha_ingreso || "",
+        emp.fecha_reingreso || "",
+        calcularDiasEnEmpresa(emp.fecha_ingreso, emp.fecha_baja, emp.fecha_reingreso),
+        emp.sueldo ? `$${emp.sueldo}` : "—",
+        emp.banco || "",
+        emp.clabe_bancaria ? `\t${emp.clabe_bancaria}` : "",
+        emp.telefono ? `\t${emp.telefono}` : "",
+        emp.email || "",
+        emp.curp || "",
+        emp.rfc || "",
+        emp.nss ? `\t${emp.nss}` : "",
+        emp.sexo || "",
+        emp.fecha_nacimiento || "",
+        calcularEdad(emp.fecha_nacimiento),
+        emp.estado_civil || "",
+        emp.nivel_estudios || "",
+        emp.calle || "",
+        emp.numero || "",
+        emp.colonia || "",
+        emp.codigo_postal || "",
+        emp.ciudad || "",
+        emp.zona || "",
+        emp.contacto_emergencia || "",
+        emp.telefono_emergencia ? `\t${emp.telefono_emergencia}` : "",
+        emp.parentesco || "",
+        emp.beneficiario || "",
+        emp.carta_militar || "No",
+        emp.referencia || "",
+        emp.referencia_telefono ? `\t${emp.referencia_telefono}` : "",
+        emp.infonavit || "",
+        emp.medio_reclutamiento || "",
+        emp.dia_capacitacion || "",
+        emp.dia_capacitacion_2 || "",
+        emp.fecha_montaje || "",
+        emp.hospedaje ? "Sí" : "No",
+        emp.seguro ? "Sí" : "No",
+        emp.uniformes || "Sin uniformes",
+        emp.actas_administrativas || 0,
+        emp.fecha_baja || "",
+        emp.motivo_baja || "",
+        emp.historial_bajas || "",
+        emp.usuario_alta || "",
+        emp.usuario_baja || ""
+      ];
+    });
 
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const csvContent = "\uFEFF" + [
+      headers.join(","),
+      ...rows.map((e) => e.map((val) => `"${String(val ?? '').replace(/"/g, '""')}"`).join(","))
+    ].join("\r\n");
+
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -282,9 +395,13 @@ export default function Empleados() {
 
   function openEdit(item) {
     setEditing(item);
+    const parsed = parseExistingNombre(item);
     setForm({ 
       ...emptyForm, 
       ...item, 
+      nombres: item.nombres || parsed.nombres || "",
+      apellido_paterno: item.apellido_paterno || parsed.apellido_paterno || "",
+      apellido_materno: item.apellido_materno || parsed.apellido_materno || "",
       turno: item.turno || "matutino",
       sueldo: item.sueldo ?? "",
       clabe_bancaria: item.clabe_bancaria || "",
@@ -355,8 +472,29 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     setSaveError("");
 
     try {
+      // Format names properly (Title Case: Capitalize first letter, lowercase rest)
+      const cleanNombres = formatProperName(form.nombres || "");
+      const cleanPaterno = formatProperName(form.apellido_paterno || "");
+      const cleanMaterno = formatProperName(form.apellido_materno || "");
+
+      // Validate that at least Nombres and Apellido Paterno are provided
+      if (!cleanNombres || !cleanPaterno) {
+        setSaveError("Por favor ingresa al menos Nombre(s) y Apellido Paterno.");
+        setSaving(false);
+        return;
+      }
+
+      // Assemble nombre_completo in order: [Apellido Paterno] [Apellido Materno] [Nombre(s)]
+      const computedNombreCompleto = [cleanPaterno, cleanMaterno, cleanNombres]
+        .filter(Boolean)
+        .join(" ");
+
       const payload = {
         ...form,
+        nombres: cleanNombres,
+        apellido_paterno: cleanPaterno,
+        apellido_materno: cleanMaterno || null,
+        nombre_completo: computedNombreCompleto,
         turno: form.turno || "matutino",
         sueldo: form.sueldo === "" ? null : Number(form.sueldo),
         clabe_bancaria: form.clabe_bancaria || null,
@@ -398,10 +536,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           await sercoApi.entities.Empleado.update(editing.id, cleanPayload);
         } catch (err) {
           if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
-            // Remove only optional audit columns if not present in older schemas
+            // Remove optional audit or new columns if not present in older schemas
             const fallback = { ...cleanPayload };
             delete fallback.usuario_alta;
             delete fallback.usuario_baja;
+            delete fallback.nombres;
+            delete fallback.apellido_paterno;
+            delete fallback.apellido_materno;
             await sercoApi.entities.Empleado.update(editing.id, fallback);
           } else {
             throw err;
@@ -416,10 +557,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           await sercoApi.entities.Empleado.create(cleanPayload);
         } catch (err) {
           if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
-            // Remove only optional audit columns if not present in older schemas
+            // Remove optional audit or new columns if not present in older schemas
             const fallback = { ...cleanPayload };
             delete fallback.usuario_alta;
             delete fallback.usuario_baja;
+            delete fallback.nombres;
+            delete fallback.apellido_paterno;
+            delete fallback.apellido_materno;
             await sercoApi.entities.Empleado.create(fallback);
           } else {
             throw err;
@@ -957,18 +1101,77 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-              <div className="sm:col-span-2">
-                <Label>Nombre Completo *</Label>
-                <Input
-                  value={form.nombre_completo}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      nombre_completo: e.target.value,
-                    })
-                  }
-                />
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label>Nombre(s) *</Label>
+                  <Input
+                    placeholder="Ej. Juan Carlos"
+                    value={form.nombres || ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        nombres: e.target.value,
+                      })
+                    }
+                    onBlur={(e) =>
+                      setForm({
+                        ...form,
+                        nombres: formatProperName(e.target.value),
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Apellido Paterno *</Label>
+                  <Input
+                    placeholder="Ej. Pérez"
+                    value={form.apellido_paterno || ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        apellido_paterno: e.target.value,
+                      })
+                    }
+                    onBlur={(e) =>
+                      setForm({
+                        ...form,
+                        apellido_paterno: formatProperName(e.target.value),
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Apellido Materno</Label>
+                  <Input
+                    placeholder="Ej. Gómez"
+                    value={form.apellido_materno || ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        apellido_materno: e.target.value,
+                      })
+                    }
+                    onBlur={(e) =>
+                      setForm({
+                        ...form,
+                        apellido_materno: formatProperName(e.target.value),
+                      })
+                    }
+                  />
+                </div>
               </div>
+
+              {(form.nombres || form.apellido_paterno || form.apellido_materno) && (
+                <div className="sm:col-span-2 -mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Vista en sistema: <strong className="text-foreground">
+                      {[formatProperName(form.apellido_paterno), formatProperName(form.apellido_materno), formatProperName(form.nombres)].filter(Boolean).join(" ")}
+                    </strong>
+                  </p>
+                </div>
+              )}
 
               {!defaultSedeId && (
                 <div className="sm:col-span-2">

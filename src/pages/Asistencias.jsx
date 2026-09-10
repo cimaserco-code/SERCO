@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck, Palmtree, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck, Palmtree, Search, Download } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -32,6 +32,7 @@ export default function Asistencias() {
   const { canView, can } = usePermissions();
   const { sedeFilter } = useSedeScope();
   const [employees, setEmployees] = useState([]);
+  const [sedes, setSedes] = useState([]);
   const [asistencias, setAsistencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,14 +99,16 @@ export default function Asistencias() {
         }
       };
 
-      const [emps, asists] = await Promise.all([
+      const [emps, asists, seds] = await Promise.all([
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
-        sercoApi.entities.Asistencia.filter(filterObj).catch(() => [])
+        sercoApi.entities.Asistencia.filter(filterObj).catch(() => []),
+        sercoApi.entities.Sede.list().catch(() => [])
       ]);
       // Only keep active employees
       const activeEmps = (emps || []).filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja));
       setEmployees(activeEmps);
       setAsistencias(asists || []);
+      setSedes(seds || []);
     } catch (e) {
       console.error("Error al cargar datos de asistencias:", e);
     } finally {
@@ -331,6 +334,94 @@ export default function Asistencias() {
   }, {});
 
   const selectedVacationEmp = employees.find(e => e.id === vacacionesForm.empleado_id);
+  const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
+
+  const exportToExcel = () => {
+    if (!employees || employees.length === 0) {
+      toast({
+        title: "Sin datos",
+        description: "No hay empleados para exportar en este período.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const dayHeaders = daysArray.map((day) => `${day} (${getDayOfWeek(day)})`);
+    const headers = [
+      "Empleado",
+      "Servicio / Ubicación",
+      "Puesto",
+      "Sede",
+      ...dayHeaders,
+      "Total Asistió (A)",
+      "Total Faltas (F)",
+      "Total Descansos (D)",
+      "Total Extras (E)",
+      "Total Desc. Lab (DL)",
+      "Total Desc. Extra (DLE)",
+      "Total Vacaciones (V)",
+      "Total Justificadas (J)",
+    ];
+
+    const rows = employees.map((emp) => {
+      let countA = 0;
+      let countF = 0;
+      let countD = 0;
+      let countE = 0;
+      let countDL = 0;
+      let countDLE = 0;
+      let countV = 0;
+      let countJ = 0;
+
+      const dayCells = daysArray.map((day) => {
+        const dateStr = `${currentMonth}-${String(day).padStart(2, "0")}`;
+        const record = asistenciasMap.get(`${emp.id}_${dateStr}`);
+        const estado = record?.estado || "";
+
+        if (estado === "asistió") countA++;
+        else if (estado === "falta") countF++;
+        else if (estado === "descanso") countD++;
+        else if (estado === "extra") countE++;
+        else if (estado === "descanso_laborado") countDL++;
+        else if (estado === "descanso_extra") countDLE++;
+        else if (estado === "vacaciones") countV++;
+        else if (estado === "justificada") countJ++;
+
+        return estado ? estadosConfig[estado]?.label || estado : "";
+      });
+
+      return [
+        emp.nombre_completo || "",
+        emp.servicio_ubicacion || "Sin Asignar",
+        emp.puesto || "",
+        sedeNombre(emp.sede_id),
+        ...dayCells,
+        countA,
+        countF,
+        countD,
+        countE,
+        countDL,
+        countDLE,
+        countV,
+        countJ,
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [
+      headers.join(","),
+      ...rows.map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
+    ].join("\r\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `asistencias_${currentMonth}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-4">
@@ -358,6 +449,15 @@ export default function Asistencias() {
               <Palmtree className="w-4 h-4 mr-1.5" /> Asignar Vacaciones
             </Button>
           )}
+
+          {/* Exportar Excel Button */}
+          <Button
+            variant="outline"
+            onClick={exportToExcel}
+            className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950 font-medium text-xs sm:text-sm h-9 shadow-sm"
+          >
+            <Download className="w-4 h-4 mr-1.5 text-emerald-600" /> Exportar Excel
+          </Button>
 
           {/* Month Selector Carousel */}
           <div className="flex items-center gap-2 bg-card border rounded-lg p-1 self-start sm:self-auto shadow-sm">
