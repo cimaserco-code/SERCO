@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
+import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { 
   ChevronLeft, ChevronRight, Calculator, FileText, Save, Calendar, 
@@ -19,9 +20,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { formatPersonName } from "@/lib/userNameFormatting";
+import { formatUserDisplayName } from "@/lib/userNameFormatting";
 
 export default function Nominas() {
+  const { user } = useAuth();
   const { canView, can } = usePermissions();
   const { sedeFilter } = useSedeScope();
   const { toast } = useToast();
@@ -1379,7 +1381,7 @@ function DetalleNominaModal({ emp, index, calc, mods, onUpdateField, onClose }) 
                 <SlidersHorizontal className="w-5 h-5 text-primary" /> Desglose de Nómina
               </DialogTitle>
               <DialogDescription className="mt-1">
-                Ajuste y consulta de los 39 campos de nómina para {formatPersonName(emp.nombre_completo)}
+                Ajuste y consulta de los 39 campos de nómina para {formatUserDisplayName(emp.nombre_completo, user?.role)}
               </DialogDescription>
             </div>
             <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1">

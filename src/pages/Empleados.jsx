@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
-import { formatPersonName } from "@/lib/userNameFormatting";
+import { formatPersonName, formatUserDisplayName } from "@/lib/userNameFormatting";
 
 export function formatProperName(text) {
   return formatPersonName(text);
@@ -772,7 +772,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       setEditMotivoEmpleado(null);
       toast({
         title: "Motivo actualizado",
-        description: `Se actualizó el motivo de baja para ${formatPersonName(editMotivoEmpleado.nombre_completo)}.`,
+        description: `Se actualizó el motivo de baja para ${formatUserDisplayName(editMotivoEmpleado.nombre_completo, user?.role)}.`,
       });
     } catch (err) {
       console.error("Error al actualizar motivo de baja:", err);
@@ -926,7 +926,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       onClick={() => setViewEmpleado(item)}
                     >
                       <TableCell className="font-medium flex items-center gap-1.5">
-                        {formatPersonName(item.nombre_completo)}
+                                                {formatUserDisplayName(item.nombre_completo, user?.role)}
                         {hasPendingInfo(item) && (
                           <AlertTriangle className="w-3.5 h-3.5 text-red-500 fill-red-100 flex-shrink-0" title="Información personal o laboral pendiente" />
                         )}
@@ -1002,7 +1002,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                         onClick={() => setViewEmpleado(item)}
                       >
-                        <TableCell className="font-medium">{formatPersonName(item.nombre_completo)}</TableCell>
+                                                <TableCell className="font-medium">{formatUserDisplayName(item.nombre_completo, user?.role)}</TableCell>
                         <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                         <TableCell>{item.fecha_ingreso || "—"}</TableCell>
                         <TableCell className="text-destructive font-semibold">{item.fecha_baja || "—"}</TableCell>
@@ -1993,7 +1993,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
             <DialogHeader>
               <DialogTitle>
-                {formatPersonName(viewEmpleado?.nombre_completo)}
+                              {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role)}
               </DialogTitle>
 
               <DialogDescription>
@@ -2013,7 +2013,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         <div>
           <Label>Nombre</Label>
           <p className="text-sm text-muted-foreground">
-            {formatPersonName(viewEmpleado?.nombre_completo) || "—"}
+                      {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role) || "—"}
           </p>
         </div>
 
@@ -2551,7 +2551,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           </DialogHeader>
           <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-2">
             <p className="font-semibold text-orange-800">
-              {formatPersonName(imssAlertEmpleado?.nombre_completo)}
+                          {formatUserDisplayName(imssAlertEmpleado?.nombre_completo, user?.role)}
             </p>
             <p className="text-sm text-orange-700">
               <strong>NSS:</strong> {imssAlertEmpleado?.nss || "No registrado"}
@@ -2584,7 +2584,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               <Pencil className="w-4 h-4 text-primary" /> Editar Motivo de Baja
             </DialogTitle>
             <DialogDescription>
-              Empleado: <strong className="text-foreground">{formatPersonName(editMotivoEmpleado?.nombre_completo)}</strong>
+                          Empleado: <strong className="text-foreground">{formatUserDisplayName(editMotivoEmpleado?.nombre_completo, user?.role)}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-3">

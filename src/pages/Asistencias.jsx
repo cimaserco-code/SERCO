@@ -11,9 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
+import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { toast } from "@/components/ui/use-toast";
-import { formatPersonName } from "@/lib/userNameFormatting";
+import { formatUserDisplayName } from "@/lib/userNameFormatting";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -30,6 +31,7 @@ const estadosConfig = {
 };
 
 export default function Asistencias() {
+  const { user } = useAuth();
   const { canView, can } = usePermissions();
   const { sedeFilter } = useSedeScope();
   const [employees, setEmployees] = useState([]);
@@ -290,7 +292,7 @@ export default function Asistencias() {
 
       toast({
         title: "Vacaciones asignadas",
-        description: `Se registraron ${datesToAssign.length} día(s) de vacaciones para ${formatPersonName(emp?.nombre_completo) || "el empleado"}.`,
+        description: `Se registraron ${datesToAssign.length} día(s) de vacaciones para ${formatUserDisplayName(emp?.nombre_completo, user?.role) || "el empleado"}.`,
       });
 
       setVacacionesModalOpen(false);
@@ -594,7 +596,7 @@ export default function Asistencias() {
                             className="text-primary hover:underline text-left font-semibold text-xs sm:text-sm focus:outline-none truncate block max-w-[190px]"
                             title="Ver resumen mensual de asistencia"
                           >
-                            {formatPersonName(emp.nombre_completo)}
+                                                      {formatUserDisplayName(emp.nombre_completo, user?.role)}
                           </button>
                         </TableCell>
                         {daysArray.map((day) => {
@@ -626,7 +628,7 @@ export default function Asistencias() {
                                         const rect = e.currentTarget.getBoundingClientRect();
                                         setActiveCell({
                                           employeeId: emp.id,
-                                          employeeName: formatPersonName(emp.nombre_completo),
+                                                                                    employeeName: formatUserDisplayName(emp.nombre_completo, user?.role),
                                           day,
                                           currentVal: slotVal,
                                           isSecondary: slot === 1,
@@ -643,7 +645,7 @@ export default function Asistencias() {
                                           ? cfg.color 
                                           : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
                                       }`}
-                                      title={`${formatPersonName(emp.nombre_completo)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`}
+                                                                          title={`${formatUserDisplayName(emp.nombre_completo, user?.role)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`}
                                     >
                                       <span>{cfg ? cfg.label : "-"}</span>
                                     </button>
@@ -795,7 +797,7 @@ export default function Asistencias() {
                         }`}
                       >
                         <div className="space-y-0.5 truncate pr-2">
-                          <div className="truncate">{formatPersonName(emp.nombre_completo)}</div>
+                                                    <div className="truncate">{formatUserDisplayName(emp.nombre_completo, user?.role)}</div>
                           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                             {emp.servicio_ubicacion && (
                               <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">
@@ -841,7 +843,7 @@ export default function Asistencias() {
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground font-medium">Empleado:</span>
                   <span className="font-bold text-teal-800 dark:text-teal-200 truncate max-w-[180px]">
-                    {formatPersonName(selectedVacationEmp.nombre_completo)}
+                                      {formatUserDisplayName(selectedVacationEmp.nombre_completo, user?.role)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -909,7 +911,7 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-primary" />
-            Resumen: {formatPersonName(employee.nombre_completo)}
+                      Resumen: {formatUserDisplayName(employee.nombre_completo, user?.role)}
           </DialogTitle>
           <DialogDescription>
             Detalles de asistencia correspondientes a {monthName} de {year}
