@@ -31,12 +31,21 @@ export function PermissionsProvider({ children }) {
     return roleConfig?.permisos || {};
   }, [roles, user?.role]);
 
+  const isAdmin = useMemo(() => {
+    const role = (user?.role || "").toLowerCase().trim();
+    return role === "admin" || role === "administrador" || role === "super administrador";
+  }, [user?.role]);
+
   const can = useCallback(
     (module, action) => {
+      // Los botones y acciones de eliminar sólo están permitidos para el rol Admin
+      if (action === "delete") {
+        return isAdmin;
+      }
       if (roles.length === 0) return true;
       return permisos?.[module]?.[action] === true;
     },
-    [permisos, roles.length]
+    [permisos, roles.length, isAdmin]
   );
 
   const canView = useCallback(
@@ -56,7 +65,7 @@ export function PermissionsProvider({ children }) {
   }
 
   return (
-    <PermissionsContext.Provider value={{ can, canView, permisos, loading, refresh: loadRoles }}>
+    <PermissionsContext.Provider value={{ can, canView, permisos, loading, refresh: loadRoles, isAdmin }}>
       {children}
     </PermissionsContext.Provider>
   );

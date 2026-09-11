@@ -117,9 +117,26 @@ export default function Plantilla() {
       const horaStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
       const isoStr = now.toISOString();
 
+      // Limpiar cualquier asignación previa del empleado para evitar duplicados
+      const cleanEmpName = newEmpleado.trim();
+      try {
+        const existingInState = asignaciones.filter(
+          (a) => (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase()
+        );
+        for (const oldAsig of existingInState) {
+          await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+        }
+        const existingInDb = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: cleanEmpName }).catch(() => []);
+        for (const oldAsig of existingInDb) {
+          await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+        }
+      } catch (cleanErr) {
+        console.warn("Error al limpiar asignaciones anteriores:", cleanErr);
+      }
+
       try {
         await sercoApi.entities.AsignacionTurno.create({
-          empleado_nombre: newEmpleado,
+          empleado_nombre: cleanEmpName,
           servicio_id: addModalData.servicioId,
           servicio_nombre: serv?.nombre || "",
           sede_id: serv?.sede_id || "",
@@ -132,7 +149,7 @@ export default function Plantilla() {
       } catch {
         try {
           await sercoApi.entities.AsignacionTurno.create({
-            empleado_nombre: newEmpleado,
+            empleado_nombre: cleanEmpName,
             servicio_id: addModalData.servicioId,
             servicio_nombre: serv?.nombre || "",
             sede_id: serv?.sede_id || "",
@@ -142,7 +159,7 @@ export default function Plantilla() {
           });
         } catch {
           await sercoApi.entities.AsignacionTurno.create({
-            empleado_nombre: newEmpleado,
+            empleado_nombre: cleanEmpName,
             servicio_id: addModalData.servicioId,
             servicio_nombre: serv?.nombre || "",
             sede_id: serv?.sede_id || "",
@@ -152,7 +169,7 @@ export default function Plantilla() {
       }
 
       // Sincronizar automáticamente con el módulo de Empleados
-      const matchedEmp = empleados.find((e) => e.nombre_completo === newEmpleado);
+      const matchedEmp = empleados.find((e) => (e.nombre_completo || "").trim().toLowerCase() === cleanEmpName.toLowerCase());
       if (matchedEmp) {
         try {
           await sercoApi.entities.Empleado.update(matchedEmp.id, {
@@ -188,22 +205,20 @@ export default function Plantilla() {
     // Si el empleado ya no tiene asignaciones activas en este servicio, actualizar su servicio_ubicacion
     if (asigToDelete?.empleado_nombre) {
       const remaining = asignaciones.filter(
-        (a) => a.id !== deleteId && a.empleado_nombre === asigToDelete.empleado_nombre
+        (a) => a.id !== deleteId && (a.empleado_nombre || "").trim().toLowerCase() === (asigToDelete.empleado_nombre || "").trim().toLowerCase()
       );
       if (remaining.length === 0) {
-        const matchedEmp = empleados.find((e) => e.nombre_completo === asigToDelete.empleado_nombre);
+        const matchedEmp = empleados.find((e) => (e.nombre_completo || "").trim().toLowerCase() === (asigToDelete.empleado_nombre || "").trim().toLowerCase());
         if (matchedEmp && matchedEmp.servicio_ubicacion === asigToDelete.servicio_nombre) {
           try {
             await sercoApi.entities.Empleado.update(matchedEmp.id, {
               servicio_ubicacion: "",
             });
             setEmpleados((prev) =>
-              prev.map((emp) =>
-                emp.id === matchedEmp.id ? { ...emp, servicio_ubicacion: "" } : emp
-              )
+              prev.map((e) => (e.id === matchedEmp.id ? { ...e, servicio_ubicacion: "" } : e))
             );
-          } catch (e) {
-            console.warn("Error al actualizar empleado desasignado:", e);
+          } catch {
+            // Ignorar error al limpiar servicio_ubicacion
           }
         }
       }
@@ -428,7 +443,14 @@ export default function Plantilla() {
                 <div className="space-y-6">
                   {displayedServicios.map((serv) => {
                     const servSede = sedes.find((s) => s.id === serv.sede_id);
-                    const servAsignaciones = asignaciones.filter((a) => a.servicio_id === serv.id);
+                    const rawServAsignaciones = asignaciones.filter((a) => a.servicio_id === serv.id);
+                    const seenInServ = new Set();
+                    const servAsignaciones = rawServAsignaciones.filter((a) => {
+                      const key = (a.empleado_nombre || "").trim().toLowerCase();
+                      if (!key || seenInServ.has(key)) return false;
+                      seenInServ.add(key);
+                      return true;
+                    });
 
                     return (
                       <div

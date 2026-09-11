@@ -30,6 +30,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 import { formatPersonName, formatUserDisplayName } from "@/lib/userNameFormatting";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function formatProperName(text) {
   return formatPersonName(text);
@@ -415,11 +416,29 @@ export default function Empleados() {
     setModalOpen(true);
   }
 
+const getMissingFields = (emp) => {
+  if (!emp) return [];
+  const missing = [];
+
+  // Datos Personales
+  if (!emp.curp?.trim()) missing.push("CURP");
+  if (!emp.rfc?.trim()) missing.push("RFC");
+  if (!emp.nss?.trim()) missing.push("NSS");
+  if (!emp.fecha_nacimiento?.trim()) missing.push("Fecha de Nacimiento");
+  if (!emp.telefono?.trim()) missing.push("Teléfono");
+
+  // Datos Laborales (Infonavit NO es requisito)
+  if (emp.sueldo === null || emp.sueldo === undefined || String(emp.sueldo).trim() === "") missing.push("Sueldo");
+  if (!emp.fecha_ingreso?.trim()) missing.push("Fecha de Ingreso");
+  if (!emp.sede_id?.trim()) missing.push("Sede");
+  if (!emp.puesto?.trim()) missing.push("Puesto");
+  if (!emp.clabe_bancaria?.trim()) missing.push("CLABE Bancaria");
+
+  return missing;
+};
+
 const hasPendingInfo = (emp) => {
-  if (!emp) return false;
-  const missingPersonal = !emp.curp || !emp.rfc || !emp.nss || !emp.fecha_nacimiento || !emp.telefono;
-  const missingLaboral = (emp.sueldo === null || emp.sueldo === undefined || emp.sueldo === "") || !emp.fecha_ingreso || !emp.sede_id || !emp.puesto || !emp.clabe_bancaria;
-  return missingPersonal || missingLaboral;
+  return getMissingFields(emp).length > 0;
 };
 
 function calcularEdad(fechaNacimiento) {
@@ -565,16 +584,42 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       }
 
       // Sincronización automática con Plantilla (AsignacionTurno)
-      const empName = payload.nombre_completo;
-      if (empName) {
+      const oldEmpName = editing?.nombre_completo?.trim();
+      const newEmpName = payload.nombre_completo?.trim();
+
+      if (newEmpName || oldEmpName) {
         const isBaja = Boolean(payload.fecha_baja && (!payload.fecha_reingreso || payload.fecha_baja > payload.fecha_reingreso));
         const matchedServ = servicios.find((s) => s.nombre === payload.servicio_ubicacion);
 
         try {
-          const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: empName }).catch(() => []);
+          // Buscar asignaciones con todas las variaciones de nombres (nuevo, anterior, mayúsculas, etc.)
+          const candidateNames = Array.from(
+            new Set([
+              newEmpName,
+              oldEmpName,
+              editing?.nombre_completo,
+              payload.nombre_completo,
+              oldEmpName ? oldEmpName.toUpperCase() : null,
+              oldEmpName ? toTitleCase(oldEmpName) : null,
+              newEmpName ? newEmpName.toUpperCase() : null,
+            ].filter(Boolean))
+          );
+
+          let existingAsigs = [];
+          for (const name of candidateNames) {
+            const asigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: name }).catch(() => []);
+            existingAsigs.push(...asigs);
+          }
+
+          // Desduplicar por id
+          const uniqueAsigsMap = new Map();
+          for (const asig of existingAsigs) {
+            if (asig?.id) uniqueAsigsMap.set(asig.id, asig);
+          }
+          existingAsigs = Array.from(uniqueAsigsMap.values());
 
           if (isBaja || !matchedServ) {
-            // Si es baja o no es un servicio registrado en Plantilla (ej. "Cubredescansos", "Oficina", o sin asignar), limpiar turnos de plantilla
+            // Si es baja o no es un servicio registrado en Plantilla, limpiar todas las asignaciones existentes
             for (const asig of existingAsigs) {
               await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
             }
@@ -592,7 +637,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 servicio_nombre: matchedServ.nombre,
                 sede_id: targetSedeId,
                 turno: targetTurno,
-                empleado_nombre: empName,
+                empleado_nombre: newEmpName,
                 usuario_asignacion: currentUserName,
                 creado_por: currentUserName,
                 hora: horaStr,
@@ -604,7 +649,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   servicio_nombre: matchedServ.nombre,
                   sede_id: targetSedeId,
                   turno: targetTurno,
-                  empleado_nombre: empName,
+                  empleado_nombre: newEmpName,
                   usuario_asignacion: currentUserName,
                   creado_por: currentUserName,
                   hora: horaStr,
@@ -615,7 +660,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     servicio_nombre: matchedServ.nombre,
                     sede_id: targetSedeId,
                     turno: targetTurno,
-                    empleado_nombre: empName,
+                    empleado_nombre: newEmpName,
                   }).catch(() => {});
                 });
               });
@@ -629,7 +674,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   servicio_nombre: matchedServ.nombre,
                   sede_id: targetSedeId,
                   turno: targetTurno,
-                  empleado_nombre: empName,
+                  empleado_nombre: newEmpName,
                   usuario_asignacion: currentUserName,
                   creado_por: currentUserName,
                   hora: horaStr,
@@ -641,7 +686,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   servicio_nombre: matchedServ.nombre,
                   sede_id: targetSedeId,
                   turno: targetTurno,
-                  empleado_nombre: empName,
+                  empleado_nombre: newEmpName,
                 }).catch(() => {});
               }
             }
@@ -668,9 +713,19 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     const empToDelete = items.find((e) => e.id === deleteId);
     if (empToDelete?.nombre_completo) {
       try {
-        const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: empToDelete.nombre_completo }).catch(() => []);
-        for (const asig of existingAsigs) {
-          await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+        const candidateNames = Array.from(
+          new Set([
+            empToDelete.nombre_completo,
+            empToDelete.nombre_completo.trim(),
+            empToDelete.nombre_completo.toUpperCase(),
+            toTitleCase(empToDelete.nombre_completo)
+          ].filter(Boolean))
+        );
+        for (const name of candidateNames) {
+          const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: name }).catch(() => []);
+          for (const asig of existingAsigs) {
+            await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+          }
         }
       } catch (err) {
         console.warn("Error al limpiar asignaciones de plantilla:", err);
@@ -691,9 +746,19 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
       if (emp?.nombre_completo) {
         try {
-          const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: emp.nombre_completo }).catch(() => []);
-          for (const asig of existingAsigs) {
-            await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+          const candidateNames = Array.from(
+            new Set([
+              emp.nombre_completo,
+              emp.nombre_completo.trim(),
+              emp.nombre_completo.toUpperCase(),
+              toTitleCase(emp.nombre_completo)
+            ].filter(Boolean))
+          );
+          for (const name of candidateNames) {
+            const existingAsigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: name }).catch(() => []);
+            for (const asig of existingAsigs) {
+              await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+            }
           }
         } catch (err) {
           console.warn("Error al limpiar asignaciones en baja:", err);
@@ -873,7 +938,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         </TabsList>
 
         <TabsContent value="activos" className="mt-4">
-          <div className="rounded-lg border bg-card overflow-hidden">
+          <TooltipProvider delayDuration={150}>
+            <div className="rounded-lg border bg-card overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -926,9 +992,33 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       onClick={() => setViewEmpleado(item)}
                     >
                       <TableCell className="font-medium flex items-center gap-1.5">
-                                                {formatUserDisplayName(item.nombre_completo, user?.role)}
+                        {formatUserDisplayName(item.nombre_completo, user?.role)}
                         {hasPendingInfo(item) && (
-                          <AlertTriangle className="w-3.5 h-3.5 text-red-500 fill-red-100 flex-shrink-0" title="Información personal o laboral pendiente" />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span 
+                                className="inline-flex items-center cursor-help text-red-500 hover:text-red-600 transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 fill-red-100 flex-shrink-0" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent 
+                              side="right" 
+                              align="center"
+                              className="bg-slate-900 text-slate-100 p-2.5 shadow-xl border border-slate-700/80 rounded-lg text-xs max-w-xs z-50 pointer-events-none"
+                            >
+                              <div className="font-semibold text-red-300 flex items-center gap-1.5 mb-1.5 text-xs">
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                <span>Campos pendientes:</span>
+                              </div>
+                              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-300">
+                                {getMissingFields(item).map((field, idx) => (
+                                  <li key={idx}>{field}</li>
+                                ))}
+                              </ul>
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </TableCell>
                       <TableCell>{sedeNombre(item.sede_id)}</TableCell>
@@ -957,7 +1047,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 )}
               </TableBody>
             </Table>
-          </div>
+            </div>
+          </TooltipProvider>
         </TabsContent>
 
         <TabsContent value="bajas" className="mt-4">

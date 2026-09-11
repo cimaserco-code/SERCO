@@ -8,6 +8,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { PermissionsProvider } from '@/lib/PermissionsContext';
+import { SedeScopeProvider } from '@/hooks/useSedeScope';
 import Layout from '@/components/Layout';
 import Home from '@/pages/Home';
 import Empleados from '@/pages/Empleados';
@@ -58,34 +59,36 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <PermissionsProvider>
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/overview" element={<Overview />} />
-          <Route path="/empleados" element={<Empleados />} />
-          <Route path="/asistencias" element={<Asistencias />} />
-          <Route path="/nominas" element={<Nominas />} />
-          <Route path="/servicios" element={<Servicios />} />
-          <Route path="/facturas" element={<Cobros />} />
-          <Route path="/servicios/plantilla" element={<Plantilla />} />
-          <Route path="/administracion" element={<Administracion />} />
-          <Route path="/administracion/usuarios" element={<AdminUsuarios />} />
-          <Route path="/administracion/roles" element={<AdminRoles />} />
-          <Route path="/administracion/sedes" element={<AdminSedes />} />
-          <Route path="/administracion/comunicados" element={<AdminComunicados />} />
-          <Route path="/inventario" element={<Inventario />} />
-          <Route path="/documentos" element={<Documentos />} />
-          <Route path="/egresos" element={<Egresos />} />
-          <Route path="/supervisiones" element={<Supervisiones />} />
-        </Route>
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+      <SedeScopeProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/overview" element={<Overview />} />
+              <Route path="/empleados" element={<Empleados />} />
+              <Route path="/asistencias" element={<Asistencias />} />
+              <Route path="/nominas" element={<Nominas />} />
+              <Route path="/servicios" element={<Servicios />} />
+              <Route path="/facturas" element={<Cobros />} />
+              <Route path="/servicios/plantilla" element={<Plantilla />} />
+              <Route path="/administracion" element={<Administracion />} />
+              <Route path="/administracion/usuarios" element={<AdminUsuarios />} />
+              <Route path="/administracion/roles" element={<AdminRoles />} />
+              <Route path="/administracion/sedes" element={<AdminSedes />} />
+              <Route path="/administracion/comunicados" element={<AdminComunicados />} />
+              <Route path="/inventario" element={<Inventario />} />
+              <Route path="/documentos" element={<Documentos />} />
+              <Route path="/egresos" element={<Egresos />} />
+              <Route path="/supervisiones" element={<Supervisiones />} />
+            </Route>
+          </Route>
+          <Route path="*" element={<PageNotFound />} />
+        </Routes>
+      </SedeScopeProvider>
     </PermissionsProvider>
   );
 };

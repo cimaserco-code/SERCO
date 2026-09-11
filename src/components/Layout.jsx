@@ -11,6 +11,10 @@ import { Input } from "@/components/ui/input";
 import { User as UserIcon, Key, Mail, AlertTriangle, Eye } from "lucide-react";
 import { sercoApi } from "@/api/sercoClient";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
+import { useSedeScope } from "@/hooks/useSedeScope";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 const flatNavItems = [
   { to: "/", label: "Inicio", icon: Home, module: "inicio" },
@@ -59,7 +63,8 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { canView } = usePermissions();
+  const { canView, isAdmin } = usePermissions();
+  const { showSedeSelector, isSuperAdmin, availableSedes, activeSedeId, setActiveSedeId } = useSedeScope();
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({ full_name: "", email: "", password: "", username: "" });
@@ -326,36 +331,46 @@ export default function Layout() {
             </div>
           </div>
           {user && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold hidden sm:block">{formatUserDisplayName(user.full_name, user.role)}</span>
-              <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize">
+            <div className="flex items-center gap-2 sm:gap-3">
+              {showSedeSelector && (
+                <Select value={activeSedeId} onValueChange={setActiveSedeId}>
+                  <SelectTrigger className="h-9 w-[150px] sm:w-[190px] text-xs font-medium bg-muted/40 hover:bg-muted border-border gap-1.5 px-2.5">
+                    <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="truncate">
+                      {activeSedeId === "all"
+                        ? (isSuperAdmin ? "Todas las sedes" : "Todas mis sedes")
+                        : (availableSedes.find((s) => s.id === activeSedeId)?.nombre || "Filtrar sede")}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="all" className="text-xs font-semibold">
+                      🏢 {isSuperAdmin ? "Todas las sedes" : "Todas mis sedes"}
+                    </SelectItem>
+                    {availableSedes.map((s) => (
+                      <SelectItem key={s.id} value={s.id} className="text-xs">
+                        📍 {s.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <span className="text-sm font-semibold hidden lg:block">{formatUserDisplayName(user.full_name, user.role)}</span>
+              <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize hidden sm:inline-block">
                 {user.role}
               </span>
               <Button
                 onClick={openProfile}
                 title="Mi Perfil"
-                className="
-                  h-9
-                  px-3
-                  bg-black
-                  text-white
-                  hover:bg-gray-800
-                  flex
-                  items-center
-                  gap-2
-                  rounded-lg
-                "
+                className="h-9 px-3 bg-black text-white hover:bg-gray-800 flex items-center gap-2 rounded-lg"
               >
                 <UserIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">
-                  Perfil
-                </span>
+                <span className="hidden sm:inline">Perfil</span>
               </Button>
             </div>
           )}
         </header>
         <main className="flex-1 p-4 md:p-6 overflow-auto">
-          <Outlet />
+          <Outlet key={activeSedeId} />
         </main>
       </div>
 
@@ -449,13 +464,15 @@ export default function Layout() {
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-4">
             <div className="flex gap-2 w-full justify-between items-center flex-wrap sm:flex-nowrap">
-              <Button
-                variant="outline"
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0 border-red-200"
-                onClick={() => setConfirmDeleteOpen(true)}
-              >
-                Eliminar Cuenta
-              </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0 border-red-200"
+                  onClick={() => setConfirmDeleteOpen(true)}
+                >
+                  Eliminar Cuenta
+                </Button>
+              )}
               
               <div className="flex gap-2 justify-end ml-auto">
                 {!isEditingProfile ? (

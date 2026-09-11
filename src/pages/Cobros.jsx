@@ -440,7 +440,6 @@ export default function Cobros() {
           <TableHeader>
             <TableRow>
               <TableHead>Servicio</TableHead>
-              <TableHead>Mes</TableHead>
               <TableHead>Fecha Factura</TableHead>
               <TableHead className="text-right">Total (Con IVA)</TableHead>
               <TableHead>Estado</TableHead>
@@ -451,9 +450,9 @@ export default function Cobros() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
             ) : (
               filtered.map((item) => (
                 <TableRow 
@@ -462,7 +461,6 @@ export default function Cobros() {
                   onClick={() => can("cobros", "edit") && openEdit(item)}
                 >
                   <TableCell className="font-medium">{item.servicio_nombre || "—"}</TableCell>
-                  <TableCell className="capitalize">{formatMes(item.mes)}</TableCell>
                   <TableCell>{item.fecha_factura || "—"}</TableCell>
                   <TableCell className="text-right font-semibold">
                     {item.monto != null ? `$${Math.round(Number(item.monto) * 1.16).toLocaleString("es-MX")}` : "—"}

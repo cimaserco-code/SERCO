@@ -27,7 +27,7 @@ const emptyReporte = { supervisor_id: "", servicio_id: "", fecha: "", hora: "", 
 export default function Supervisiones() {
   const { user } = useAuth();
   const { sedeFilter, defaultSedeId } = useSedeScope();
-  const { canView } = usePermissions();
+  const { canView, can } = usePermissions();
 
   const [activeTab, setActiveTab] = useState("rondin");
   const [rondines, setRondines] = useState([]);
@@ -395,9 +395,11 @@ export default function Supervisiones() {
                         <TableCell>{r.hora}</TableCell>
                         <TableCell className="text-right space-x-1">
                           <Button variant="ghost" size="sm" onClick={() => openEditRondin(r)}>Editar</Button>
-                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteRondinId(r.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          {can("supervisiones", "delete") && (
+                            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteRondinId(r.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -450,9 +452,11 @@ export default function Supervisiones() {
                         </TableCell>
                         <TableCell className="text-right space-x-1">
                           <Button variant="ghost" size="sm" onClick={() => openEditReporte(r)}>Editar</Button>
-                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteReporteId(r.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          {can("supervisiones", "delete") && (
+                            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteReporteId(r.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
