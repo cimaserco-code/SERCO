@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, Clock4, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, Clock4, FileText, ChevronLeft, ChevronRight, CreditCard, Banknote, CalendarDays } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -19,7 +19,156 @@ import AccessRestricted from "@/components/AccessRestricted";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
+
+export function getDiasMesFactura(mesString) {
+  if (!mesString) return 31;
+  const parts = mesString.split("-");
+  const monthNum = parseInt(parts[1], 10);
+  switch (monthNum) {
+    case 2:
+      return 29; // Febrero 29 días
+    case 4: // Abril 30 días
+    case 6: // Junio 30 días
+      return 30;
+    case 1: // Enero 32 días
+    case 5: // Mayo 32 días
+    case 12: // Diciembre 32 días
+      return 32;
+    default:
+      return 31; // Marzo, Julio, Agosto, Septiembre, Octubre, Noviembre
+  }
+}
+
+export function getCobroMeta(id) {
+  if (!id) return null;
+  try {
+    const raw = localStorage.getItem(`serco_cobro_meta_${id}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCobroMeta(id, meta) {
+  if (!id) return;
+  try {
+    localStorage.setItem(`serco_cobro_meta_${id}`, JSON.stringify(meta));
+  } catch (e) {
+    console.error("Error guardando cobro metadata:", e);
+  }
+}
+
+export function getServicioCobroConfig(servicioId) {
+  if (!servicioId) return null;
+  try {
+    const raw = localStorage.getItem(`serco_serv_cobro_cfg_${servicioId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setServicioCobroConfig(servicioId, cfg) {
+  if (!servicioId) return;
+  try {
+    localStorage.setItem(`serco_serv_cobro_cfg_${servicioId}`, JSON.stringify(cfg));
+  } catch (e) {
+    console.error("Error guardando config cobro servicio:", e);
+  }
+}
+
+export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, calcularIva, frecuencia }) {
+  const monto = Number(montoBase) || 0;
+  const cDia = Number(costoDia) || (diasMes > 0 ? monto / diasMes : 0);
+  const factorIva = calcularIva ? 1.16 : 1;
+  const total = Math.round(monto * factorIva);
+  const iva = calcularIva ? Math.round(monto * 0.16) : 0;
+
+  if (frecuencia === "quincenal") {
+    let q1 = 0;
+    let q2 = 0;
+    if (esVariable && cDia > 0) {
+      const diasQ1 = Math.min(15, diasMes);
+      const diasQ2 = Math.max(0, diasMes - 15);
+      const baseQ1 = Math.round(diasQ1 * cDia);
+      q1 = Math.round(baseQ1 * factorIva);
+      q2 = total - q1;
+      return {
+        total,
+        iva,
+        tipo: "quincenal",
+        detalles: [
+          { nombre: `1ª Quincena (Días 1 al ${diasQ1} • ${diasQ1} días)`, monto: q1 },
+          { nombre: `2ª Quincena (Días 16 al cierre • ${diasQ2} días)`, monto: q2 },
+        ],
+      };
+    } else {
+      q1 = Math.round(total / 2);
+      q2 = total - q1;
+      return {
+        total,
+        iva,
+        tipo: "quincenal",
+        detalles: [
+          { nombre: "1ª Quincena (50%)", monto: q1 },
+          { nombre: "2ª Quincena (50%)", monto: q2 },
+        ],
+      };
+    }
+  }
+
+  if (frecuencia === "semanal") {
+    if (esVariable && cDia > 0) {
+      const cuotaSemana = Math.round(7 * cDia * factorIva);
+      const diasSobrantes = Math.max(0, diasMes - 28);
+      const montoRemanente = total - (cuotaSemana * 4);
+
+      const detalles = [
+        { nombre: "Semana 1 (7 días)", monto: cuotaSemana },
+        { nombre: "Semana 2 (7 días)", monto: cuotaSemana },
+        { nombre: "Semana 3 (7 días)", monto: cuotaSemana },
+        { nombre: "Semana 4 (7 días)", monto: cuotaSemana },
+      ];
+      if (diasSobrantes > 0 && montoRemanente > 0) {
+        detalles.push({
+          nombre: `Cierre (${diasSobrantes} días restantes)`,
+          monto: montoRemanente,
+        });
+      }
+      return {
+        total,
+        iva,
+        tipo: "semanal",
+        detalles,
+      };
+    } else {
+      const cuota = Math.round(total / 4);
+      const c4 = total - (cuota * 3);
+      return {
+        total,
+        iva,
+        tipo: "semanal",
+        detalles: [
+          { nombre: "Semana 1 (25%)", monto: cuota },
+          { nombre: "Semana 2 (25%)", monto: cuota },
+          { nombre: "Semana 3 (25%)", monto: cuota },
+          { nombre: "Semana 4 (Ajuste)", monto: c4 },
+        ],
+      };
+    }
+  }
+
+  return {
+    total,
+    iva,
+    tipo: "mensual",
+    detalles: [
+      { nombre: "Pago mensual único", monto: total },
+    ],
+  };
+}
 
 function getMonthsBetween(start, end) {
   const result = [];
@@ -49,9 +198,22 @@ function adjustDateToMonth(prevDate, targetMonth) {
 }
 
 const emptyForm = {
-  servicio_id: "", servicio_nombre: "", mes: "", fecha_factura: "",
-  monto: "", estado: "pendiente", fecha_limite_pago: "", fecha_pago: "", sede_id: "",
-  };
+  servicio_id: "",
+  servicio_nombre: "",
+  mes: "",
+  fecha_factura: "",
+  monto: "",
+  estado: "pendiente",
+  fecha_limite_pago: "",
+  fecha_pago: "",
+  sede_id: "",
+  // Configuración de Factura Variable y Métodos de Pago
+  es_variable: false,
+  costo_dia: "",
+  metodo_pago: "transferencia", // transferencia | efectivo | cheque
+  calcular_iva: true,
+  frecuencia_pago: "mensual", // mensual | quincenal | semanal
+};
 
 function copiarFecha(fecha,mes){
 
@@ -142,16 +304,26 @@ export default function Cobros() {
         if (startMonth <= currentMonth) {
           const existing = monthlyCobros.find((c) => c.servicio_id === s.id);
           if (!existing) {
+            const cfg = getServicioCobroConfig(s.id);
+            let calculatedMonto = Number(s.monto_mensual) || 0;
+            if (cfg?.es_variable && cfg?.costo_dia) {
+              const dias = getDiasMesFactura(currentMonth);
+              calculatedMonto = Math.round(Number(cfg.costo_dia) * dias);
+            } else if (cfg?.monto != null && cfg.monto !== "") {
+              calculatedMonto = Number(cfg.monto);
+            }
+
             allPendingCreates.push({
               servicio_id: s.id,
               servicio_nombre: s.nombre,
               mes: currentMonth,
               fecha_factura: null,
-              monto: 0,
+              monto: calculatedMonto,
               estado: "pendiente",
               fecha_limite_pago: null,
               fecha_pago: null,
               sede_id: s.sede_id,
+              _cfg: cfg,
             });
           }
         }
@@ -159,7 +331,25 @@ export default function Cobros() {
 
       let nextCobros = monthlyCobros;
       if (allPendingCreates.length > 0) {
-        await Promise.allSettled(allPendingCreates.map((payload) => sercoApi.entities.Cobro.create(payload)));
+        const createdResults = await Promise.allSettled(
+          allPendingCreates.map(({ _cfg, ...payload }) => sercoApi.entities.Cobro.create(payload))
+        );
+
+        createdResults.forEach((res, idx) => {
+          if (res.status === "fulfilled" && res.value?.id) {
+            const cfg = allPendingCreates[idx]?._cfg;
+            if (cfg) {
+              setCobroMeta(res.value.id, {
+                es_variable: cfg.es_variable,
+                costo_dia: cfg.costo_dia,
+                metodo_pago: cfg.metodo_pago,
+                calcular_iva: cfg.calcular_iva,
+                frecuencia_pago: cfg.frecuencia_pago,
+              });
+            }
+          }
+        });
+
         nextCobros = await sercoApi.entities.Cobro.filter(cobroQuery, "-created_date");
       }
 
@@ -210,29 +400,42 @@ export default function Cobros() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ ...emptyForm, mes: currentMonth, sede_id: defaultSedeId });
+    setForm({
+      ...emptyForm,
+      mes: currentMonth,
+      sede_id: defaultSedeId,
+      es_variable: false,
+      costo_dia: "",
+      metodo_pago: "transferencia",
+      calcular_iva: true,
+      frecuencia_pago: "mensual",
+    });
     setModalOpen(true);
   }
 
-  function openEdit(item){
-
+  function openEdit(item) {
     setEditing(item);
+    const meta = getCobroMeta(item.id) || {};
+    const esVariable = meta.es_variable ?? false;
+    const costoDia = meta.costo_dia ?? "";
+    const metodoPago = meta.metodo_pago ?? "transferencia";
+    const calcularIva = meta.calcular_iva !== undefined ? meta.calcular_iva : (metodoPago !== "efectivo");
+    const frecuenciaPago = meta.frecuencia_pago ?? "mensual";
 
     setForm({
-
-    ...emptyForm,
-
-    ...item,
-
-    monto:item.monto??"",
-
-    mes:item.mes
-
+      ...emptyForm,
+      ...item,
+      monto: item.monto ?? "",
+      mes: item.mes,
+      es_variable: esVariable,
+      costo_dia: costoDia,
+      metodo_pago: metodoPago,
+      calcular_iva: calcularIva,
+      frecuencia_pago: frecuenciaPago,
     });
 
     setModalOpen(true);
-
-    }
+  }
 
   const handleQuickPay = async (id) => {
     try {
@@ -255,14 +458,34 @@ export default function Cobros() {
   async function handleSave() {
     setSaving(true);
     try {
+      const diasMes = getDiasMesFactura(form.mes || currentMonth);
+      let finalMonto = form.monto === "" ? null : Number(form.monto);
+      if (form.es_variable && form.costo_dia) {
+        finalMonto = Math.round(Number(form.costo_dia) * diasMes);
+      }
+
       const payload = {
-        ...form,
-        monto: form.monto === "" ? null : Number(form.monto),
+        servicio_id: form.servicio_id,
+        servicio_nombre: form.servicio_nombre,
+        mes: form.mes,
+        fecha_factura: form.fecha_factura || null,
+        monto: finalMonto,
+        estado: form.estado,
+        fecha_limite_pago: form.fecha_limite_pago || null,
         fecha_pago: form.estado === "pagado" ? form.fecha_pago : null,
+        sede_id: form.sede_id || defaultSedeId,
       };
 
       if (editing) {
         await sercoApi.entities.Cobro.update(editing.id, payload);
+
+        setCobroMeta(editing.id, {
+          es_variable: form.es_variable,
+          costo_dia: form.costo_dia,
+          metodo_pago: form.metodo_pago,
+          calcular_iva: form.calcular_iva,
+          frecuencia_pago: form.frecuencia_pago,
+        });
 
         try {
           const serviceId = editing.servicio_id;
@@ -280,15 +503,27 @@ export default function Cobros() {
             await Promise.all(
               subsequentPendingCobros.map((c) => {
                 const adjustedFechaLimite = adjustDateToMonth(newFechaLimite, c.mes);
+                let cMonto = newMonto;
+                if (form.es_variable && form.costo_dia) {
+                  const cDias = getDiasMesFactura(c.mes);
+                  cMonto = Math.round(Number(form.costo_dia) * cDias);
+                }
+                setCobroMeta(c.id, {
+                  es_variable: form.es_variable,
+                  costo_dia: form.costo_dia,
+                  metodo_pago: form.metodo_pago,
+                  calcular_iva: form.calcular_iva,
+                  frecuencia_pago: form.frecuencia_pago,
+                });
                 return sercoApi.entities.Cobro.update(c.id, {
-                  monto: newMonto,
+                  monto: cMonto,
                   fecha_limite_pago: adjustedFechaLimite,
                 });
               })
             );
             toast({
               title: "Propagación exitosa",
-              description: `Se actualizó el monto de $${newMonto} y fecha en ${subsequentPendingCobros.length} meses posteriores.`,
+              description: `Se actualizó el monto de $${newMonto} y la configuración en ${subsequentPendingCobros.length} meses posteriores.`,
             });
           } else {
             toast({
@@ -305,9 +540,27 @@ export default function Cobros() {
           });
         }
       } else {
-        await sercoApi.entities.Cobro.create(payload);
+        const created = await sercoApi.entities.Cobro.create(payload);
+        if (created?.id) {
+          setCobroMeta(created.id, {
+            es_variable: form.es_variable,
+            costo_dia: form.costo_dia,
+            metodo_pago: form.metodo_pago,
+            calcular_iva: form.calcular_iva,
+            frecuencia_pago: form.frecuencia_pago,
+          });
+        }
         toast({ title: "Factura creada con éxito" });
       }
+
+      setServicioCobroConfig(form.servicio_id, {
+        es_variable: form.es_variable,
+        costo_dia: form.costo_dia,
+        metodo_pago: form.metodo_pago,
+        calcular_iva: form.calcular_iva,
+        frecuencia_pago: form.frecuencia_pago,
+        monto: form.es_variable ? null : payload.monto,
+      });
 
       setEditing(null);
       setForm(emptyForm);
@@ -353,17 +606,31 @@ export default function Cobros() {
     }
   };
 
+  const getCobroTotal = (c) => {
+    const meta = getCobroMeta(c.id);
+    const m = Number(c.monto) || 0;
+    const tieneIva = meta?.calcular_iva !== undefined ? meta.calcular_iva : true;
+    return tieneIva ? m * 1.16 : m;
+  };
+
+  const getCobroIva = (c) => {
+    const meta = getCobroMeta(c.id);
+    const m = Number(c.monto) || 0;
+    const tieneIva = meta?.calcular_iva !== undefined ? meta.calcular_iva : true;
+    return tieneIva ? m * 0.16 : 0;
+  };
+
   const totalMontoNormal = filtered.reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
-  const totalIva = totalMontoNormal * 0.16;
-  const totalConIva = totalMontoNormal * 1.16;
+  const totalIva = filtered.reduce((sum, c) => sum + getCobroIva(c), 0);
+  const totalConIva = filtered.reduce((sum, c) => sum + getCobroTotal(c), 0);
 
   const pagadoNormal = filtered.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
-  const pagadoIva = pagadoNormal * 0.16;
-  const pagadoTotal = pagadoNormal * 1.16;
+  const pagadoIva = filtered.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + getCobroIva(c), 0);
+  const pagadoTotal = filtered.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + getCobroTotal(c), 0);
 
   const pendienteNormal = filtered.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
-  const pendienteIva = pendienteNormal * 0.16;
-  const pendienteTotal = pendienteNormal * 1.16;
+  const pendienteIva = filtered.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + getCobroIva(c), 0);
+  const pendienteTotal = filtered.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + getCobroTotal(c), 0);
 
   return (
     <div className="space-y-4">
@@ -422,7 +689,7 @@ export default function Cobros() {
             </Button>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -432,6 +699,12 @@ export default function Cobros() {
               className="pl-9 w-full sm:w-64"
             />
           </div>
+          {(can("cobros", "create") || can("cobros", "edit")) && (
+            <Button onClick={openCreate} className="gap-2 shrink-0">
+              <Plus className="w-4 h-4" />
+              Nueva Factura
+            </Button>
+          )}
         </div>
       </div>
 
@@ -441,7 +714,8 @@ export default function Cobros() {
             <TableRow>
               <TableHead>Servicio</TableHead>
               <TableHead>Fecha Factura</TableHead>
-              <TableHead className="text-right">Total (Con IVA)</TableHead>
+              <TableHead>Frecuencia</TableHead>
+              <TableHead className="text-right">Total Factura</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Fecha Límite</TableHead>
               <TableHead>Fecha Pago</TableHead>
@@ -450,87 +724,354 @@ export default function Cobros() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
             ) : (
-              filtered.map((item) => (
-                <TableRow 
-                  key={item.id} 
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => can("cobros", "edit") && openEdit(item)}
-                >
-                  <TableCell className="font-medium">{item.servicio_nombre || "—"}</TableCell>
-                  <TableCell>{item.fecha_factura || "—"}</TableCell>
-                  <TableCell className="text-right font-semibold">
-                    {item.monto != null ? `$${Math.round(Number(item.monto) * 1.16).toLocaleString("es-MX")}` : "—"}
-                  </TableCell>
-                  <TableCell>{estadoBadge(item.estado)}</TableCell>
-                  <TableCell>{item.fecha_limite_pago || "—"}</TableCell>
-                  <TableCell>{item.fecha_pago || "—"}</TableCell>
-                  <TableCell className="text-right">
-                    {item.estado === "pendiente" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 border-emerald-300 hover:bg-emerald-50 text-emerald-600 font-semibold gap-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickPay(item.id);
-                        }}
-                      >
-                        <DollarSign className="w-3.5 h-3.5" />
-                        Pago
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+              filtered.map((item) => {
+                const meta = getCobroMeta(item.id);
+                return (
+                  <TableRow 
+                    key={item.id} 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => can("cobros", "edit") && openEdit(item)}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-semibold">{item.servicio_nombre || "—"}</span>
+                        {meta?.es_variable && (
+                          <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] px-1.5 py-0 font-medium">
+                            Variable
+                          </Badge>
+                        )}
+                        {meta?.metodo_pago && (
+                          <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] px-1.5 py-0 capitalize">
+                            {meta.metodo_pago}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{item.fecha_factura || "—"}</TableCell>
+                    <TableCell className="capitalize text-xs text-muted-foreground">
+                      {meta?.frecuencia_pago || "Mensual"}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {item.monto != null ? (
+                        <div>
+                          <div>${Math.round(getCobroTotal(item)).toLocaleString("es-MX")}</div>
+                          {meta?.calcular_iva === false && (
+                            <div className="text-[10px] text-amber-600 font-normal">Sin IVA</div>
+                          )}
+                        </div>
+                      ) : "—"}
+                    </TableCell>
+                    <TableCell>{estadoBadge(item.estado)}</TableCell>
+                    <TableCell>{item.fecha_limite_pago || "—"}</TableCell>
+                    <TableCell>{item.fecha_pago || "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {item.estado === "pendiente" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-emerald-300 hover:bg-emerald-50 text-emerald-600 font-semibold gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickPay(item.id);
+                          }}
+                        >
+                          <DollarSign className="w-3.5 h-3.5" />
+                          Pago
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Editar Factura</DialogTitle>
-            <DialogDescription>Actualiza la información financiera del servicio.</DialogDescription>
+            <DialogTitle>{editing ? "Editar Factura" : "Nueva Factura"}</DialogTitle>
+            <DialogDescription>
+              {editing
+                ? "Actualiza la información financiera y método de cobro del servicio."
+                : "Crea un registro de cobro para el mes actual o subsecuente."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 gap-4 py-2">
-            <div>
-                <Label>Servicio</Label>
 
-                <Input
-                    value={form.servicio_nombre}
-                    disabled
-                />
-            </div>
-            <div>
-              <Label>Mes</Label>
-              <Input
-                  value={formatMes(form.mes)}
-                  disabled
-              />              
-            </div>
-            <div>
-              <Label>Fecha de Factura</Label>
-              <Input type="date" value={form.fecha_factura} onChange={(e) => setForm({ ...form, fecha_factura: e.target.value })} />
-            </div>
-            <div>
-              <Label>Monto Normal (Sin IVA)</Label>
-              <Input type="number" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} />
-            </div>
+          <div className="grid grid-cols-1 gap-4 py-2">
+            {/* Selector de servicio si es nueva factura */}
+            {!editing ? (
+              <div>
+                <Label>Servicio *</Label>
+                <Select
+                  value={form.servicio_id}
+                  onValueChange={(val) => {
+                    const serv = servicios.find((s) => s.id === val);
+                    setForm({
+                      ...form,
+                      servicio_id: val,
+                      servicio_nombre: serv?.nombre || "",
+                      sede_id: serv?.sede_id || defaultSedeId,
+                      monto: serv?.monto_mensual || form.monto,
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un servicio..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {servicios.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.nombre} {s.sede_id ? `(${sedeNombre(s.sede_id)})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div>
+                <Label>Servicio</Label>
+                <Input value={form.servicio_nombre} disabled className="bg-muted" />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>IVA (16%)</Label>
-                <Input value={form.monto ? `$${Math.round(Number(form.monto) * 0.16).toLocaleString("es-MX")}` : "$0"} disabled className="bg-muted" />
+                <Label>Mes de Factura</Label>
+                {!editing ? (
+                  <Input
+                    type="month"
+                    value={form.mes}
+                    onChange={(e) => {
+                      const newMes = e.target.value;
+                      const dias = getDiasMesFactura(newMes);
+                      let newMonto = form.monto;
+                      if (form.es_variable && form.costo_dia) {
+                        newMonto = Math.round(Number(form.costo_dia) * dias);
+                      }
+                      setForm({ ...form, mes: newMes, monto: newMonto });
+                    }}
+                  />
+                ) : (
+                  <Input value={formatMes(form.mes)} disabled className="bg-muted" />
+                )}
               </div>
               <div>
-                <Label>Total (Monto + IVA)</Label>
-                <Input value={form.monto ? `$${Math.round(Number(form.monto) * 1.16).toLocaleString("es-MX")}` : "$0"} disabled className="bg-muted font-bold text-primary" />
+                <Label>Fecha de Factura</Label>
+                <Input
+                  type="date"
+                  value={form.fecha_factura || ""}
+                  onChange={(e) => setForm({ ...form, fecha_factura: e.target.value })}
+                />
               </div>
             </div>
+
+            {/* SECCIÓN FACTURA VARIABLE */}
+            <div className="rounded-lg border p-3.5 bg-slate-50 dark:bg-slate-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-semibold">¿Es factura variable?</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Calcula automáticamente el total con base en la tarifa por día del mes.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold ${!form.es_variable ? "text-primary" : "text-muted-foreground"}`}>No</span>
+                  <Switch
+                    checked={form.es_variable}
+                    onCheckedChange={(checked) => {
+                      const dias = getDiasMesFactura(form.mes || currentMonth);
+                      let newMonto = form.monto;
+                      if (checked && form.costo_dia) {
+                        newMonto = Math.round(Number(form.costo_dia) * dias);
+                      }
+                      setForm({ ...form, es_variable: checked, monto: newMonto });
+                    }}
+                  />
+                  <span className={`text-xs font-semibold ${form.es_variable ? "text-primary" : "text-muted-foreground"}`}>Sí</span>
+                </div>
+              </div>
+
+              {form.es_variable ? (
+                <div className="space-y-3 pt-2 border-t border-border/60">
+                  <div className="bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300 p-2.5 rounded-md text-xs space-y-1">
+                    <div className="flex items-center justify-between font-semibold">
+                      <span>Días calculados para este mes:</span>
+                      <Badge variant="secondary" className="bg-sky-200/60 dark:bg-sky-900 font-bold">
+                        {getDiasMesFactura(form.mes || currentMonth)} días
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Regla oficial: Febrero (29d), Abril y Junio (30d), Enero, Mayo y Diciembre (32d), Resto (31d).
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="costo_dia">Costo por día ($ MXN) *</Label>
+                    <Input
+                      id="costo_dia"
+                      type="number"
+                      placeholder="Ej. 750"
+                      value={form.costo_dia}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const dias = getDiasMesFactura(form.mes || currentMonth);
+                        const calcMonto = val ? Math.round(Number(val) * dias) : "";
+                        setForm({
+                          ...form,
+                          costo_dia: val,
+                          monto: calcMonto,
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Label htmlFor="monto_fijo">Monto Fijo Normal (Sin IVA) *</Label>
+                  <Input
+                    id="monto_fijo"
+                    type="number"
+                    placeholder="0.00"
+                    value={form.monto}
+                    onChange={(e) => setForm({ ...form, monto: e.target.value })}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* SECCIÓN FORMA DE PAGO Y FRECUENCIA */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Método de Pago</Label>
+                <Select
+                  value={form.metodo_pago}
+                  onValueChange={(val) => {
+                    // Si Efectivo -> No IVA por defecto
+                    // Si Transferencia o Cheque -> Con IVA por defecto
+                    const nuevoIva = val !== "efectivo";
+                    setForm({
+                      ...form,
+                      metodo_pago: val,
+                      calcular_iva: nuevoIva,
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="transferencia">Transferencia</SelectItem>
+                    <SelectItem value="efectivo">Efectivo</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Frecuencia de Pago</Label>
+                <Select
+                  value={form.frecuencia_pago}
+                  onValueChange={(val) => setForm({ ...form, frecuencia_pago: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mensual">Mensual (1 Pago)</SelectItem>
+                    <SelectItem value="quincenal">Quincenal (2 Pagos)</SelectItem>
+                    <SelectItem value="semanal">Semanal (Por Semanas)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* SWITCH OPCIÓN IVA */}
+            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
+              <div>
+                <Label className="text-sm font-semibold">¿Calcular IVA (16%)?</Label>
+                <p className="text-xs text-muted-foreground">
+                  {form.metodo_pago === "efectivo"
+                    ? "En Efectivo está desactivado por defecto (puedes activarlo si se solicita)."
+                    : "En Transferencia / Cheque está activado por defecto."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold ${!form.calcular_iva ? "text-primary" : "text-muted-foreground"}`}>No (0%)</span>
+                <Switch
+                  checked={form.calcular_iva}
+                  onCheckedChange={(checked) => setForm({ ...form, calcular_iva: checked })}
+                />
+                <span className={`text-xs font-semibold ${form.calcular_iva ? "text-primary" : "text-muted-foreground"}`}>Sí (16%)</span>
+              </div>
+            </div>
+
+            {/* TOTALES Y PLAN DE PAGOS DESGLOSADO */}
+            {(() => {
+              const diasMes = getDiasMesFactura(form.mes || currentMonth);
+              const montoBase = Number(form.monto) || 0;
+              const ivaMonto = form.calcular_iva ? Math.round(montoBase * 0.16) : 0;
+              const totalMonto = montoBase + ivaMonto;
+
+              const plan = calcularPlanPagos({
+                montoBase,
+                costoDia: form.costo_dia,
+                esVariable: form.es_variable,
+                diasMes,
+                calcularIva: form.calcular_iva,
+                frecuencia: form.frecuencia_pago,
+              });
+
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border bg-muted/30">
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase">Subtotal</span>
+                      <p className="text-base font-bold text-slate-800">${montoBase.toLocaleString("es-MX")}</p>
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase">IVA (16%)</span>
+                      <p className={`text-base font-bold ${form.calcular_iva ? "text-amber-600" : "text-slate-400 line-through"}`}>
+                        ${ivaMonto.toLocaleString("es-MX")}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase">Total</span>
+                      <p className="text-base font-extrabold text-primary">${totalMonto.toLocaleString("es-MX")}</p>
+                    </div>
+                  </div>
+
+                  {/* Tarjeta de desglose Quincenal / Semanal */}
+                  {form.frecuencia_pago !== "mensual" && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase">
+                          <CalendarDays className="w-3.5 h-3.5" />
+                          Desglose de Pagos ({form.frecuencia_pago})
+                        </span>
+                        <Badge variant="outline" className="text-[10px] bg-background">
+                          Total: ${totalMonto.toLocaleString("es-MX")}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        {plan.detalles.map((d, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded bg-background border shadow-xs">
+                            <span className="text-muted-foreground font-medium">{d.nombre}</span>
+                            <span className="font-bold text-slate-800">${d.monto.toLocaleString("es-MX")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             <div>
               <Label>Estado</Label>
               <Select value={form.estado} onValueChange={(v) => setForm({ ...form, estado: v })}>
@@ -542,17 +1083,21 @@ export default function Cobros() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Fecha Límite de Pago</Label>
-              <Input type="date" value={form.fecha_limite_pago} onChange={(e) => setForm({ ...form, fecha_limite_pago: e.target.value })} />
-            </div>
-            {form.estado === "pagado" && (
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label>Fecha de Pago</Label>
-                <Input type="date" value={form.fecha_pago} onChange={(e) => setForm({ ...form, fecha_pago: e.target.value })} />
+                <Label>Fecha Límite de Pago</Label>
+                <Input type="date" value={form.fecha_limite_pago || ""} onChange={(e) => setForm({ ...form, fecha_limite_pago: e.target.value })} />
               </div>
-            )}
+              {form.estado === "pagado" && (
+                <div>
+                  <Label>Fecha de Pago</Label>
+                  <Input type="date" value={form.fecha_pago || ""} onChange={(e) => setForm({ ...form, fecha_pago: e.target.value })} />
+                </div>
+              )}
+            </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>

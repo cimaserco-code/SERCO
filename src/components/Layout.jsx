@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, LogOut, TrendingDown, LayoutGrid, Megaphone, Calculator } from "lucide-react";
+import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, CalendarDays, LogOut, TrendingDown, LayoutGrid, Megaphone, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/lib/AuthContext";
@@ -31,6 +31,7 @@ const navigationSections = [
       { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
       { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
       { to: "/supervisiones", label: "Supervisiones", icon: Eye, module: "supervisiones" },
+      { to: "/agenda", label: "Agenda", icon: CalendarDays, module: "agenda" },
     ]
   },
   {

@@ -20,7 +20,8 @@ const tableMap = {
   Rondin: 'rondines',
   ReporteSupervision: 'reportes_supervision',
   Saldo: 'saldos',
-  Mantenimiento: 'mantenimientos'
+  Mantenimiento: 'mantenimientos',
+  Agenda: 'agenda'
 };
 
 function formatSupabaseError(error) {

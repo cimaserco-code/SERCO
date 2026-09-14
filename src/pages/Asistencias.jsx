@@ -33,7 +33,7 @@ const estadosConfig = {
 export default function Asistencias() {
   const { user } = useAuth();
   const { canView, can } = usePermissions();
-  const { sedeFilter } = useSedeScope();
+  const { sedeFilter, activeSedeId, availableSedes } = useSedeScope();
   const [employees, setEmployees] = useState([]);
   const [sedes, setSedes] = useState([]);
   const [asistencias, setAsistencias] = useState([]);
@@ -45,6 +45,16 @@ export default function Asistencias() {
     return `${today.getFullYear()}-${mm}`;
   });
   const [selectedEmpSummary, setSelectedEmpSummary] = useState(null);
+
+  const isMonterreyEmp = (emp) => {
+    const sName = sedes.find((s) => s.id === emp?.sede_id)?.nombre || "";
+    if (sName.toLowerCase().includes("monterrey")) return true;
+    if (activeSedeId && activeSedeId !== "all") {
+      const activeSedeObj = availableSedes?.find((s) => s.id === activeSedeId);
+      if (activeSedeObj?.nombre?.toLowerCase()?.includes("monterrey")) return true;
+    }
+    return false;
+  };
   
   // Single active cell state for fast floating picker
   const [activeCell, setActiveCell] = useState(null); // { employeeId, employeeName, day, currentVal, rect }
@@ -604,7 +614,8 @@ export default function Asistencias() {
                           const asig = asistenciasMap.get(`${emp.id}_${dateStr}`);
                           const currentVal = asig?.estado || null;
                           const todayFlag = isToday(day);
-                          const cellSlots = [0, 1];
+                          const isMty = isMonterreyEmp(emp);
+                          const cellSlots = isMty ? [0, 1] : [0];
 
                           return (
                             <TableCell 
@@ -892,7 +903,8 @@ export default function Asistencias() {
 
 // Attendance summary modal helper
 const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asistencias, onClose }) => {
-  const empAsists = asistencias.filter(a => a.empleado_id === employee.id && a.fecha.startsWith(currentMonth));
+  const { user } = useAuth();
+  const empAsists = asistencias.filter(a => a.empleado_id === employee.id && a.fecha?.startsWith(currentMonth));
   const totalA = empAsists.filter(a => a.estado === "asistió").length;
   const totalF = empAsists.filter(a => a.estado === "falta").length;
   const totalD = empAsists.filter(a => a.estado === "descanso").length;

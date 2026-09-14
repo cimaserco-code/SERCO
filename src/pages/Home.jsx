@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
-import { Users, Briefcase, Package, FileText, ArrowRight, Clock, CheckCircle, DollarSign, AlertCircle, ChevronLeft, ChevronRight, Plus, Megaphone, Bell } from "lucide-react";
+import { Users, Briefcase, Package, FileText, ArrowRight, Clock, CheckCircle, DollarSign, AlertCircle, ChevronLeft, ChevronRight, Plus, Megaphone, Bell, X, RotateCcw, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/lib/AuthContext";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
@@ -33,6 +40,56 @@ export default function Home() {
   const [sedeStats, setSedeStats] = useState([]);
   const [comunicados, setComunicados] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [alertsModalOpen, setAlertsModalOpen] = useState(false);
+  const [alertCategoryFilter, setAlertCategoryFilter] = useState("todas");
+  const [dismissedAlerts, setDismissedAlerts] = useState(() => {
+    try {
+      const key = `serco_dismissed_alerts_${user?.id || user?.email || "default"}`;
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const key = `serco_dismissed_alerts_${user?.id || user?.email || "default"}`;
+      const stored = localStorage.getItem(key);
+      setDismissedAlerts(stored ? JSON.parse(stored) : []);
+    } catch {
+      setDismissedAlerts([]);
+    }
+  }, [user?.id, user?.email]);
+
+  const handleDismissAlert = (id, e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setDismissedAlerts((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      try {
+        const key = `serco_dismissed_alerts_${user?.id || user?.email || "default"}`;
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch (err) {
+        console.error("Error saving dismissed alerts:", err);
+      }
+      return next;
+    });
+  };
+
+  const handleRestoreAlerts = () => {
+    setDismissedAlerts([]);
+    try {
+      const key = `serco_dismissed_alerts_${user?.id || user?.email || "default"}`;
+      localStorage.removeItem(key);
+    } catch (err) {
+      console.error("Error clearing dismissed alerts:", err);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
@@ -102,8 +159,29 @@ export default function Home() {
     return "Hoy";
   };
 
+  const parseToTimestamp = (dateVal) => {
+    if (!dateVal) return 0;
+    if (typeof dateVal === "number") return dateVal;
+    const str = String(dateVal).trim();
+    if (!str) return 0;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const t = new Date(`${str}T12:00:00`).getTime();
+      return isNaN(t) ? 0 : t;
+    }
+    const t = new Date(str).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+
+  const isWithinLastWeek = (dateVal) => {
+    const t = parseToTimestamp(dateVal);
+    if (!t) return false;
+    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    return (now - t) <= ONE_WEEK_MS && (t - now) <= 86400000;
+  };
+
   // Normalize role matching to lowercase
-  const role = (user?.role || "").toLowerCase();
+  const role = (user?.role || "").toLowerCase().trim();
   
   // Decide which dashboard components to show based on role permissions
   const showFinances = canView("kpi_financiero");
@@ -270,11 +348,11 @@ export default function Home() {
           return formatUserDisplayName(resolvedName, resolvedRole);
         };
 
-        // Generate dynamic Alerts based on Role
+        // Generate dynamic Alerts based on Role (1 week lifespan; Admin, Director, CEO see all)
         const alertsList = [];
         const isCeo = role === "ceo";
         const isDirector = role === "director";
-        const isAdmin = role === "admin";
+        const isAdmin = role === "admin" || role === "administrador" || role === "super administrador";
         const isSuperUser = isCeo || isDirector || isAdmin;
         const isSupervisor = role === "supervisor";
         const isRh = role === "rh" || role === "reclutador";
@@ -283,6 +361,7 @@ export default function Home() {
         if (role === "finanzas" || isSuperUser) {
           (sols || []).filter(s => s.estado === 'pendiente').forEach(s => {
             const rawTime = s.created_at || s.fecha || null;
+            if (!isWithinLastWeek(rawTime)) return;
             const author = resolveAuthorName(s.solicitante_nombre || s.usuario || s.creado_por);
             alertsList.push({
               id: `sol-${s.id}`,
@@ -292,7 +371,7 @@ export default function Home() {
               description: `${author} solicitó ${s.cantidad} unidad(es) de ${s.item_nombre}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, s.hora || ""),
-              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
+              rawTimestamp: parseToTimestamp(rawTime),
             });
           });
         }
@@ -300,8 +379,9 @@ export default function Home() {
         // 2. RH / Reclutador / Superusuarios: Nuevas vacantes abiertas
         if (isRh || isSuperUser) {
           (vacs || []).filter(v => v.estado === 'abierta').forEach(v => {
-            const servName = serv.find(s => s.id === v.servicio_id)?.nombre || "Servicio";
             const rawTime = v.created_at || v.fecha_creacion || null;
+            if (!isWithinLastWeek(rawTime)) return;
+            const servName = serv.find(s => s.id === v.servicio_id)?.nombre || "Servicio";
             const author = resolveAuthorName(v.creado_por || v.usuario, 'rh', v.sede_id);
             alertsList.push({
               id: `vac-${v.id}`,
@@ -311,7 +391,7 @@ export default function Home() {
               description: `Se abrió vacante para ${v.puesto} (${v.turno}) en ${servName}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, v.hora || ""),
-              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
+              rawTimestamp: parseToTimestamp(rawTime),
             });
           });
         }
@@ -319,11 +399,11 @@ export default function Home() {
         // 3. Altas de personal (RH / Supervisor / Superusuarios)
         if (isSupervisor || isRh || isSuperUser) {
           const recentHires = (emp || []).filter(e => {
-            const date = e.fecha_ingreso || e.fecha_reingreso;
-            return date && date.slice(0, 7) === currentMonth;
+            const rawTime = e.created_at || e.fecha_ingreso || e.fecha_reingreso || null;
+            return isWithinLastWeek(rawTime);
           });
           recentHires.forEach(e => {
-            const rawTime = e.created_at || e.fecha_ingreso || null;
+            const rawTime = e.created_at || e.fecha_ingreso || e.fecha_reingreso || null;
             const author = resolveAuthorName(e.usuario_alta, 'rh', e.sede_id);
             alertsList.push({
               id: `alta-${e.id}`,
@@ -333,7 +413,7 @@ export default function Home() {
               description: `${formatUserDisplayName(e.nombre_completo, user?.role)} se incorporó como ${e.puesto || 'Personal'}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, e.hora_ingreso || ""),
-              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
+              rawTimestamp: parseToTimestamp(rawTime),
             });
           });
         }
@@ -341,7 +421,8 @@ export default function Home() {
         // 4. Bajas de personal (RH / Supervisor / Superusuarios)
         if (isSupervisor || isRh || isSuperUser) {
           const recentBajas = (emp || []).filter(e => {
-            return e.fecha_baja && e.fecha_baja.slice(0, 7) === currentMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso);
+            const rawTime = e.fecha_hora_baja || e.updated_at || e.created_at || e.fecha_baja || null;
+            return isWithinLastWeek(rawTime) && (!e.fecha_reingreso || (e.fecha_baja && e.fecha_baja > e.fecha_reingreso));
           });
           recentBajas.forEach(e => {
             const rawTime = e.fecha_hora_baja || e.updated_at || e.created_at || e.fecha_baja || null;
@@ -355,7 +436,7 @@ export default function Home() {
               description: `${formatUserDisplayName(e.nombre_completo, user?.role)} fue dado de baja${motivoText}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, e.hora_baja || ""),
-              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
+              rawTimestamp: parseToTimestamp(rawTime),
             });
           });
         }
@@ -363,9 +444,10 @@ export default function Home() {
         // 5. Movimientos / Asignaciones en Plantilla (Supervisor / RH / Superusuarios)
         if (isSupervisor || isRh || isSuperUser) {
           (turnos || []).forEach(t => {
+            const rawTime = t.fecha_asignacion || t.created_at || null;
+            if (!isWithinLastWeek(rawTime)) return;
             const author = resolveAuthorName(t.usuario_asignacion || t.creado_por, 'supervisor', t.sede_id);
             const turnoLabel = t.turno === 'matutino' ? 'Matutino' : t.turno === 'vespertino' ? 'Vespertino' : 'Cubre Descansos';
-            const rawTime = t.fecha_asignacion || t.created_at || null;
             alertsList.push({
               id: `turno-${t.id}`,
               type: 'info',
@@ -374,7 +456,7 @@ export default function Home() {
               description: `${t.empleado_nombre} asignado a ${t.servicio_nombre} (${turnoLabel}).`,
               autor: author,
               hora: formatTimeAndDate(rawTime, t.hora || ""),
-              rawTimestamp: rawTime ? new Date(rawTime).getTime() : 0,
+              rawTimestamp: parseToTimestamp(rawTime),
             });
           });
         }
@@ -424,6 +506,13 @@ export default function Home() {
     }
     load();
   }, [user?.id, sedeFilter, currentMonth]);
+
+  const activeNotifications = notifications.filter((n) => !dismissedAlerts.includes(n.id));
+  const categoriesInAlerts = ["todas", ...Array.from(new Set(notifications.map((n) => n.categoria).filter(Boolean)))];
+  const filteredModalAlerts = activeNotifications.filter((n) => {
+    if (alertCategoryFilter === "todas") return true;
+    return n.categoria?.toLowerCase() === alertCategoryFilter.toLowerCase();
+  });
 
   return (
     <div className="space-y-6">
@@ -690,36 +779,72 @@ export default function Home() {
         {/* Columna Derecha: Alertas */}
         <div className="col-span-12 lg:col-span-3 space-y-4">
           <Card className="h-full">
-            <CardHeader className="pb-3 border-b bg-card">
-              <CardTitle className="flex items-center gap-2 text-base font-bold">
-                <Bell className="w-5 h-5 text-primary shrink-0 animate-pulse" />
-                Alertas
-              </CardTitle>
+            <CardHeader 
+              className="pb-3 border-b bg-card cursor-pointer hover:bg-muted/40 transition-colors select-none group"
+              onClick={() => setAlertsModalOpen(true)}
+              title="Haz clic para abrir el centro de alertas"
+            >
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+                  <Bell className="w-5 h-5 text-primary shrink-0 animate-pulse" />
+                  Alertas
+                  {activeNotifications.length > 0 && (
+                    <span className="bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 rounded-full border border-primary/20">
+                      {activeNotifications.length}
+                    </span>
+                  )}
+                </CardTitle>
+                <span className="text-xs text-primary font-medium flex items-center gap-1 group-hover:underline">
+                  Ver todas <ArrowRight className="w-3 h-3" />
+                </span>
+              </div>
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                 {loading ? (
                   <p className="text-sm text-muted-foreground py-8 text-center">Cargando alertas...</p>
-                ) : notifications.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-8 text-center">No hay alertas pendientes.</p>
+                ) : activeNotifications.length === 0 ? (
+                  <div className="text-center py-8 space-y-2">
+                    <p className="text-sm text-muted-foreground">No hay alertas pendientes.</p>
+                    {dismissedAlerts.length > 0 && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={handleRestoreAlerts}
+                        className="text-xs text-muted-foreground hover:text-foreground h-7"
+                      >
+                        <RotateCcw className="w-3 h-3 mr-1" /> Restaurar {dismissedAlerts.length} descartada(s)
+                      </Button>
+                    )}
+                  </div>
                 ) : (
-                  notifications.map((notif) => (
+                  activeNotifications.map((notif) => (
                     <div 
                       key={notif.id} 
-                      className={`flex flex-col gap-2 text-sm p-3 rounded-lg border bg-card/60 hover:bg-muted/50 transition-all duration-200 border-l-4 shadow-sm ${
+                      className={`relative group flex flex-col gap-2 text-sm p-3 rounded-lg border bg-card/60 hover:bg-muted/50 transition-all duration-200 border-l-4 shadow-sm ${
                         notif.type === 'danger' ? 'border-l-red-500' : 
                         notif.type === 'warning' ? 'border-l-amber-500' : 
                         notif.type === 'success' ? 'border-l-emerald-500' : 'border-l-blue-500'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className="font-bold text-xs leading-snug text-foreground">{notif.title}</p>
-                        {notif.hora && (
-                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium shrink-0 bg-muted/60 px-1.5 py-0.5 rounded border border-border/40 whitespace-nowrap">
-                            <Clock className="w-3 h-3 text-muted-foreground/70" />
-                            {notif.hora}
-                          </span>
-                        )}
+                        <p className="font-bold text-xs leading-snug text-foreground pr-2">{notif.title}</p>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {notif.hora && (
+                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium shrink-0 bg-muted/60 px-1.5 py-0.5 rounded border border-border/40 whitespace-nowrap">
+                              <Clock className="w-3 h-3 text-muted-foreground/70" />
+                              {notif.hora}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => handleDismissAlert(notif.id, e)}
+                            className="opacity-50 group-hover:opacity-100 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-950/50 dark:hover:text-red-400 p-0.5 rounded transition-colors text-muted-foreground"
+                            title="Descartar alerta"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">{notif.description}</p>
                       <div className="flex items-center justify-between pt-1 border-t border-border/50 text-[10px]">
@@ -727,7 +852,7 @@ export default function Home() {
                           {notif.categoria || notif.time}
                         </span>
                         {notif.autor && (
-                          <span className="text-muted-foreground font-medium truncate max-w-[200px]" title={notif.autor}>
+                          <span className="text-muted-foreground font-medium truncate max-w-[180px]" title={notif.autor}>
                             Por: <strong className="text-foreground font-semibold">{notif.autor}</strong>
                           </span>
                         )}
@@ -741,6 +866,116 @@ export default function Home() {
         </div>
 
       </div>
+
+      {/* Modal / Vista Completa de Alertas */}
+      <Dialog open={alertsModalOpen} onOpenChange={setAlertsModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader className="pb-3 border-b">
+            <div className="flex items-center justify-between gap-4 pr-6">
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                <Bell className="w-5 h-5 text-primary" />
+                Centro de Alertas
+                {activeNotifications.length > 0 && (
+                  <span className="bg-primary/10 text-primary text-xs font-semibold px-2.5 py-0.5 rounded-full border border-primary/20">
+                    {activeNotifications.length} activas
+                  </span>
+                )}
+              </DialogTitle>
+              {dismissedAlerts.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRestoreAlerts}
+                  className="text-xs h-8 flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Restaurar descartadas ({dismissedAlerts.length})
+                </Button>
+              )}
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground text-left mt-1">
+              Alertas registradas en los últimos 7 días. Puedes descartar con la <span className="font-semibold text-foreground">X</span> las que ya no desees ver.
+            </DialogDescription>
+            
+            {/* Filtro por categorías */}
+            {categoriesInAlerts.length > 2 && (
+              <div className="flex items-center gap-1.5 pt-3 overflow-x-auto pb-1">
+                <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                {categoriesInAlerts.map(cat => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setAlertCategoryFilter(cat)}
+                    className={`text-xs px-2.5 py-1 rounded-full capitalize font-medium transition-colors ${
+                      alertCategoryFilter === cat 
+                        ? 'bg-primary text-primary-foreground font-semibold shadow-xs' 
+                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-3 space-y-3 pr-1">
+            {filteredModalAlerts.length === 0 ? (
+              <div className="text-center py-12 space-y-2">
+                <CheckCircle className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+                <p className="text-sm font-medium text-foreground">No hay alertas en esta categoría</p>
+                <p className="text-xs text-muted-foreground">
+                  {dismissedAlerts.length > 0 
+                    ? `Has descartado ${dismissedAlerts.length} alerta(s). Puedes restaurarlas con el botón superior.` 
+                    : "No se han generado nuevas alertas en los últimos 7 días."}
+                </p>
+              </div>
+            ) : (
+              filteredModalAlerts.map((notif) => (
+                <div 
+                  key={notif.id} 
+                  className={`relative group flex flex-col gap-2 p-3.5 rounded-lg border bg-card hover:bg-muted/40 transition-all border-l-4 shadow-sm ${
+                    notif.type === 'danger' ? 'border-l-red-500' : 
+                    notif.type === 'warning' ? 'border-l-amber-500' : 
+                    notif.type === 'success' ? 'border-l-emerald-500' : 'border-l-blue-500'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-bold text-sm leading-snug text-foreground pr-2">{notif.title}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {notif.hora && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground font-medium bg-muted/70 px-2 py-0.5 rounded border border-border/40 whitespace-nowrap">
+                          <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+                          {notif.hora}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDismissAlert(notif.id, e)}
+                        className="opacity-70 hover:opacity-100 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-950/50 dark:hover:text-red-400 p-1 rounded transition-colors text-muted-foreground"
+                        title="Descartar esta alerta"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">{notif.description}</p>
+                  <div className="flex items-center justify-between pt-1.5 border-t border-border/50 text-xs">
+                    <span className="bg-muted px-2.5 py-0.5 rounded font-medium text-muted-foreground inline-block">
+                      {notif.categoria || "General"}
+                    </span>
+                    {notif.autor && (
+                      <span className="text-muted-foreground font-medium truncate max-w-[260px]" title={notif.autor}>
+                        Por: <strong className="text-foreground font-semibold">{notif.autor}</strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

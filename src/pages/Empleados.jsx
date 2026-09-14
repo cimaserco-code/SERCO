@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2 } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -64,6 +65,60 @@ export function parseExistingNombre(item) {
   }
 }
 
+/**
+ * Redimensiona y comprime una imagen en el cliente usando HTML5 Canvas.
+ * Genera un WebP (o JPEG) de máx 350x350 px con peso ~20-35 KB para no saturar almacenamiento ni BD.
+ */
+export async function compressImage(file, maxWidth = 350, maxHeight = 350, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Error al leer el archivo de imagen"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Error al cargar la imagen"));
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let mime = "image/webp";
+        let dataUrl = canvas.toDataURL("image/webp", quality);
+        if (!dataUrl.startsWith("data:image/webp")) {
+          mime = "image/jpeg";
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+        }
+
+        canvas.toBlob(
+          (blob) => {
+            resolve({ blob, dataUrl, mime });
+          },
+          mime,
+          quality
+        );
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const emptyForm = {
   nombres: "",
   apellido_paterno: "",
@@ -113,6 +168,7 @@ const emptyForm = {
   referencia_telefono: "",
   usuario_alta: "",
   usuario_baja: "",
+  foto_url: "",
 };
 
 export default function Empleados() {
@@ -148,6 +204,38 @@ export default function Empleados() {
 
   // IMSS Baja Alert
   const [imssAlertEmpleado, setImssAlertEmpleado] = useState(null);
+
+  // Foto del Empleado (Ultraligera ~25KB en Storage)
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoBlob, setPhotoBlob] = useState(null);
+  const [photoChanged, setPhotoChanged] = useState(false);
+  const [compressingPhoto, setCompressingPhoto] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handlePhotoSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setCompressingPhoto(true);
+      const { blob, dataUrl } = await compressImage(file, 350, 350, 0.8);
+      setPhotoBlob(blob);
+      setPhotoPreview(dataUrl);
+      setPhotoChanged(true);
+    } catch (err) {
+      console.error("Error procesando foto:", err);
+      setSaveError("No se pudo procesar la fotografía seleccionada.");
+    } finally {
+      setCompressingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoBlob(null);
+    setPhotoPreview("");
+    setPhotoChanged(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -382,6 +470,9 @@ export default function Empleados() {
   function openCreate() {
     setSaveError("");
     setEditing(null);
+    setPhotoPreview("");
+    setPhotoBlob(null);
+    setPhotoChanged(false);
     setForm({ ...emptyForm, sede_id: defaultSedeId });
     setServiceComboboxOpen(false);
     setModalOpen(true);
@@ -389,10 +480,14 @@ export default function Empleados() {
 
   function openEdit(item) {
     setEditing(item);
+    setPhotoPreview(item.foto_url || "");
+    setPhotoBlob(null);
+    setPhotoChanged(false);
     const parsed = parseExistingNombre(item);
     setForm({ 
       ...emptyForm, 
       ...item, 
+      foto_url: item.foto_url || "",
       nombres: item.nombres || parsed.nombres || "",
       apellido_paterno: item.apellido_paterno || parsed.apellido_paterno || "",
       apellido_materno: item.apellido_materno || parsed.apellido_materno || "",
@@ -501,6 +596,61 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         .filter(Boolean)
         .join(" ");
 
+      let finalFotoUrl = form.foto_url || null;
+
+      if (photoChanged) {
+        if (!photoPreview) {
+          finalFotoUrl = null;
+        } else if (photoBlob) {
+          // Subir fotografía ultraligera (~25KB) a Supabase Storage
+          const ext = photoBlob.type === "image/webp" ? "webp" : "jpg";
+          const fileId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          const fileName = `emp_${fileId}.${ext}`;
+
+          let uploadedUrl = null;
+          // 1. Intentar subir al bucket fotos_empleados
+          try {
+            const { error: upErr } = await supabase.storage
+              .from("fotos_empleados")
+              .upload(fileName, photoBlob, {
+                contentType: photoBlob.type || "image/webp",
+                upsert: true,
+              });
+            if (!upErr) {
+              const { data: pubData } = supabase.storage
+                .from("fotos_empleados")
+                .getPublicUrl(fileName);
+              if (pubData?.publicUrl) uploadedUrl = pubData.publicUrl;
+            }
+          } catch (err) {
+            console.warn("Subida a fotos_empleados falló, intentando documentos:", err);
+          }
+
+          // 2. Intentar carpeta fotos/ en bucket documentos como respaldo
+          if (!uploadedUrl) {
+            try {
+              const { error: docErr } = await supabase.storage
+                .from("documentos")
+                .upload(`fotos/${fileName}`, photoBlob, {
+                  contentType: photoBlob.type || "image/webp",
+                  upsert: true,
+                });
+              if (!docErr) {
+                const { data: pubData } = supabase.storage
+                  .from("documentos")
+                  .getPublicUrl(`fotos/${fileName}`);
+                if (pubData?.publicUrl) uploadedUrl = pubData.publicUrl;
+              }
+            } catch (err) {
+              console.warn("Subida a documentos falló:", err);
+            }
+          }
+
+          // 3. Respaldo de seguridad: guardar WebP ultraligero (~25KB) si Storage no está disponible
+          finalFotoUrl = uploadedUrl || photoPreview;
+        }
+      }
+
       const payload = {
         ...form,
         nombres: cleanNombres,
@@ -529,7 +679,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         fecha_montaje: form.fecha_montaje || null,
         historial_bajas: form.historial_bajas || null,
         hospedaje: form.hospedaje ? true : false,
-        seguro: form.seguro ? true : false
+        seguro: form.seguro ? true : false,
+        foto_url: finalFotoUrl
       };
 
       const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
@@ -1185,6 +1336,75 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
+              {/* FOTOGRAFÍA DEL EMPLEADO */}
+              <div className="sm:col-span-2 flex flex-col sm:flex-row items-center gap-4 p-3.5 bg-muted/40 rounded-xl border border-dashed border-border/80">
+                <div className="relative group shrink-0">
+                  {photoPreview ? (
+                    <img
+                      src={photoPreview}
+                      alt="Fotografía del empleado"
+                      className="w-20 h-20 rounded-lg object-cover border border-border/60 shadow-xs bg-background"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-lg bg-muted flex flex-col items-center justify-center text-muted-foreground border border-border/40">
+                      <Camera className="w-6 h-6 stroke-[1.5]" />
+                      <span className="text-[10px] mt-1 font-medium">Sin foto</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-1 text-center sm:text-left">
+                  <div className="flex items-center gap-2 justify-center sm:justify-start">
+                    <Label className="font-semibold text-xs text-foreground">Fotografía del Empleado</Label>
+                    <span className="text-[11px] text-muted-foreground">(Opcional)</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Se redimensiona y comprime automáticamente (~25 KB) para no saturar la base de datos.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1 justify-center sm:justify-start">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs flex items-center gap-1.5"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={compressingPhoto}
+                    >
+                      {compressingPhoto ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          {photoPreview ? "Cambiar fotografía" : "Subir fotografía"}
+                        </>
+                      )}
+                    </Button>
+
+                    {photoPreview && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={handleRemovePhoto}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" /> Quitar
+                      </Button>
+                    )}
+
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoSelected}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label>Nombre(s) *</Label>
@@ -1799,8 +2019,27 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                             Oficina
                           </CommandItem>
 
+                          <CommandItem
+                            value="supervisor"
+                            onSelect={() => {
+                              setForm({ ...form, servicio_ubicacion: "Supervisor" });
+                              setServiceComboboxOpen(false);
+                            }}
+                            className="cursor-pointer font-medium"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 text-primary",
+                                form.servicio_ubicacion === "Supervisor"
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            Supervisor
+                          </CommandItem>
+
                           {servicios
-                            .filter((s) => s.nombre !== "Cubredescansos" && s.nombre !== "Oficina")
+                            .filter((s) => s.nombre !== "Cubredescansos" && s.nombre !== "Oficina" && s.nombre !== "Supervisor")
                             .map((s) => (
                               <CommandItem
                                 key={s.id}

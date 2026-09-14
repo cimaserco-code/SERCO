@@ -781,6 +781,7 @@ export default function Egresos() {
                     <SelectItem value="none">Sin asignar / General</SelectItem>
                     <SelectItem value="Cubredescansos">Cubredescansos</SelectItem>
                     <SelectItem value="Oficina">Oficina</SelectItem>
+                    <SelectItem value="Supervisor">Supervisor</SelectItem>
                     {servicios.map((s) => (
                       <SelectItem key={s.id} value={s.nombre}>
                         {s.nombre}

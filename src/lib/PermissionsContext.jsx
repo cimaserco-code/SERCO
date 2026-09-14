@@ -50,6 +50,7 @@ export function PermissionsProvider({ children }) {
 
   const canView = useCallback(
     (module) => {
+      if (module === "agenda") return true;
       if (roles.length === 0) return true;
       return permisos?.[module]?.view === true;
     },
