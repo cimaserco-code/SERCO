@@ -120,9 +120,21 @@ export default function Nominas() {
   async function loadData() {
     setLoading(true);
     try {
+      const [yearStr, monthStr] = currentMonth.split("-");
+      const y = parseInt(yearStr);
+      const m = parseInt(monthStr) - 1;
+      const daysInM = new Date(y, m + 1, 0).getDate();
+      const startDate = `${currentMonth}-01`;
+      const endDate = `${currentMonth}-${String(daysInM).padStart(2, '0')}`;
+
       const [emps, asists, noms, seds] = await Promise.all([
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
-        sercoApi.entities.Asistencia.list().catch(() => []),
+        sercoApi.entities.Asistencia.filter({
+          fecha: {
+            '$gte': startDate,
+            '$lte': endDate
+          }
+        }).catch(() => []),
         sercoApi.entities.Nominas ? sercoApi.entities.Nominas.list().catch(() => []) : Promise.resolve([]),
         sercoApi.entities.Sede ? sercoApi.entities.Sede.list().catch(() => []) : Promise.resolve([])
       ]);

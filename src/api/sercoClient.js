@@ -46,6 +46,21 @@ class EntityService {
     this.tableName = tableMap[entityName] || entityName.toLowerCase();
   }
 
+  async _executePaginated(query) {
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let allData = [];
+    while (true) {
+      const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+      if (error) throw formatSupabaseError(error);
+      if (!data || data.length === 0) break;
+      allData.push(...data);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return allData;
+  }
+
   async list(order) {
     let query = supabase.from(this.tableName).select('*');
     if (order) {
@@ -54,9 +69,7 @@ class EntityService {
       const actualCol = col;
       query = query.order(actualCol, { ascending: !isDesc });
     }
-    const { data, error } = await query;
-    if (error) throw formatSupabaseError(error);
-    return data;
+    return await this._executePaginated(query);
   }
 
   async filter(queryObj, order) {
@@ -96,9 +109,7 @@ class EntityService {
       const actualCol = col;
       query = query.order(actualCol, { ascending: !isDesc });
     }
-    const { data, error } = await query;
-    if (error) throw formatSupabaseError(error);
-    return data;
+    return await this._executePaginated(query);
   }
 
   async listByMonth(startDate, endDate) {
@@ -108,10 +119,7 @@ class EntityService {
       .gte('fecha', startDate)
       .lt('fecha', endDate);
 
-    const { data, error } = await query;
-
-    if (error) throw formatSupabaseError(error);
-    return data;
+    return await this._executePaginated(query);
   }
 
   async filterSelect(queryObj, columns) {
@@ -150,10 +158,7 @@ class EntityService {
       }
     }
 
-    const { data, error } = await query;
-
-    if (error) throw formatSupabaseError(error);
-    return data;
+    return await this._executePaginated(query);
   }
 
   async upsert(payload, onConflict) {
