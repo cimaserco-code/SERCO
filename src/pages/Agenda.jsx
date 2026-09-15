@@ -97,10 +97,16 @@ const emptyEventForm = {
 
 export default function Agenda() {
   const { user } = useAuth();
-  const { canView, isAdmin } = usePermissions();
+  const { canView, can, isAdmin } = usePermissions();
   const { sedeFilter, defaultSedeId } = useSedeScope();
 
   if (!canView("agenda")) return <AccessRestricted />;
+
+  // Detectar si el usuario es supervisor (solo puede ver y agendar visitas de supervisión)
+  const isSupervisor = (user?.role || "").toLowerCase().trim() === "supervisor";
+  const canCreate = can("agenda", "create");
+  const canEdit = can("agenda", "edit");
+  const canDelete = can("agenda", "delete");
 
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -231,34 +237,44 @@ export default function Agenda() {
 
   // Filtrado de Eventos
   const filteredEvents = useMemo(() => {
-    return events.filter((ev) => {
-      if (sedeFilter?.sede_id && ev.sede_id && ev.sede_id !== sedeFilter.sede_id) {
-        return false;
-      }
-      if (typeFilter !== "todos" && ev.tipo !== typeFilter) {
-        return false;
-      }
-      if (statusFilter !== "todos" && ev.estado !== statusFilter) {
-        return false;
-      }
-      if (selectedServiceFilter !== "todos" && ev.servicio_id !== selectedServiceFilter) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = (ev.titulo || "").toLowerCase().includes(q);
-        const matchCandidate = (ev.candidato_nombre || "").toLowerCase().includes(q);
-        const matchService = (ev.servicio_nombre || "").toLowerCase().includes(q);
-        const matchResp = (ev.responsable_nombre || "").toLowerCase().includes(q);
-        const matchTopic = (ev.tema_capacitacion || "").toLowerCase().includes(q);
-        const matchPuesto = (ev.puesto || "").toLowerCase().includes(q);
-        if (!matchTitle && !matchCandidate && !matchService && !matchResp && !matchTopic && !matchPuesto) {
+    return events
+      .filter((ev) => {
+        // Supervisores solo ven visitas de supervisión
+        if (isSupervisor && ev.tipo !== "visita_supervision") return false;
+
+        if (sedeFilter?.sede_id && ev.sede_id && ev.sede_id !== sedeFilter.sede_id) {
           return false;
         }
-      }
-      return true;
-    });
-  }, [events, sedeFilter, typeFilter, statusFilter, selectedServiceFilter, searchQuery]);
+        if (typeFilter !== "todos" && ev.tipo !== typeFilter) {
+          return false;
+        }
+        if (statusFilter !== "todos" && ev.estado !== statusFilter) {
+          return false;
+        }
+        if (selectedServiceFilter !== "todos" && ev.servicio_id !== selectedServiceFilter) {
+          return false;
+        }
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchTitle = (ev.titulo || "").toLowerCase().includes(q);
+          const matchCandidate = (ev.candidato_nombre || "").toLowerCase().includes(q);
+          const matchService = (ev.servicio_nombre || "").toLowerCase().includes(q);
+          const matchResp = (ev.responsable_nombre || "").toLowerCase().includes(q);
+          const matchTopic = (ev.tema_capacitacion || "").toLowerCase().includes(q);
+          const matchPuesto = (ev.puesto || "").toLowerCase().includes(q);
+          if (!matchTitle && !matchCandidate && !matchService && !matchResp && !matchTopic && !matchPuesto) {
+            return false;
+          }
+        }
+        return true;
+      })
+      // Ordenar cronológicamente: por fecha, luego por hora_inicio
+      .sort((a, b) => {
+        const dateA = `${a.fecha || ""}T${a.hora_inicio || "00:00"}`;
+        const dateB = `${b.fecha || ""}T${b.hora_inicio || "00:00"}`;
+        return dateA.localeCompare(dateB);
+      });
+  }, [events, sedeFilter, typeFilter, statusFilter, selectedServiceFilter, searchQuery, isSupervisor]);
 
   // Contadores de resumen
   const stats = useMemo(() => {
@@ -328,6 +344,8 @@ export default function Agenda() {
     setFormError("");
     setForm({
       ...emptyEventForm,
+      // Supervisores solo pueden crear visitas de supervisión
+      tipo: isSupervisor ? "visita_supervision" : emptyEventForm.tipo,
       fecha: defaultDate || new Date().toISOString().slice(0, 10),
       sede_id: defaultSedeId || "",
       responsable_id: user?.id || "",
@@ -367,6 +385,11 @@ export default function Agenda() {
       }
     }
 
+    if (isSupervisor && form.tipo !== "visita_supervision") {
+      setFormError("Como supervisor solo puedes agendar visitas de supervisión.");
+      return;
+    }
+
     if (form.tipo === "entrevista" && !form.candidato_nombre?.trim()) {
       setFormError("Por favor ingresa el nombre del candidato.");
       return;
@@ -386,7 +409,7 @@ export default function Agenda() {
         titulo: autoTitle,
         fecha: form.fecha,
         hora_inicio: form.hora_inicio || "09:00",
-        hora_fin: form.hora_fin || null,
+        hora_fin: form.tipo === "entrevista" ? null : (form.hora_fin || null),
         sede_id: form.sede_id || defaultSedeId || null,
         servicio_id: form.servicio_id || null,
         servicio_nombre: serv?.nombre || form.servicio_nombre || null,
@@ -472,63 +495,93 @@ export default function Agenda() {
             </Button>
           </div>
 
-          <Button onClick={() => openCreate()} className="h-9 gap-1.5 text-xs font-semibold shadow-xs">
-            <Plus className="w-4 h-4" />
-            Agendar Evento
-          </Button>
+          {canCreate && (
+            <Button onClick={() => openCreate()} className="h-9 gap-1.5 text-xs font-semibold shadow-xs">
+              <Plus className="w-4 h-4" />
+              {isSupervisor ? "Agendar Supervisión" : "Agendar Evento"}
+            </Button>
+          )}
         </div>
       </div>
 
       {/* TARJETAS DE RESUMEN RÁPIDO */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="cursor-pointer hover:border-purple-300 transition-colors" onClick={() => setTypeFilter("entrevista")}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center shrink-0">
-              <User className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-foreground">{stats.entrevistas}</div>
-              <p className="text-xs text-muted-foreground font-medium">Entrevistas (RH)</p>
-            </div>
-          </CardContent>
-        </Card>
+      {isSupervisor ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Card className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setTypeFilter("visita_supervision")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
+                <Eye className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.visitas}</div>
+                <p className="text-xs text-muted-foreground font-medium">Visitas de Supervisión</p>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setTypeFilter("visita_supervision")}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
-              <Eye className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-foreground">{stats.visitas}</div>
-              <p className="text-xs text-muted-foreground font-medium">Visitas Supervisión</p>
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <CalendarDays className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.total}</div>
+                <p className="text-xs text-muted-foreground font-medium">Total de Visitas Asignadas</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card className="cursor-pointer hover:border-purple-300 transition-colors" onClick={() => setTypeFilter("entrevista")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center shrink-0">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.entrevistas}</div>
+                <p className="text-xs text-muted-foreground font-medium">Entrevistas (RH)</p>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card className="cursor-pointer hover:border-emerald-300 transition-colors" onClick={() => setTypeFilter("capacitacion")}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shrink-0">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-foreground">{stats.capacitaciones}</div>
-              <p className="text-xs text-muted-foreground font-medium">Capacitaciones</p>
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setTypeFilter("visita_supervision")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
+                <Eye className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.visitas}</div>
+                <p className="text-xs text-muted-foreground font-medium">Visitas Supervisión</p>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <CalendarDays className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-foreground">{stats.total}</div>
-              <p className="text-xs text-muted-foreground font-medium">Total de Eventos</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          <Card className="cursor-pointer hover:border-emerald-300 transition-colors" onClick={() => setTypeFilter("capacitacion")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shrink-0">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.capacitaciones}</div>
+                <p className="text-xs text-muted-foreground font-medium">Capacitaciones</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <CalendarDays className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.total}</div>
+                <p className="text-xs text-muted-foreground font-medium">Total de Eventos</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* BARRA DE FILTROS Y BÚSQUEDA */}
       <Card>
@@ -546,18 +599,20 @@ export default function Agenda() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Filtro Tipo */}
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="h-9 text-xs w-[170px]">
-                  <SelectValue placeholder="Tipo de evento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los Tipos</SelectItem>
-                  <SelectItem value="entrevista">🟣 Entrevistas</SelectItem>
-                  <SelectItem value="visita_supervision">🔵 Visitas Supervisión</SelectItem>
-                  <SelectItem value="capacitacion">🟢 Capacitaciones</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Filtro Tipo - oculto para supervisor porque solo ve visitas */}
+              {!isSupervisor && (
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="h-9 text-xs w-[170px]">
+                    <SelectValue placeholder="Tipo de evento" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los Tipos</SelectItem>
+                    <SelectItem value="entrevista">🟣 Entrevistas</SelectItem>
+                    <SelectItem value="visita_supervision">🔵 Visitas Supervisión</SelectItem>
+                    <SelectItem value="capacitacion">🟢 Capacitaciones</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
 
               {/* Filtro Servicio */}
               <Select value={selectedServiceFilter} onValueChange={setSelectedServiceFilter}>
@@ -647,8 +702,10 @@ export default function Agenda() {
               return (
                 <div
                   key={idx}
-                  onClick={() => openCreate(item.dateStr)}
-                  className={`group relative p-1.5 flex flex-col min-h-[95px] transition-colors cursor-pointer ${
+                  onClick={() => canCreate && openCreate(item.dateStr)}
+                  className={`group relative p-1.5 flex flex-col min-h-[95px] transition-colors ${
+                    canCreate ? "cursor-pointer" : "cursor-default"
+                  } ${
                     item.isCurrentMonth ? "bg-card hover:bg-muted/30" : "bg-muted/10 text-muted-foreground/50"
                   }`}
                 >
@@ -664,7 +721,7 @@ export default function Agenda() {
                     >
                       {item.dayNumber}
                     </span>
-                    {item.isCurrentMonth && (
+                    {item.isCurrentMonth && canCreate && (
                       <span className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-primary transition-opacity font-medium">
                         +
                       </span>
@@ -680,9 +737,11 @@ export default function Agenda() {
                       return (
                         <div
                           key={ev.id}
-                          onClick={(e) => openEdit(ev, e)}
-                          title={`${ev.hora_inicio || ""} - ${ev.titulo}\nResponsable: ${ev.responsable_nombre || "Sin asignar"}`}
-                          className={`flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border truncate cursor-pointer shadow-2xs hover:brightness-95 transition-all ${
+                          onClick={(e) => canEdit && openEdit(ev, e)}
+                          title={`${ev.hora_inicio || ""}${ev.tipo !== "entrevista" && ev.hora_fin ? ` - ${ev.hora_fin}` : ""} · ${ev.titulo}\nResponsable: ${ev.responsable_nombre || "Sin asignar"}`}
+                          className={`flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border truncate ${
+                            canEdit ? "cursor-pointer" : "cursor-default"
+                          } shadow-2xs hover:brightness-95 transition-all ${
                             typeConfig.badgeClass
                           } ${ev.estado === "completada" ? "opacity-60 line-through" : ""}`}
                         >
@@ -717,9 +776,11 @@ export default function Agenda() {
                 <CalendarIcon className="w-10 h-10 text-muted-foreground/40 mx-auto" />
                 <p className="text-sm font-semibold text-foreground">No hay eventos en esta selección</p>
                 <p className="text-xs text-muted-foreground">Prueba ajustando los filtros o agenda un nuevo evento.</p>
-                <Button size="sm" variant="outline" onClick={() => openCreate()} className="mt-2 text-xs">
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Agendar ahora
-                </Button>
+                {canCreate && (
+                  <Button size="sm" variant="outline" onClick={() => openCreate()} className="mt-2 text-xs">
+                    <Plus className="w-3.5 h-3.5 mr-1" /> {isSupervisor ? "Agendar supervisión" : "Agendar ahora"}
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -748,7 +809,7 @@ export default function Agenda() {
                           </span>
                           <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1 bg-muted px-2 py-0.5 rounded">
                             <Clock className="w-3 h-3" />
-                            {ev.fecha} · {ev.hora_inicio || "09:00"} {ev.hora_fin ? `- ${ev.hora_fin}` : ""}
+                            {ev.fecha} · {ev.hora_inicio || "09:00"}{ev.tipo !== "entrevista" && ev.hora_fin ? ` - ${ev.hora_fin}` : ""}
                           </span>
                           <span
                             className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${
@@ -827,39 +888,43 @@ export default function Agenda() {
 
                       {/* Botones de acción rápida */}
                       <div className="flex items-center gap-1.5 shrink-0 self-end md:self-center" onClick={(e) => e.stopPropagation()}>
-                        {ev.estado === "programada" ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                            onClick={(e) => handleToggleStatus(ev, "completada", e)}
-                            title="Marcar como realizada"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Realizada
-                          </Button>
-                        ) : (
+                        {canEdit && (
+                          ev.estado === "programada" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                              onClick={(e) => handleToggleStatus(ev, "completada", e)}
+                              title="Marcar como realizada"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Realizada
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs text-muted-foreground"
+                              onClick={(e) => handleToggleStatus(ev, "programada", e)}
+                              title="Reabrir / Programar"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reabrir
+                            </Button>
+                          )
+                        )}
+
+                        {canEdit && (
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="h-8 text-xs text-muted-foreground"
-                            onClick={(e) => handleToggleStatus(ev, "programada", e)}
-                            title="Reabrir / Programar"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={(e) => openEdit(ev, e)}
+                            title="Editar"
                           >
-                            <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reabrir
+                            <Pencil className="w-3.5 h-3.5" />
                           </Button>
                         )}
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-primary"
-                          onClick={(e) => openEdit(ev, e)}
-                          title="Editar"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-
-                        {isAdmin && (
+                        {canDelete && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -907,46 +972,55 @@ export default function Agenda() {
             {/* Selector de Tipo de Evento */}
             <div>
               <Label className="text-xs font-semibold">Tipo de Evento *</Label>
-              <div className="grid grid-cols-3 gap-2 mt-1.5">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, tipo: "entrevista" })}
-                  className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
-                    form.tipo === "entrevista"
-                      ? "bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200"
-                      : "bg-muted/40 hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <User className="w-4 h-4 text-purple-600" />
-                  <span>Entrevista (RH)</span>
-                </button>
+              {isSupervisor ? (
+                <div className="mt-1.5">
+                  <div className="p-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200">
+                    <Eye className="w-4 h-4 text-blue-600" />
+                    <span>Visita de Supervisión (Operativa)</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, tipo: "entrevista" })}
+                    className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
+                      form.tipo === "entrevista"
+                        ? "bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200"
+                        : "bg-muted/40 hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <User className="w-4 h-4 text-purple-600" />
+                    <span>Entrevista (RH)</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, tipo: "visita_supervision" })}
-                  className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
-                    form.tipo === "visita_supervision"
-                      ? "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
-                      : "bg-muted/40 hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <Eye className="w-4 h-4 text-blue-600" />
-                  <span>Visita Supervisión</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, tipo: "visita_supervision" })}
+                    className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
+                      form.tipo === "visita_supervision"
+                        ? "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
+                        : "bg-muted/40 hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <Eye className="w-4 h-4 text-blue-600" />
+                    <span>Visita Supervisión</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, tipo: "capacitacion" })}
-                  className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
-                    form.tipo === "capacitacion"
-                      ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
-                      : "bg-muted/40 hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <BookOpen className="w-4 h-4 text-emerald-600" />
-                  <span>Capacitación</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, tipo: "capacitacion" })}
+                    className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
+                      form.tipo === "capacitacion"
+                        ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
+                        : "bg-muted/40 hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <BookOpen className="w-4 h-4 text-emerald-600" />
+                    <span>Capacitación</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* CAMPOS ESPECÍFICOS SEGÚN EL TIPO */}
@@ -1098,38 +1172,62 @@ export default function Agenda() {
               </div>
             )}
 
-            {/* FECHA Y HORARIOS */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs">Fecha del Evento *</Label>
-                <Input
-                  type="date"
-                  value={form.fecha}
-                  onChange={(e) => setForm({ ...form, fecha: e.target.value })}
-                  className="h-8 text-xs mt-1"
-                />
-              </div>
+            {/* FECHA Y HORARIOS (Sin hora final para entrevistas) */}
+            {form.tipo === "entrevista" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Fecha de la Entrevista *</Label>
+                  <Input
+                    type="date"
+                    value={form.fecha}
+                    onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
 
-              <div>
-                <Label className="text-xs">Hora Inicio *</Label>
-                <Input
-                  type="time"
-                  value={form.hora_inicio}
-                  onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })}
-                  className="h-8 text-xs mt-1"
-                />
+                <div>
+                  <Label className="text-xs">Hora de la Cita *</Label>
+                  <Input
+                    type="time"
+                    value={form.hora_inicio}
+                    onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Fecha del Evento *</Label>
+                  <Input
+                    type="date"
+                    value={form.fecha}
+                    onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
 
-              <div>
-                <Label className="text-xs">Hora Fin (Opcional)</Label>
-                <Input
-                  type="time"
-                  value={form.hora_fin || ""}
-                  onChange={(e) => setForm({ ...form, hora_fin: e.target.value })}
-                  className="h-8 text-xs mt-1"
-                />
+                <div>
+                  <Label className="text-xs">Hora Inicio *</Label>
+                  <Input
+                    type="time"
+                    value={form.hora_inicio}
+                    onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs">Hora Fin (Opcional)</Label>
+                  <Input
+                    type="time"
+                    value={form.hora_fin || ""}
+                    onChange={(e) => setForm({ ...form, hora_fin: e.target.value })}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* RESPONSABLE Y ESTADO */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

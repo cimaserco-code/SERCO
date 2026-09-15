@@ -21,6 +21,7 @@ import {
 
 const estadosConfig = {
   asistió: { label: "A", name: "Asistió", color: "bg-green-500 hover:bg-green-600 text-white font-bold shadow-sm" },
+  retraso: { label: "R", name: "Retraso", color: "bg-orange-500 hover:bg-orange-600 text-white font-bold shadow-sm" },
   falta: { label: "F", name: "Falta", color: "bg-red-500 hover:bg-red-600 text-white font-bold shadow-sm" },
   descanso: { label: "D", name: "Descanso", color: "bg-slate-400 hover:bg-slate-500 text-white font-bold shadow-sm" },
   extra: { label: "E", name: "Turno Extra", color: "bg-purple-500 hover:bg-purple-600 text-white font-bold shadow-sm" },
@@ -45,6 +46,9 @@ export default function Asistencias() {
     return `${today.getFullYear()}-${mm}`;
   });
   const [selectedEmpSummary, setSelectedEmpSummary] = useState(null);
+
+  // Modo marcado rápido (Pincel): cuando está activo, hacer clic en una casilla aplica directamente este estado
+  const [selectedStampState, setSelectedStampState] = useState(null); // null (modo menú por celda) | key de estadosConfig | "limpiar"
 
   const isMonterreyEmp = (emp) => {
     const sName = sedes.find((s) => s.id === emp?.sede_id)?.nombre || "";
@@ -391,6 +395,7 @@ export default function Asistencias() {
       "Sede",
       ...dayHeaders,
       "Total Asistió (A)",
+      "Total Retrasos (R)",
       "Total Faltas (F)",
       "Total Descansos (D)",
       "Total Extras (E)",
@@ -402,6 +407,7 @@ export default function Asistencias() {
 
     const rows = employees.map((emp) => {
       let countA = 0;
+      let countR = 0;
       let countF = 0;
       let countD = 0;
       let countE = 0;
@@ -416,6 +422,7 @@ export default function Asistencias() {
         const estado = record?.estado || "";
 
         if (estado === "asistió") countA++;
+        else if (estado === "retraso") countR++;
         else if (estado === "falta") countF++;
         else if (estado === "descanso") countD++;
         else if (estado === "extra") countE++;
@@ -434,6 +441,7 @@ export default function Asistencias() {
         sedeNombre(emp.sede_id),
         ...dayCells,
         countA,
+        countR,
         countF,
         countD,
         countE,
@@ -522,19 +530,84 @@ export default function Asistencias() {
         </div>
       </div>
 
-      {/* States Legend */}
-      <Card>
-        <CardContent className="py-3 flex flex-wrap gap-4 text-xs font-medium text-muted-foreground">
-          {Object.entries(estadosConfig).map(([key, cfg]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span className={`w-6 h-6 flex items-center justify-center rounded ${cfg.color} text-xs`}>
-                {cfg.label}
+      {/* Selector Rápido de Asistencia / Modo Pincel */}
+      <Card className="border-primary/20 bg-card shadow-xs">
+        <CardContent className="p-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="text-xs font-bold text-foreground mr-1 flex items-center gap-1">
+                ✏️ Seleccionar letra:
               </span>
-              <span>{cfg.name}</span>
+
+              {/* Botón Modo Menú / Manual */}
+              <button
+                type="button"
+                onClick={() => setSelectedStampState(null)}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                  selectedStampState === null
+                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                    : "bg-muted/50 hover:bg-muted text-muted-foreground border-border"
+                }`}
+                title="Abrir menú flotante al hacer clic en cada casilla"
+              >
+                🖱️ Menú por casilla
+              </button>
+
+              {/* Botones de cada estado para estampar con un clic */}
+              {Object.entries(estadosConfig).map(([key, cfg]) => {
+                const isActive = selectedStampState === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedStampState(isActive ? null : key)}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-bold transition-all select-none cursor-pointer ${
+                      isActive
+                        ? `${cfg.color} ring-2 ring-foreground ring-offset-2 scale-105 shadow-md`
+                        : "bg-background hover:bg-muted text-foreground border-border/80 opacity-90 hover:opacity-100"
+                    }`}
+                    title={`Seleccionar "${cfg.name}" para aplicar con un clic`}
+                  >
+                    <span className={`w-5 h-5 flex items-center justify-center rounded text-[11px] font-black ${cfg.color}`}>
+                      {cfg.label}
+                    </span>
+                    <span className="hidden sm:inline font-medium text-[11px]">{cfg.name}</span>
+                  </button>
+                );
+              })}
+
+              {/* Botón para Limpiar celda */}
+              <button
+                type="button"
+                onClick={() => setSelectedStampState(selectedStampState === "limpiar" ? null : "limpiar")}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-bold transition-all ${
+                  selectedStampState === "limpiar"
+                    ? "bg-destructive text-destructive-foreground ring-2 ring-destructive ring-offset-2 scale-105 shadow-md"
+                    : "bg-background hover:bg-destructive/10 text-muted-foreground hover:text-destructive border-dashed border-border"
+                }`}
+                title="Seleccionar para limpiar casillas con un clic"
+              >
+                <span>-</span>
+                <span className="hidden sm:inline text-[11px]">Borrar</span>
+              </button>
             </div>
-          ))}
-          <div className="ml-auto text-xs text-muted-foreground self-center italic">
-            * Haz clic en cualquier casilla para cambiar o alternar la asistencia.
+
+            {/* Mensaje de estado activo */}
+            <div className="text-[11px] text-muted-foreground font-medium self-end md:self-center">
+              {selectedStampState ? (
+                <span className="inline-flex items-center gap-1.5 text-primary font-bold bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  Modo rápido activo: Haz clic en las casillas para poner{" "}
+                  {selectedStampState === "limpiar"
+                    ? "Borrar"
+                    : `"${estadosConfig[selectedStampState]?.label} - ${estadosConfig[selectedStampState]?.name}"`}
+                </span>
+              ) : (
+                <span className="italic text-muted-foreground">
+                  * Haz clic en una letra para activar el modo rápido y estamparla directo en la tabla.
+                </span>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -606,7 +679,7 @@ export default function Asistencias() {
                             className="text-primary hover:underline text-left font-semibold text-xs sm:text-sm focus:outline-none truncate block max-w-[190px]"
                             title="Ver resumen mensual de asistencia"
                           >
-                                                      {formatUserDisplayName(emp.nombre_completo, user?.role)}
+                            {formatUserDisplayName(emp.nombre_completo, user?.role)}
                           </button>
                         </TableCell>
                         {daysArray.map((day) => {
@@ -636,27 +709,44 @@ export default function Asistencias() {
                                       key={slot}
                                       type="button"
                                       onClick={(e) => {
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        setActiveCell({
-                                          employeeId: emp.id,
-                                                                                    employeeName: formatUserDisplayName(emp.nombre_completo, user?.role),
-                                          day,
-                                          currentVal: slotVal,
-                                          isSecondary: slot === 1,
-                                          rect: {
-                                            top: rect.top,
-                                            bottom: rect.bottom,
-                                            left: rect.left,
-                                            right: rect.right
+                                        if (selectedStampState) {
+                                          // Modo Marcado Rápido (Pincel): estampa directamente sin abrir menú
+                                          const targetState = selectedStampState === "limpiar" ? null : selectedStampState;
+                                          if (slot === 1) {
+                                            handleSetSecondaryEstado(emp.id, day, targetState);
+                                          } else {
+                                            handleSetEstado(emp.id, day, targetState);
                                           }
-                                        });
+                                        } else {
+                                          // Modo tradicional: abre menú flotante
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setActiveCell({
+                                            employeeId: emp.id,
+                                            employeeName: formatUserDisplayName(emp.nombre_completo, user?.role),
+                                            day,
+                                            currentVal: slotVal,
+                                            isSecondary: slot === 1,
+                                            rect: {
+                                              top: rect.top,
+                                              bottom: rect.bottom,
+                                              left: rect.left,
+                                              right: rect.right
+                                            }
+                                          });
+                                        }
                                       }}
                                       className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto p-0 rounded flex items-center justify-center border transition-all cursor-pointer select-none text-[11px] font-bold ${
+                                        selectedStampState ? "hover:scale-110 hover:ring-2 hover:ring-primary" : ""
+                                      } ${
                                         cfg 
                                           ? cfg.color 
                                           : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
                                       }`}
-                                                                          title={`${formatUserDisplayName(emp.nombre_completo, user?.role)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`}
+                                      title={
+                                        selectedStampState
+                                          ? `Clic para aplicar "${selectedStampState === 'limpiar' ? 'Borrar' : estadosConfig[selectedStampState]?.name}"`
+                                          : `${formatUserDisplayName(emp.nombre_completo, user?.role)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`
+                                      }
                                     >
                                       <span>{cfg ? cfg.label : "-"}</span>
                                     </button>
@@ -906,6 +996,7 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
   const { user } = useAuth();
   const empAsists = asistencias.filter(a => a.empleado_id === employee.id && a.fecha?.startsWith(currentMonth));
   const totalA = empAsists.filter(a => a.estado === "asistió").length;
+  const totalR = empAsists.filter(a => a.estado === "retraso").length;
   const totalF = empAsists.filter(a => a.estado === "falta").length;
   const totalD = empAsists.filter(a => a.estado === "descanso").length;
   const totalE = empAsists.filter(a => a.estado === "extra").length;
@@ -914,8 +1005,8 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
   const totalV = empAsists.filter(a => a.estado === "vacaciones").length;
   const totalJ = empAsists.filter(a => a.estado === "justificada").length;
   
-  const divisor = totalA + totalF + totalDL + totalDLE;
-  const punctuality = divisor > 0 ? Math.round(((totalA + totalDL + totalDLE) / divisor) * 100) : 100;
+  const divisor = totalA + totalR + totalF + totalDL + totalDLE;
+  const punctuality = divisor > 0 ? Math.round(((totalA + totalR + totalDL + totalDLE) / divisor) * 100) : 100;
 
   return (
     <Dialog open={!!employee} onOpenChange={(v) => !v && onClose()}>
@@ -923,7 +1014,7 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-primary" />
-                      Resumen: {formatUserDisplayName(employee.nombre_completo, user?.role)}
+            Resumen: {formatUserDisplayName(employee.nombre_completo, user?.role)}
           </DialogTitle>
           <DialogDescription>
             Detalles de asistencia correspondientes a {monthName} de {year}
@@ -944,10 +1035,10 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">Asistió</p>
             </CardContent>
           </Card>
-          <Card className="bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/50">
+          <Card className="bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-900/50">
             <CardContent className="p-3 text-center">
-              <div className="text-2xl font-black text-purple-600">{totalE}</div>
-              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">Extras</p>
+              <div className="text-2xl font-black text-orange-600">{totalR}</div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">Retrasos (R)</p>
             </CardContent>
           </Card>
         </div>
@@ -956,6 +1047,10 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
           <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
             <span className="text-muted-foreground">Faltas:</span>
             <span className="font-bold text-red-500">{totalF}</span>
+          </div>
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+            <span className="text-muted-foreground">Turnos Extras (E):</span>
+            <span className="font-bold text-purple-600">{totalE}</span>
           </div>
           <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
             <span className="text-muted-foreground">Descansos:</span>
@@ -973,7 +1068,7 @@ const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asiste
             <span className="text-muted-foreground">Vacaciones (V):</span>
             <span className="font-bold text-teal-600">{totalV}</span>
           </div>
-          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs">
+          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-md border text-xs col-span-2">
             <span className="text-muted-foreground">Justificaciones (J):</span>
             <span className="font-bold text-amber-600">{totalJ}</span>
           </div>

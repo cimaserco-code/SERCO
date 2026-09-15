@@ -245,7 +245,7 @@ export default function Nominas() {
 
     const faltasAsistencia = empAsists.filter(a => a.estado === "falta");
     const extrasAsistencia = empAsists.filter(a => a.estado === "extra" || a.estado === "descanso_extra");
-    const countAsistio = empAsists.filter(a => a.estado === "asistió" || a.estado === "descanso_laborado").length;
+    const countAsistio = empAsists.filter(a => a.estado === "asistió" || a.estado === "descanso_laborado" || a.estado === "retraso").length;
 
     // Automatic date strings formatted as "DD/MM"
     const autoFechasFalta = faltasAsistencia.map(a => `${a.fecha.slice(8, 10)}/${a.fecha.slice(5, 7)}`).join(", ");
