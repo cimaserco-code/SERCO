@@ -5,7 +5,7 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { 
-  ChevronLeft, ChevronRight, Calculator, FileText, Save, Calendar, 
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calculator, FileText, Save, Calendar, 
   Download, Search, SlidersHorizontal, DollarSign, ArrowUpRight, 
   ArrowDownRight, Eye, CheckCircle, Info
 } from "lucide-react";
@@ -36,6 +36,8 @@ export default function Nominas() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("resumen");
+  const [sortField, setSortField] = useState("service");
+  const [sortDirection, setSortDirection] = useState("asc");
 
   // Selected employee for breakdown modal
   const [selectedEmpForModal, setSelectedEmpForModal] = useState(null);
@@ -558,7 +560,7 @@ export default function Nominas() {
       "Descuentos"
     ];
 
-    const rows = employees.map((emp, idx) => {
+    const rows = sortedEmployees.map((emp, idx) => {
       const calc = calculatePayroll(emp, idx);
       return [
         calc.sedeNombre,
@@ -637,6 +639,48 @@ export default function Nominas() {
       String(emp.numero_empleado || "").toLowerCase().includes(query)
     );
   });
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection((current) => current === "asc" ? "desc" : "asc");
+      return;
+    }
+    setSortField(field);
+    setSortDirection("asc");
+  };
+
+  const compareNames = (a, b) => (a.nombre_completo || "").localeCompare(
+    b.nombre_completo || "",
+    "es",
+    { sensitivity: "base" }
+  );
+
+  const compareServices = (a, b) => (a.servicio_ubicacion || "Sin asignar").localeCompare(
+    b.servicio_ubicacion || "Sin asignar",
+    "es",
+    { sensitivity: "base" }
+  );
+
+  const sortedEmployees = useMemo(() => {
+    return [...filteredEmployees].sort((a, b) => {
+      const primaryCompare = sortField === "name"
+        ? compareNames(a, b)
+        : compareServices(a, b);
+      const secondaryCompare = sortField === "name"
+        ? compareServices(a, b)
+        : compareNames(a, b);
+
+      if (primaryCompare === 0) return secondaryCompare;
+      return primaryCompare * (sortDirection === "asc" ? 1 : -1);
+    });
+  }, [filteredEmployees, sortField, sortDirection]);
+
+  const renderSortIndicator = (field) => {
+    if (sortField !== field) return null;
+    return sortDirection === "asc"
+      ? <ChevronUp className="w-3.5 h-3.5 text-primary" />
+      : <ChevronDown className="w-3.5 h-3.5 text-primary" />;
+  };
 
   // Calculate global totals for cards
   let sumBasePeriodo = 0;
@@ -858,6 +902,7 @@ export default function Nominas() {
               className="pl-9 h-9 text-sm"
             />
           </div>
+
         </div>
 
         {/* Table Content */}
@@ -867,9 +912,19 @@ export default function Nominas() {
               {activeTab === "resumen" && (
                 <TableRow>
                   <TableHead className="font-bold w-12 text-center">#</TableHead>
-                  <TableHead className="font-bold min-w-[200px]">Colaborador</TableHead>
+                  <TableHead
+                    className="font-bold min-w-[200px] cursor-pointer select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <span className="inline-flex items-center gap-1">Colaborador {renderSortIndicator("name")}</span>
+                  </TableHead>
                   <TableHead className="font-bold min-w-[120px]">Sede</TableHead>
-                  <TableHead className="font-bold min-w-[140px]">Servicio</TableHead>
+                  <TableHead
+                    className="font-bold min-w-[140px] cursor-pointer select-none"
+                    onClick={() => handleSort("service")}
+                  >
+                    <span className="inline-flex items-center gap-1">Servicio {renderSortIndicator("service")}</span>
+                  </TableHead>
                   <TableHead className="text-center font-bold">Turno</TableHead>
                   <TableHead className="text-right font-bold">Sueldo Quincenal</TableHead>
                   <TableHead className="text-right font-bold text-emerald-600">Total Percepciones</TableHead>
@@ -883,7 +938,12 @@ export default function Nominas() {
               {activeTab === "percepciones" && (
                 <TableRow>
                   <TableHead className="font-bold w-12 text-center">#</TableHead>
-                  <TableHead className="font-bold min-w-[180px]">Nombre</TableHead>
+                  <TableHead
+                    className="font-bold min-w-[180px] cursor-pointer select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <span className="inline-flex items-center gap-1">Nombre {renderSortIndicator("name")}</span>
+                  </TableHead>
                   <TableHead className="text-right font-bold min-w-[110px]">Sueldo Quincenal</TableHead>
                   <TableHead className="text-right font-bold min-w-[120px]">Ajuste Quincenal</TableHead>
                   <TableHead className="font-bold min-w-[130px]">Fecha/Hora Extra</TableHead>
@@ -903,7 +963,12 @@ export default function Nominas() {
               {activeTab === "deducciones" && (
                 <TableRow>
                   <TableHead className="font-bold w-12 text-center">#</TableHead>
-                  <TableHead className="font-bold min-w-[180px]">Nombre</TableHead>
+                  <TableHead
+                    className="font-bold min-w-[180px] cursor-pointer select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <span className="inline-flex items-center gap-1">Nombre {renderSortIndicator("name")}</span>
+                  </TableHead>
                   <TableHead className="font-bold min-w-[120px]">Fecha Falta</TableHead>
                   <TableHead className="text-right font-bold min-w-[100px]">Faltas ($)</TableHead>
                   <TableHead className="font-bold min-w-[130px]">Fecha/Hora Retardo</TableHead>
@@ -925,9 +990,19 @@ export default function Nominas() {
               {activeTab === "todos" && (
                 <TableRow>
                   <TableHead className="font-bold sticky left-0 bg-slate-50 dark:bg-slate-900 z-10 w-10 text-center">#</TableHead>
-                  <TableHead className="font-bold sticky left-10 bg-slate-50 dark:bg-slate-900 z-10 min-w-[180px]">Nombre</TableHead>
+                  <TableHead
+                    className="font-bold sticky left-10 bg-slate-50 dark:bg-slate-900 z-10 min-w-[180px] cursor-pointer select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <span className="inline-flex items-center gap-1">Nombre {renderSortIndicator("name")}</span>
+                  </TableHead>
                   <TableHead className="font-bold min-w-[100px]">Sede</TableHead>
-                  <TableHead className="font-bold min-w-[120px]">Servicio</TableHead>
+                  <TableHead
+                    className="font-bold min-w-[120px] cursor-pointer select-none"
+                    onClick={() => handleSort("service")}
+                  >
+                    <span className="inline-flex items-center gap-1">Servicio {renderSortIndicator("service")}</span>
+                  </TableHead>
                   <TableHead className="font-bold text-center">Turno</TableHead>
                   <TableHead className="text-right font-bold min-w-[110px]">Salario Mensual</TableHead>
                   <TableHead className="font-bold min-w-[110px]">Fecha Ingreso</TableHead>
@@ -982,7 +1057,7 @@ export default function Nominas() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredEmployees.map((emp, index) => {
+                sortedEmployees.map((emp, index) => {
                   const calc = calculatePayroll(emp, index);
                   return (
                     <TableRow key={emp.id} className="hover:bg-muted/40 transition-colors">

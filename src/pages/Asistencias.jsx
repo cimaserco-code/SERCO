@@ -75,6 +75,32 @@ export default function Asistencias() {
   const [empSearch, setEmpSearch] = useState("");
   const [attendanceSearch, setAttendanceSearch] = useState("");
 
+  const getAttendanceCellState = (employee, dateStr) => {
+    const baja = employee?.fecha_baja;
+    const reingreso = employee?.fecha_reingreso;
+
+    if (!baja || (reingreso && reingreso < baja) || dateStr < baja) return "active";
+    if (reingreso && dateStr >= reingreso) return "active";
+    if (dateStr === baja) return "leave-day";
+    return "leave-period";
+  };
+
+  const isEmployeeVisibleInMonth = (employee) => {
+    const baja = employee?.fecha_baja;
+    if (!baja) return true;
+
+    const monthStart = `${currentMonth}-01`;
+    const daysInSelectedMonth = new Date(year, month + 1, 0).getDate();
+    const monthEnd = `${currentMonth}-${String(daysInSelectedMonth).padStart(2, "0")}`;
+    const reingreso = employee?.fecha_reingreso;
+
+    const hasValidReingreso = reingreso && reingreso >= baja;
+
+    return baja > monthEnd ||
+      (baja >= monthStart && baja <= monthEnd) ||
+      (hasValidReingreso && reingreso <= monthEnd);
+  };
+
   // Index asistencias by `employeeId_YYYY-MM-DD` for O(1) instant lookups
   const asistenciasMap = useMemo(() => {
     const map = new Map();
@@ -123,9 +149,7 @@ export default function Asistencias() {
         sercoApi.entities.Asistencia.filter(filterObj).catch(() => []),
         sercoApi.entities.Sede.list().catch(() => [])
       ]);
-      // Only keep active employees
-      const activeEmps = (emps || []).filter(e => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja));
-      setEmployees(activeEmps);
+      setEmployees(emps || []);
       setAsistencias(asists || []);
       setSedes(seds || []);
     } catch (e) {
@@ -165,6 +189,10 @@ export default function Asistencias() {
 
   // Set specific attendance status with Optimistic UI updates
   const handleSetEstado = async (employeeId, day, estado) => {
+    const employee = employees.find((emp) => emp.id === employeeId);
+    const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
+    if (getAttendanceCellState(employee, dateStr) !== "active") return;
+
     if (!can("asistencias", "edit")) {
       toast({
         title: "Sin permisos",
@@ -173,7 +201,6 @@ export default function Asistencias() {
       });
       return;
     }
-    const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
     const key = `${employeeId}_${dateStr}`;
     const previous = asistenciasMap.get(key);
 
@@ -246,7 +273,11 @@ export default function Asistencias() {
   };
 
   const handleSetSecondaryEstado = (employeeId, day, estado) => {
-    const key = `${employeeId}_${currentMonth}-${String(day).padStart(2, '0')}`;
+    const employee = employees.find((emp) => emp.id === employeeId);
+    const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
+    if (getAttendanceCellState(employee, dateStr) !== "active") return;
+
+    const key = `${employeeId}_${dateStr}`;
     setSecondaryAttendanceStates((prev) => {
       const next = { ...prev };
       if (estado === null) {
@@ -353,15 +384,20 @@ export default function Asistencias() {
            today.getDate() === dayNum;
   };
 
+  const visibleEmployees = useMemo(
+    () => employees.filter(isEmployeeVisibleInMonth),
+    [employees, currentMonth]
+  );
+
   const filteredEmployees = useMemo(() => {
     const search = attendanceSearch.trim().toLowerCase();
-    if (!search) return employees;
+    if (!search) return visibleEmployees;
 
-    return employees.filter((emp) =>
+    return visibleEmployees.filter((emp) =>
       (emp.nombre_completo || "").toLowerCase().includes(search) ||
       (emp.servicio_ubicacion || "").toLowerCase().includes(search)
     );
-  }, [employees, attendanceSearch]);
+  }, [visibleEmployees, attendanceSearch]);
 
   if (!canView("asistencias")) return <AccessRestricted />;
 
@@ -482,7 +518,7 @@ export default function Asistencias() {
             <Button
               onClick={() => {
                 setVacacionesForm({
-                  empleado_id: employees[0]?.id || "",
+                  empleado_id: visibleEmployees[0]?.id || "",
                   fecha_inicio: `${currentMonth}-01`,
                   fecha_fin: `${currentMonth}-06`,
                 });
@@ -652,7 +688,7 @@ export default function Asistencias() {
                   <TableCell colSpan={daysInMonth + 1} className="text-center text-muted-foreground py-12">
                     {attendanceSearch.trim()
                       ? "No se encontraron empleados para la búsqueda."
-                      : "No hay empleados activos en la sede seleccionada."}
+                      : "No hay empleados disponibles en la sede y mes seleccionados."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -671,16 +707,18 @@ export default function Asistencias() {
                       />
                     </TableRow>
                     {groupEmps.map((emp) => (
-                      <TableRow key={emp.id} className="hover:bg-muted/40 transition-colors">
+                      <TableRow key={emp.id} className={`hover:bg-muted/40 transition-colors ${emp.fecha_baja ? "opacity-90" : ""}`}>
                         <TableCell className="sticky left-0 bg-card z-10 border-r font-medium py-1.5 min-w-[200px]">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedEmpSummary(emp)}
-                            className="text-primary hover:underline text-left font-semibold text-xs sm:text-sm focus:outline-none truncate block max-w-[190px]"
-                            title="Ver resumen mensual de asistencia"
-                          >
-                            {formatUserDisplayName(emp.nombre_completo, user?.role)}
-                          </button>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedEmpSummary(emp)}
+                              className="text-primary hover:underline text-left font-semibold text-xs sm:text-sm focus:outline-none truncate block max-w-[190px]"
+                              title="Ver resumen mensual de asistencia"
+                            >
+                              {formatUserDisplayName(emp.nombre_completo, user?.role)}
+                            </button>
+                          </div>
                         </TableCell>
                         {daysArray.map((day) => {
                           const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
@@ -689,6 +727,17 @@ export default function Asistencias() {
                           const todayFlag = isToday(day);
                           const isMty = isMonterreyEmp(emp);
                           const cellSlots = isMty ? [0, 1] : [0];
+                          const cellState = getAttendanceCellState(emp, dateStr);
+
+                          if (cellState !== "active") {
+                            return (
+                              <TableCell key={day} className={`p-0.5 text-center min-w-[36px] ${cellState === "leave-day" ? "bg-destructive/5" : "bg-muted/30"}`}>
+                                {cellState === "leave-day" && (
+                                  <span className="text-[9px] font-bold text-destructive">Baja</span>
+                                )}
+                              </TableCell>
+                            );
+                          }
 
                           return (
                             <TableCell 
@@ -875,7 +924,7 @@ export default function Asistencias() {
 
               <div className="border rounded-lg max-h-40 overflow-y-auto divide-y bg-background mt-1">
                 {(() => {
-                  const filtered = employees.filter((emp) =>
+                  const filtered = visibleEmployees.filter((emp) =>
                     (emp.nombre_completo || "").toLowerCase().includes(empSearch.toLowerCase()) ||
                     (emp.servicio_ubicacion || "").toLowerCase().includes(empSearch.toLowerCase()) ||
                     (emp.puesto || "").toLowerCase().includes(empSearch.toLowerCase())
