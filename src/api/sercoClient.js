@@ -115,7 +115,7 @@ class EntityService {
   async listByMonth(startDate, endDate) {
     let query = supabase
       .from(this.tableName)
-      .select('id, empleado_id, fecha, estado, sede_id')
+      .select('id, empleado_id, fecha, estado, festivo, sede_id')
       .gte('fecha', startDate)
       .lt('fecha', endDate);
 

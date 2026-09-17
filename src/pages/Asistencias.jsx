@@ -29,6 +29,7 @@ const estadosConfig = {
   descanso_extra: { label: "DLE", name: "Descanso Lab. + Extra", color: "bg-indigo-500 hover:bg-indigo-600 text-white font-bold shadow-sm" },
   vacaciones: { label: "V", name: "Vacaciones", color: "bg-teal-500 hover:bg-teal-600 text-white font-bold shadow-sm" },
   justificada: { label: "J", name: "Justificada", color: "bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-sm" },
+  festivo: { label: "F", name: "Festivo", color: "bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-sm" },
 };
 
 export default function Asistencias() {
@@ -189,6 +190,11 @@ export default function Asistencias() {
 
   // Set specific attendance status with Optimistic UI updates
   const handleSetEstado = async (employeeId, day, estado) => {
+    if (estado === "festivo") {
+      await handleToggleFestivo(employeeId, day);
+      return;
+    }
+
     const employee = employees.find((emp) => emp.id === employeeId);
     const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
     if (getAttendanceCellState(employee, dateStr) !== "active") return;
@@ -206,12 +212,12 @@ export default function Asistencias() {
 
     // Optimistic UI state update (Instantaneous feedback)
     setAsistencias((prev) => {
-      if (estado === null) {
+      if (estado === null && !previous?.festivo) {
         return prev.filter((a) => !(a.empleado_id === employeeId && a.fecha === dateStr));
       }
       const existing = prev.find((a) => a.empleado_id === employeeId && a.fecha === dateStr);
       if (existing) {
-        return prev.map((a) => (a.id === existing.id ? { ...a, estado } : a));
+        return prev.map((a) => (a.id === existing.id ? { ...a, estado, festivo: false } : a));
       } else {
         const emp = employees.find((e) => e.id === employeeId);
         return [
@@ -221,6 +227,7 @@ export default function Asistencias() {
             empleado_id: employeeId,
             fecha: dateStr,
             estado,
+            festivo: false,
             sede_id: emp?.sede_id || null,
           },
         ];
@@ -229,13 +236,14 @@ export default function Asistencias() {
 
     try {
       const emp = employees.find((e) => e.id === employeeId);
-      if (estado === null) {
+      if (estado === null && !previous?.festivo) {
         if (previous?.id && !String(previous.id).startsWith("temp-")) {
           await sercoApi.entities.Asistencia.delete(previous.id);
         }
       } else if (previous?.id && !String(previous.id).startsWith("temp-")) {
         await sercoApi.entities.Asistencia.update(previous.id, { 
           estado,
+          festivo: false,
           sede_id: emp?.sede_id || null 
         });
       } else {
@@ -243,6 +251,7 @@ export default function Asistencias() {
           empleado_id: employeeId,
           fecha: dateStr,
           estado,
+          festivo: false,
           sede_id: emp?.sede_id || null
         }, 'empleado_id,fecha');
         
@@ -267,6 +276,80 @@ export default function Asistencias() {
       toast({
         title: "Error al actualizar asistencia",
         description: e.message || "Ocurrió un error inesperado al guardar la asistencia.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleToggleFestivo = async (employeeId, day) => {
+    const employee = employees.find((emp) => emp.id === employeeId);
+    const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
+    if (getAttendanceCellState(employee, dateStr) !== "active") return;
+
+    if (!can("asistencias", "edit")) {
+      toast({
+        title: "Sin permisos",
+        description: "No tienes permiso para editar asistencias.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const key = `${employeeId}_${dateStr}`;
+    const previous = asistenciasMap.get(key);
+    const festivo = !Boolean(previous?.festivo);
+
+    setAsistencias((prev) => {
+      const existing = prev.find((a) => a.empleado_id === employeeId && a.fecha === dateStr);
+      if (existing) {
+        return prev.map((a) => (a.id === existing.id ? { ...a, estado: festivo ? null : existing.estado, festivo } : a));
+      }
+      return [
+        ...prev,
+        {
+          id: `temp-${Date.now()}`,
+          empleado_id: employeeId,
+          fecha: dateStr,
+          estado: null,
+          festivo,
+          sede_id: employee?.sede_id || null,
+        },
+      ];
+    });
+
+    try {
+      if (previous?.id && !String(previous.id).startsWith("temp-")) {
+        const updated = await sercoApi.entities.Asistencia.update(previous.id, {
+          estado: festivo ? null : previous.estado,
+          festivo,
+          sede_id: employee?.sede_id || null,
+        });
+        if (updated?.id) {
+          setAsistencias((prev) => prev.map((a) => a.id === previous.id ? { ...a, ...updated } : a));
+        }
+      } else {
+        const created = await sercoApi.entities.Asistencia.upsert({
+          empleado_id: employeeId,
+          fecha: dateStr,
+          estado: previous?.estado || null,
+          festivo,
+          sede_id: employee?.sede_id || null,
+        }, 'empleado_id,fecha');
+        if (created?.id) {
+          setAsistencias((prev) => prev.map((a) =>
+            a.empleado_id === employeeId && a.fecha === dateStr ? { ...a, ...created } : a
+          ));
+        }
+      }
+    } catch (e) {
+      console.error("Error al actualizar festivo de asistencia:", e);
+      setAsistencias((prev) => {
+        if (!previous) return prev.filter((a) => !(a.empleado_id === employeeId && a.fecha === dateStr));
+        return prev.map((a) => (a.empleado_id === employeeId && a.fecha === dateStr ? previous : a));
+      });
+      toast({
+        title: "Error al actualizar festivo",
+        description: e.message || "Ocurrió un error inesperado al guardar el festivo.",
         variant: "destructive"
       });
     }
@@ -456,7 +539,6 @@ export default function Asistencias() {
         const dateStr = `${currentMonth}-${String(day).padStart(2, "0")}`;
         const record = asistenciasMap.get(`${emp.id}_${dateStr}`);
         const estado = record?.estado || "";
-
         if (estado === "asistió") countA++;
         else if (estado === "retraso") countR++;
         else if (estado === "falta") countF++;
@@ -467,7 +549,9 @@ export default function Asistencias() {
         else if (estado === "vacaciones") countV++;
         else if (estado === "justificada") countJ++;
 
-        return estado ? estadosConfig[estado]?.label || estado : "";
+        return record?.festivo
+          ? estadosConfig.festivo.label
+          : (estado ? estadosConfig[estado]?.label || estado : "");
       });
 
       return [
@@ -676,7 +760,7 @@ export default function Asistencias() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={daysInMonth + 1} className="text-center text-muted-foreground py-16">
+                  <TableCell colSpan={daysInMonth + 2} className="text-center text-muted-foreground py-16">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       <span className="text-sm">Cargando asistencias...</span>
@@ -723,7 +807,7 @@ export default function Asistencias() {
                         {daysArray.map((day) => {
                           const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                           const asig = asistenciasMap.get(`${emp.id}_${dateStr}`);
-                          const currentVal = asig?.estado || null;
+                          const currentVal = asig?.festivo ? "festivo" : (asig?.estado || null);
                           const todayFlag = isToday(day);
                           const isMty = isMonterreyEmp(emp);
                           const cellSlots = isMty ? [0, 1] : [0];
@@ -761,7 +845,9 @@ export default function Asistencias() {
                                         if (selectedStampState) {
                                           // Modo Marcado Rápido (Pincel): estampa directamente sin abrir menú
                                           const targetState = selectedStampState === "limpiar" ? null : selectedStampState;
-                                          if (slot === 1) {
+                                          if (selectedStampState === "festivo") {
+                                            handleToggleFestivo(emp.id, day);
+                                          } else if (slot === 1) {
                                             handleSetSecondaryEstado(emp.id, day, targetState);
                                           } else {
                                             handleSetEstado(emp.id, day, targetState);
@@ -797,7 +883,14 @@ export default function Asistencias() {
                                           : `${formatUserDisplayName(emp.nombre_completo, user?.role)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`
                                       }
                                     >
-                                      <span>{cfg ? cfg.label : "-"}</span>
+                                      <span className="relative">
+                                        {cfg ? cfg.label : "-"}
+                                        {asig?.festivo && slot === 0 && (
+                                          <span className="absolute -right-2 -top-2 rounded-full bg-amber-500 px-1 text-[8px] leading-3 text-white shadow-sm" title="Día festivo">
+                                            F
+                                          </span>
+                                        )}
+                                      </span>
                                     </button>
                                   );
                                 })}
@@ -854,7 +947,9 @@ export default function Asistencias() {
                     key={key}
                     type="button"
                     onClick={() => {
-                      if (activeCell.isSecondary) {
+                      if (key === "festivo") {
+                        handleToggleFestivo(activeCell.employeeId, activeCell.day);
+                      } else if (activeCell.isSecondary) {
                         handleSetSecondaryEstado(activeCell.employeeId, activeCell.day, key);
                       } else {
                         handleSetEstado(activeCell.employeeId, activeCell.day, key);

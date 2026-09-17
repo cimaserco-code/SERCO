@@ -1629,6 +1629,7 @@ export default function Nominas() {
 
 // Modal component to view and adjust each employee's complete 39 fields
 function DetalleNominaModal({ emp, index, calc, mods, onUpdateField, onClose }) {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("percepciones");
 
   return (
@@ -1641,7 +1642,7 @@ function DetalleNominaModal({ emp, index, calc, mods, onUpdateField, onClose }) 
                 <SlidersHorizontal className="w-5 h-5 text-primary" /> Desglose de Nómina
               </DialogTitle>
               <DialogDescription className="mt-1">
-                Ajuste y consulta de los 39 campos de nómina para {formatUserDisplayName(emp.nombre_completo, user?.role)}
+                Ajuste y consulta de los 39 campos de nómina para {formatUserDisplayName(emp?.nombre_completo, user?.role) || "el empleado"}
               </DialogDescription>
             </div>
             <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1">
