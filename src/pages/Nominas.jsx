@@ -25,7 +25,14 @@ import { formatUserDisplayName } from "@/lib/userNameFormatting";
 export default function Nominas() {
   const { user } = useAuth();
   const { canView, can } = usePermissions();
-  const { sedeFilter } = useSedeScope();
+  const { 
+    sedeFilter,
+    userSedeIds,
+    availableSedes,
+    allSedes,
+    isSuperAdmin,
+    activeSedeId
+  } = useSedeScope();
   const { toast } = useToast();
 
   const [employees, setEmployees] = useState([]);
@@ -48,9 +55,66 @@ export default function Nominas() {
     return `${today.getFullYear()}-${mm}`;
   });
 
-  // Period Configuration
-  const [periodType, setPeriodType] = useState("quincenal"); // "quincenal" | "semanal"
-  const [periodSub, setPeriodSub] = useState("1"); // "1" | "2"
+  // Determine user sede scope regarding Monterrey vs other sedes
+  const { hasBothSedes, isOnlyMonterrey, isOnlyOtherSedes } = useMemo(() => {
+    // If super admin or no sede restriction, user has access to all sedes (both)
+    if (isSuperAdmin || !userSedeIds || userSedeIds.length === 0) {
+      return { hasBothSedes: true, isOnlyMonterrey: false, isOnlyOtherSedes: false };
+    }
+
+    const sedesList = (sedes && sedes.length > 0) ? sedes : (allSedes || []);
+    const userSedes = sedesList.filter((s) => userSedeIds.includes(s.id));
+
+    const hasMty = userSedes.some((s) => (s?.nombre || "").toLowerCase().includes("monterrey"));
+    const hasOther = userSedes.some((s) => !(s?.nombre || "").toLowerCase().includes("monterrey"));
+
+    if (hasMty && hasOther) {
+      return { hasBothSedes: true, isOnlyMonterrey: false, isOnlyOtherSedes: false };
+    }
+    if (hasMty && !hasOther) {
+      return { hasBothSedes: false, isOnlyMonterrey: true, isOnlyOtherSedes: false };
+    }
+    if (!hasMty && hasOther) {
+      return { hasBothSedes: false, isOnlyMonterrey: false, isOnlyOtherSedes: true };
+    }
+
+    return { hasBothSedes: true, isOnlyMonterrey: false, isOnlyOtherSedes: false };
+  }, [isSuperAdmin, userSedeIds, sedes, allSedes]);
+
+  // Period Configuration - default to semanal for Monterrey, quincenal for others
+  const [periodType, setPeriodType] = useState(() => {
+    return isOnlyMonterrey ? "semanal" : "quincenal";
+  });
+  const [periodSub, setPeriodSub] = useState("1"); // "1" | "2" | "3" | ...
+
+  // Sync periodType when sede scope is resolved
+  useEffect(() => {
+    if (isOnlyMonterrey && periodType !== "semanal") {
+      setPeriodType("semanal");
+      setPeriodSub("1");
+    } else if (isOnlyOtherSedes && periodType !== "quincenal") {
+      setPeriodType("quincenal");
+      setPeriodSub("1");
+    }
+  }, [isOnlyMonterrey, isOnlyOtherSedes, periodType]);
+
+  // If user has both sedes and selects a specific activeSedeId, pre-switch appropriately while keeping choice
+  useEffect(() => {
+    if (hasBothSedes && activeSedeId && activeSedeId !== "all") {
+      const activeSedeObj = (sedes || []).find((s) => s.id === activeSedeId) || (allSedes || []).find((s) => s.id === activeSedeId);
+      if (activeSedeObj?.nombre?.toLowerCase()?.includes("monterrey")) {
+        if (periodType !== "semanal") {
+          setPeriodType("semanal");
+          setPeriodSub("1");
+        }
+      } else if (activeSedeObj) {
+        if (periodType !== "quincenal") {
+          setPeriodType("quincenal");
+          setPeriodSub("1");
+        }
+      }
+    }
+  }, [activeSedeId, hasBothSedes, sedes, allSedes]);
 
   // Local state to store granular user modifications per employee
   const [modificaciones, setModificaciones] = useState({});
@@ -59,6 +123,49 @@ export default function Nominas() {
   const year = parseInt(yearStr);
   const month = parseInt(monthStr) - 1; // 0-indexed
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Helper to generate Friday-to-Thursday weekly cycles for the active month
+  const weeklyCycles = useMemo(() => {
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const fridays = [];
+    for (let d = 1; d <= totalDays; d++) {
+      if (new Date(year, month, d).getDay() === 5) {
+        fridays.push(d);
+      }
+    }
+    const cycles = [];
+    if (fridays.length > 0 && fridays[0] > 1) {
+      const startDayName = dayNames[new Date(year, month, 1).getDay()];
+      cycles.push({
+        id: "0",
+        label: `Días 1 al ${fridays[0] - 1} (${startDayName} a Jue)`,
+        start: 1,
+        end: fridays[0] - 1,
+      });
+    }
+    fridays.forEach((fri, idx) => {
+      const thu = Math.min(fri + 6, totalDays);
+      const endDayName = dayNames[new Date(year, month, thu).getDay()];
+      cycles.push({
+        id: String(idx + 1),
+        label: `Semana ${idx + 1} (${fri} al ${thu} - Vie a ${endDayName})`,
+        start: fri,
+        end: thu,
+      });
+    });
+    return cycles;
+  }, [year, month]);
+
+  // Ensure periodSub is valid when weeklyCycles changes
+  useEffect(() => {
+    if (periodType === "semanal") {
+      const exists = weeklyCycles.some((c) => c.id === periodSub);
+      if (!exists && weeklyCycles.length > 0) {
+        setPeriodSub(weeklyCycles.some((c) => c.id === "1") ? "1" : weeklyCycles[0].id);
+      }
+    }
+  }, [currentMonth, periodType, weeklyCycles, periodSub]);
 
   // Get start and end days for the selected period
   const getPeriodDays = () => {
@@ -72,11 +179,14 @@ export default function Nominas() {
         return { start: 16, end: daysInMonth };
       }
     } else if (periodType === "semanal") {
-      if (sub === 1) return { start: 1, end: 7 };
-      if (sub === 2) return { start: 8, end: 14 };
-      if (sub === 3) return { start: 15, end: 21 };
-      if (sub === 4) return { start: 22, end: 28 };
-      return { start: 29, end: daysInMonth };
+      const cycle = weeklyCycles.find((c) => c.id === periodSub);
+      if (cycle) {
+        return { start: cycle.start, end: cycle.end };
+      }
+      if (weeklyCycles.length > 0) {
+        return { start: weeklyCycles[0].start, end: weeklyCycles[0].end };
+      }
+      return { start: 1, end: 7 };
     }
     return { start: 1, end: daysInMonth };
   };
@@ -102,7 +212,9 @@ export default function Nominas() {
     if (periodType === "quincenal") {
       return `${periodSub === "1" ? "1ra Quincena" : "2da Quincena"} de ${monthName} ${year} (${startDay} al ${endDay})`;
     }
-    return `Semana ${periodSub} de ${monthName} ${year} (${startDay} al ${endDay})`;
+    const cycle = weeklyCycles.find((c) => c.id === periodSub);
+    const cycleText = cycle ? cycle.label : `Semana ${periodSub} (${startDay} al ${endDay})`;
+    return `${cycleText} de ${monthName} ${year} (Viernes a Jueves)`;
   };
 
   const getQuincenaName = () => {
@@ -110,7 +222,8 @@ export default function Nominas() {
       return periodSub === "1" ? "1ra Quincena" : "2da Quincena";
     }
     if (periodType === "semanal") {
-      return `Semana ${periodSub}`;
+      const cycle = weeklyCycles.find((c) => c.id === periodSub);
+      return cycle ? cycle.label : `Semana ${periodSub} (Vie-Jue)`;
     }
     return "Mensual";
   };
@@ -733,36 +846,54 @@ export default function Nominas() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 self-start xl:self-auto">
-          {/* Period Type Selection */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase">Periodo:</span>
-            <Select 
-              value={periodType} 
-              onValueChange={(val) => {
-                setPeriodType(val);
-                setPeriodSub("1");
-              }}
-            >
-              <SelectTrigger className="w-32 h-9">
-                <SelectValue placeholder="Tipo Periodo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="quincenal">Quincenal</SelectItem>
-                <SelectItem value="semanal">Semanal</SelectItem>
-                <SelectItem value="mensual">Mensual</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Period Type Selection / Display */}
+          {hasBothSedes ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Periodo:</span>
+              <Select 
+                value={periodType} 
+                onValueChange={(val) => {
+                  setPeriodType(val);
+                  setPeriodSub("1");
+                }}
+              >
+                <SelectTrigger className="w-52 h-9">
+                  <SelectValue placeholder="Tipo Periodo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="quincenal">Quincenal</SelectItem>
+                  <SelectItem value="semanal">Semanal (Viernes a Jueves)</SelectItem>
+                  <SelectItem value="mensual">Mensual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : isOnlyMonterrey ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Periodo:</span>
+              <Badge variant="secondary" className="h-9 px-3 text-xs font-semibold bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5">
+                <span>Semanal (Viernes a Jueves)</span>
+              </Badge>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Periodo:</span>
+              <Badge variant="secondary" className="h-9 px-3 text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 flex items-center gap-1.5">
+                <span>Quincenal</span>
+              </Badge>
+            </div>
+          )}
 
           {/* Sub-Period Selection */}
           {periodType !== "mensual" && (
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase">Quincena/Semana:</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase">
+                {periodType === "quincenal" ? "Quincena:" : "Semana:"}
+              </span>
               <Select 
                 value={periodSub} 
                 onValueChange={(val) => setPeriodSub(val)}
               >
-                <SelectTrigger className="w-44 h-9">
+                <SelectTrigger className="w-56 h-9">
                   <SelectValue placeholder="Selecciona" />
                 </SelectTrigger>
                 <SelectContent>
@@ -773,15 +904,23 @@ export default function Nominas() {
                     </>
                   ) : (
                     <>
-                      <SelectItem value="1">Semana 1 (1-7)</SelectItem>
-                      <SelectItem value="2">Semana 2 (8-14)</SelectItem>
-                      <SelectItem value="3">Semana 3 (15-21)</SelectItem>
-                      <SelectItem value="4">Semana 4 (22-28)</SelectItem>
-                      {daysInMonth >= 29 && <SelectItem value="5">Semana 5 (29-{daysInMonth})</SelectItem>}
+                      {weeklyCycles.map((cycle) => (
+                        <SelectItem key={cycle.id} value={cycle.id}>
+                          {cycle.label}
+                        </SelectItem>
+                      ))}
                     </>
                   )}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {/* Helper Callout for Semanal (Viernes a Jueves) */}
+          {periodType === "semanal" && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-md px-2.5 py-1.5">
+              <Info className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Nómina semanal abarca de <strong>viernes a jueves</strong></span>
             </div>
           )}
 
@@ -830,13 +969,18 @@ export default function Nominas() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="text-xs bg-white dark:bg-slate-800 py-1 px-3 border shadow-sm">
             {employees.length} Colaboradores en nómina
           </Badge>
           <Badge variant="outline" className="text-xs bg-primary/10 text-primary py-1 px-3 border-primary/30">
             {getQuincenaName()}
           </Badge>
+          {periodType === "semanal" && (
+            <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 font-semibold">
+              Viernes a Jueves
+            </Badge>
+          )}
         </div>
       </div>
 
