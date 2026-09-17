@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { Plus, Trash2, Filter, Check, ChevronsUpDown, X, Users, Building2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,39 +62,76 @@ export default function Plantilla() {
   const [vacanteForm, setVacanteForm] = useState({ servicio_id: "", puesto: "Guardia de Seguridad", turno: "matutino", cantidad: "1", requisitos: "", estado: "abierta" });
   const [deleteVacanteId, setDeleteVacanteId] = useState(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [servs, emps, seds, vacs, asigs] = await Promise.all([
-          sercoApi.entities.Servicio.filter(sedeFilter),
-          sercoApi.entities.Empleado.filter(sedeFilter),
-          sercoApi.entities.Sede.list(),
-          sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
-          sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => []),
-        ]);
-        setServicios(servs || []);
-        setEmpleados(emps || []);
-        setSedes(seds || []);
-        setVacantes(vacs || []);
-        setAsignaciones(asigs || []);
-        if (servs?.length > 0) {
-          setVacanteForm(prev => ({ ...prev, servicio_id: servs[0].id }));
-        }
-      } finally {
-        setLoading(false);
+  const loadData = useCallback(async () => {
+    try {
+      const [servs, emps, seds, vacs, asigs] = await Promise.all([
+        sercoApi.entities.Servicio.filter(sedeFilter),
+        sercoApi.entities.Empleado.filter(sedeFilter),
+        sercoApi.entities.Sede.list(),
+        sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
+        sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => []),
+      ]);
+      setServicios(servs || []);
+      setEmpleados(emps || []);
+      setSedes(seds || []);
+      setVacantes(vacs || []);
+      setAsignaciones(asigs || []);
+      if (servs?.length > 0) {
+        setVacanteForm(prev => ({ ...prev, servicio_id: prev.servicio_id || servs[0].id }));
       }
+    } finally {
+      setLoading(false);
     }
-    load();
-  }, []);
+  }, [sedeFilter]);
 
-  async function loadAsignaciones() {
+  const loadAsignaciones = useCallback(async () => {
     try {
       const data = await sercoApi.entities.AsignacionTurno.filter(sedeFilter);
       setAsignaciones(data || []);
     } catch {
       setAsignaciones([]);
     }
-  }
+  }, [sedeFilter]);
+
+  const loadEmpleados = useCallback(async () => {
+    try {
+      const emps = await sercoApi.entities.Empleado.filter(sedeFilter);
+      setEmpleados(emps || []);
+    } catch {
+      setEmpleados([]);
+    }
+  }, [sedeFilter]);
+
+  useEffect(() => {
+    loadData();
+
+    const unsubAsig = sercoApi.entities.AsignacionTurno.subscribe(() => {
+      loadAsignaciones();
+    });
+    const unsubEmp = sercoApi.entities.Empleado.subscribe(() => {
+      loadEmpleados();
+      loadAsignaciones();
+    });
+    const unsubServ = sercoApi.entities.Servicio.subscribe(() => {
+      loadData();
+    });
+
+    return () => {
+      unsubAsig?.();
+      unsubEmp?.();
+      unsubServ?.();
+    };
+  }, [loadData, loadAsignaciones, loadEmpleados]);
+
+  // Resolver nombre de empleado en tiempo real desde la lista de empleados
+  const resolveEmployeeName = useCallback((assignedName) => {
+    if (!assignedName) return "";
+    const clean = assignedName.trim().toLowerCase();
+    const matched = empleados.find(
+      (e) => (e.nombre_completo || "").trim().toLowerCase() === clean
+    );
+    return matched?.nombre_completo || assignedName;
+  }, [empleados]);
 
   function openAdd(servicioId, turnoKey) {
     setAddModalData({ servicioId, turno: turnoKey });
@@ -117,8 +154,15 @@ export default function Plantilla() {
       const horaStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
       const isoStr = now.toISOString();
 
-      // Limpiar cualquier asignación previa del empleado para evitar duplicados
       const cleanEmpName = newEmpleado.trim();
+
+      // Optimistic update: Inmediatamente quitar cualquier asignación previa del empleado
+      // del estado local para que desaparezca al instante del servicio anterior
+      setAsignaciones((prev) =>
+        prev.filter((a) => (a.empleado_nombre || "").trim().toLowerCase() !== cleanEmpName.toLowerCase())
+      );
+
+      // Limpiar cualquier asignación previa del empleado en BD para evitar duplicados entre servicios
       try {
         const existingInState = asignaciones.filter(
           (a) => (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase()
@@ -134,8 +178,9 @@ export default function Plantilla() {
         console.warn("Error al limpiar asignaciones anteriores:", cleanErr);
       }
 
+      let createdRecord = null;
       try {
-        await sercoApi.entities.AsignacionTurno.create({
+        createdRecord = await sercoApi.entities.AsignacionTurno.create({
           empleado_nombre: cleanEmpName,
           servicio_id: addModalData.servicioId,
           servicio_nombre: serv?.nombre || "",
@@ -148,7 +193,7 @@ export default function Plantilla() {
         });
       } catch {
         try {
-          await sercoApi.entities.AsignacionTurno.create({
+          createdRecord = await sercoApi.entities.AsignacionTurno.create({
             empleado_nombre: cleanEmpName,
             servicio_id: addModalData.servicioId,
             servicio_nombre: serv?.nombre || "",
@@ -158,7 +203,7 @@ export default function Plantilla() {
             creado_por: currentUserName,
           });
         } catch {
-          await sercoApi.entities.AsignacionTurno.create({
+          createdRecord = await sercoApi.entities.AsignacionTurno.create({
             empleado_nombre: cleanEmpName,
             servicio_id: addModalData.servicioId,
             servicio_nombre: serv?.nombre || "",
@@ -166,6 +211,13 @@ export default function Plantilla() {
             turno: addModalData.turno,
           });
         }
+      }
+
+      if (createdRecord) {
+        setAsignaciones((prev) => [
+          ...prev.filter((a) => (a.empleado_nombre || "").trim().toLowerCase() !== cleanEmpName.toLowerCase()),
+          createdRecord,
+        ]);
       }
 
       // Sincronizar automáticamente con el módulo de Empleados
@@ -200,6 +252,8 @@ export default function Plantilla() {
 
   async function handleDelete() {
     const asigToDelete = asignaciones.find((a) => a.id === deleteId);
+    // Remover inmediatamente de la vista
+    setAsignaciones((prev) => prev.filter((a) => a.id !== deleteId));
     await sercoApi.entities.AsignacionTurno.delete(deleteId);
 
     // Si el empleado ya no tiene asignaciones activas en este servicio, actualizar su servicio_ubicacion
@@ -446,8 +500,24 @@ export default function Plantilla() {
                     const rawServAsignaciones = asignaciones.filter((a) => a.servicio_id === serv.id);
                     const seenInServ = new Set();
                     const servAsignaciones = rawServAsignaciones.filter((a) => {
-                      const key = (a.empleado_nombre || "").trim().toLowerCase();
+                      const resolved = resolveEmployeeName(a.empleado_nombre);
+                      const key = (resolved || a.empleado_nombre || "").trim().toLowerCase();
                       if (!key || seenInServ.has(key)) return false;
+
+                      // Si el empleado está registrado en empleados y tiene otro servicio asignado o es baja, quitarlo de inmediato
+                      const matchedEmp = empleados.find(
+                        (e) => (e.nombre_completo || "").trim().toLowerCase() === key
+                      );
+                      if (matchedEmp) {
+                        const isBaja = Boolean(
+                          matchedEmp.fecha_baja && (!matchedEmp.fecha_reingreso || matchedEmp.fecha_baja > matchedEmp.fecha_reingreso)
+                        );
+                        if (isBaja) return false;
+                        if (matchedEmp.servicio_ubicacion && matchedEmp.servicio_ubicacion.trim().toLowerCase() !== (serv.nombre || "").trim().toLowerCase()) {
+                          return false;
+                        }
+                      }
+
                       seenInServ.add(key);
                       return true;
                     });
@@ -516,7 +586,7 @@ export default function Plantilla() {
                                           className="flex items-center justify-between p-2 rounded-md bg-muted/60 text-xs hover:bg-muted transition-colors"
                                         >
                                           <span className="font-medium text-foreground truncate pr-2">
-                                            {item.empleado_nombre}
+                                            {resolveEmployeeName(item.empleado_nombre)}
                                           </span>
                                           {can("turnos", "delete") && (
                                             <Button

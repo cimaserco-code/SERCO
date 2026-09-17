@@ -38,11 +38,10 @@ export function PermissionsProvider({ children }) {
 
   const can = useCallback(
     (module, action) => {
-      // Los botones y acciones de eliminar sólo están permitidos para el rol Admin
-      if (action === "delete") {
-        return isAdmin;
-      }
+      // Si es Admin, tiene acceso total a todas las acciones (incluyendo eliminar)
+      if (isAdmin) return true;
       if (roles.length === 0) return true;
+      // Para los demás roles, se respeta la configuración de permisos del rol
       return permisos?.[module]?.[action] === true;
     },
     [permisos, roles.length, isAdmin]

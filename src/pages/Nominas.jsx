@@ -141,10 +141,14 @@ export default function Nominas() {
         sercoApi.entities.Sede ? sercoApi.entities.Sede.list().catch(() => []) : Promise.resolve([])
       ]);
 
-      const monthStartStr = `${currentMonth}-01`;
+      const periodStartStr = `${currentMonth}-${String(startDay).padStart(2, '0')}`;
+      const periodEndStr = `${currentMonth}-${String(endDay).padStart(2, '0')}`;
+
       const activeEmps = emps.filter(e => {
-        if (!e.fecha_baja) return true;
-        return e.fecha_baja >= monthStartStr;
+        const isBaja = Boolean(e.fecha_baja && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso));
+        if (!isBaja) return true;
+        // Solo jalar a los dados de baja dentro del tiempo que considera la quincena/periodo
+        return e.fecha_baja >= periodStartStr && e.fecha_baja <= periodEndStr;
       });
 
       setEmployees(activeEmps);
@@ -235,8 +239,19 @@ export default function Nominas() {
     return emp.sede || "Matriz";
   };
 
+  // Helper para saber si un empleado fue dado de baja dentro del periodo activo
+  const periodStartStr = `${currentMonth}-${String(startDay).padStart(2, '0')}`;
+  const periodEndStr = `${currentMonth}-${String(endDay).padStart(2, '0')}`;
+
+  const isBajaInPeriod = (emp) => {
+    if (!emp?.fecha_baja) return false;
+    if (emp?.fecha_reingreso && emp.fecha_reingreso >= emp.fecha_baja) return false;
+    return emp.fecha_baja >= periodStartStr && emp.fecha_baja <= periodEndStr;
+  };
+
   // Calculations for each employee
   const calculatePayroll = (emp, index = 0) => {
+    const isBaja = isBajaInPeriod(emp);
     const mods = modificaciones[emp.id] || {};
     const salarioMensual = Number(emp.sueldo) || 0;
     const sueldoDiario = salarioMensual / 30;
@@ -325,6 +340,7 @@ export default function Nominas() {
     const totalAPagar = Math.max(0, totalPercepciones - totalDeducciones);
 
     return {
+      isBaja,
       // 1. Sede
       sedeNombre: getSedeName(emp),
       // 2. Numero
@@ -332,7 +348,7 @@ export default function Nominas() {
       // 3. Nombre
       nombre: emp.nombre_completo,
       // 4. Servicio
-      servicio: emp.servicio_ubicacion || "Sin asignar",
+      servicio: isBaja ? "Baja" : (emp.servicio_ubicacion || "Sin asignar"),
       // 5. Turno
       turno: emp.turno || "12x12",
       // 6. Salario Mensual
@@ -663,6 +679,13 @@ export default function Nominas() {
 
   const sortedEmployees = useMemo(() => {
     return [...filteredEmployees].sort((a, b) => {
+      const aBaja = isBajaInPeriod(a);
+      const bBaja = isBajaInPeriod(b);
+
+      // Los empleados dados de baja en el periodo SIEMPRE van al final de la lista
+      if (aBaja && !bBaja) return 1;
+      if (!aBaja && bBaja) return -1;
+
       const primaryCompare = sortField === "name"
         ? compareNames(a, b)
         : compareServices(a, b);
@@ -673,7 +696,7 @@ export default function Nominas() {
       if (primaryCompare === 0) return secondaryCompare;
       return primaryCompare * (sortDirection === "asc" ? 1 : -1);
     });
-  }, [filteredEmployees, sortField, sortDirection]);
+  }, [filteredEmployees, sortField, sortDirection, currentMonth, startDay, endDay]);
 
   const renderSortIndicator = (field) => {
     if (sortField !== field) return null;
@@ -1077,7 +1100,13 @@ export default function Nominas() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {calc.servicio}
+                            {calc.isBaja ? (
+                              <Badge variant="destructive" className="bg-red-500/15 text-red-600 border border-red-200 text-[11px] font-semibold">
+                                Baja
+                              </Badge>
+                            ) : (
+                              calc.servicio
+                            )}
                           </TableCell>
                           <TableCell className="text-center text-xs font-medium">
                             {calc.turno}

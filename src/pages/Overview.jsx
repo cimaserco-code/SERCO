@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { useSedeScope } from "@/hooks/useSedeScope";
@@ -6,6 +6,7 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -20,6 +21,7 @@ import {
   Briefcase,
   DollarSign,
   TrendingDown,
+  TrendingUp,
   Package,
   FileText,
   CheckCircle2,
@@ -28,7 +30,10 @@ import {
   Smartphone,
   Car,
   ShieldCheck,
-  ClipboardList
+  ClipboardList,
+  ArrowUpRight,
+  ArrowDownRight,
+  AlertTriangle
 } from "lucide-react";
 
 export default function Overview() {
@@ -73,7 +78,7 @@ export default function Overview() {
         (canView("servicios") ? sercoApi.entities.Servicio.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("inventario") ? sercoApi.entities.InventarioItem.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("documentos") ? sercoApi.entities.Documento.list() : Promise.resolve([])).catch(() => []),
-        (canView("cobros") ? sercoApi.entities.Cobro.filter({ ...sedeFilter, mes: currentMonth }) : Promise.resolve([])).catch(() => []),
+        (canView("cobros") ? sercoApi.entities.Cobro.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") ? sercoApi.entities.Egreso.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") && sercoApi.entities.Saldo ? sercoApi.entities.Saldo.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("egresos") && sercoApi.entities.Mantenimiento ? sercoApi.entities.Mantenimiento.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
@@ -164,9 +169,32 @@ export default function Overview() {
     s.fecha_inicio && s.fecha_inicio.slice(0, 7) === currentMonth
   ).length;
 
+  const getPrevMonth = (mStr) => {
+    const [y, m] = mStr.split("-").map(Number);
+    let prevY = y;
+    let prevM = m - 1;
+    if (prevM < 1) {
+      prevM = 12;
+      prevY -= 1;
+    }
+    return `${prevY}-${String(prevM).padStart(2, '0')}`;
+  };
+
+  const prevMonth = getPrevMonth(currentMonth);
+
   const monthlyCobros = filteredCobros.filter(c => c.mes === currentMonth);
   const totalCobrado = monthlyCobros.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
   const totalPendiente = monthlyCobros.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
+  const totalFacturadoActual = totalCobrado + totalPendiente;
+
+  // Cobros Mes Anterior
+  const prevMonthlyCobros = filteredCobros.filter(c => c.mes === prevMonth);
+  const prevTotalCobrado = prevMonthlyCobros.filter(c => c.estado === 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
+  const prevTotalPendiente = prevMonthlyCobros.filter(c => c.estado !== 'pagado').reduce((sum, c) => sum + (Number(c.monto) || 0), 0);
+  const prevTotalFacturado = prevTotalCobrado + prevTotalPendiente;
+
+  const varCobrado = prevTotalCobrado > 0 ? ((totalCobrado - prevTotalCobrado) / prevTotalCobrado) * 100 : null;
+  const varFacturado = prevTotalFacturado > 0 ? ((totalFacturadoActual - prevTotalFacturado) / prevTotalFacturado) * 100 : null;
 
   // Egresos breakdown
   const monthlyEgresos = filteredEgresos.filter(e => (e.mes === currentMonth || (e.fecha && e.fecha.slice(0, 7) === currentMonth)));
@@ -190,9 +218,48 @@ export default function Overview() {
 
   const netBalance = totalCobrado - totalEgresosCombinado;
 
+  // Nóminas Mes Actual vs Mes Anterior
   const monthlyNominas = filteredNominas.filter(n => n.mes && n.mes.startsWith(currentMonth));
   const totalNominasPagadas = monthlyNominas.reduce((sum, n) => sum + (Number(n.total_pagado) || 0), 0);
   const totalNominasEmpleados = new Set(monthlyNominas.map(n => n.empleado_id)).size;
+
+  const prevMonthlyNominas = filteredNominas.filter(n => n.mes && n.mes.startsWith(prevMonth));
+  const prevTotalNominasPagadas = prevMonthlyNominas.reduce((sum, n) => sum + (Number(n.total_pagado) || 0), 0);
+  const diffNomina = totalNominasPagadas - prevTotalNominasPagadas;
+  const varNomina = prevTotalNominasPagadas > 0 ? ((diffNomina) / prevTotalNominasPagadas) * 100 : null;
+
+  // Facturación Diferencias
+  const diffFacturado = totalFacturadoActual - prevTotalFacturado;
+  const diffCobrado = totalCobrado - prevTotalCobrado;
+
+  // Egresos Mes Anterior vs Mes Actual
+  const prevMonthlyEgresos = filteredEgresos.filter(e => (e.mes === prevMonth || (e.fecha && e.fecha.slice(0, 7) === prevMonth)));
+  const prevTotalEgresosDirectos = prevMonthlyEgresos.reduce((sum, e) => sum + (Number(e.monto) || 0), 0);
+
+  const prevMonthlySaldos = filteredSaldos.filter(s => (s.mes === prevMonth || (s.fecha && s.fecha.slice(0, 7) === prevMonth)));
+  const prevTotalSaldos = prevMonthlySaldos.reduce((sum, s) => sum + (Number(s.monto) || 0), 0);
+
+  const prevMonthlyMantenimientos = filteredMantenimientos.filter(m => (m.mes === prevMonth || (m.fecha && m.fecha.slice(0, 7) === prevMonth)));
+  const prevTotalMantenimientos = prevMonthlyMantenimientos.reduce((sum, m) => sum + (Number(m.monto) || 0), 0);
+
+  const prevTotalEgresosCombinado = prevTotalEgresosDirectos + prevTotalSaldos + prevTotalMantenimientos;
+  const diffEgresos = totalEgresosCombinado - prevTotalEgresosCombinado;
+  const varEgresos = prevTotalEgresosCombinado > 0 ? ((diffEgresos) / prevTotalEgresosCombinado) * 100 : null;
+
+  // Altas y Bajas (Mes Actual vs Mes Anterior)
+  const prevEmpBajas = filteredEmp.filter(e => e.fecha_baja && e.fecha_baja.slice(0, 7) === prevMonth && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso)).length;
+  const prevEmpAltas = filteredEmp.filter(e => 
+    (e.fecha_ingreso && e.fecha_ingreso.slice(0, 7) === prevMonth) || 
+    (e.fecha_reingreso && e.fecha_reingreso.slice(0, 7) === prevMonth)
+  ).length;
+
+  const tasaAltas = empActivos > 0 ? ((empAltas / empActivos) * 100) : 0;
+  const tasaBajas = empActivos > 0 ? ((empBajas / empActivos) * 100) : 0;
+  const diffAltas = empAltas - prevEmpAltas;
+  const diffBajas = empBajas - prevEmpBajas;
+  const varAltas = prevEmpAltas > 0 ? (((diffAltas) / prevEmpAltas) * 100) : null;
+  const varBajas = prevEmpBajas > 0 ? (((diffBajas) / prevEmpBajas) * 100) : null;
+  const balancePersonal = empAltas - empBajas;
 
   const monthlyRondines = filteredRondines.filter(r => (r.fecha && r.fecha.slice(0, 7) === currentMonth) || (r.created_date && r.created_date.slice(0, 7) === currentMonth)).length;
   const monthlyReportes = filteredReportes.filter(r => (r.fecha && r.fecha.slice(0, 7) === currentMonth) || (r.created_date && r.created_date.slice(0, 7) === currentMonth)).length;
@@ -290,11 +357,24 @@ export default function Overview() {
                 ${loading ? "—" : Math.round(totalPendiente * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX")}
               </span>
             </div>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Total Facturado</span>
               <span className="font-bold text-blue-600">
                 ${loading ? "—" : Math.round((totalCobrado + totalPendiente) * (facturasKpiView === "total" ? 1.16 : facturasKpiView === "iva" ? 0.16 : 1.0)).toLocaleString("es-MX")}
               </span>
+            </div>
+            <div className="flex justify-between items-center text-xs pt-0.5">
+              <span className="text-muted-foreground">vs Mes Anterior:</span>
+              {loading ? (
+                <span className="text-muted-foreground">—</span>
+              ) : varFacturado !== null ? (
+                <span className={`inline-flex items-center gap-0.5 font-semibold ${varFacturado >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  {varFacturado >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {varFacturado >= 0 ? `+${varFacturado.toFixed(1)}%` : `${varFacturado.toFixed(1)}%`}
+                </span>
+              ) : (
+                <span className="text-muted-foreground font-medium">Sin datos prev.</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -327,6 +407,19 @@ export default function Overview() {
               <span className="text-sm font-semibold">Total Gastado</span>
               <span className="font-bold text-rose-600">${loading ? "—" : totalEgresosCombinado.toLocaleString("es-MX")}</span>
             </div>
+            <div className="flex justify-between items-center border-b pb-2 text-xs pt-0.5">
+              <span className="text-muted-foreground">vs Mes Anterior:</span>
+              {loading ? (
+                <span className="text-muted-foreground">—</span>
+              ) : varEgresos !== null ? (
+                <span className={`inline-flex items-center gap-0.5 font-semibold ${varEgresos <= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  {varEgresos >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {varEgresos >= 0 ? `+${varEgresos.toFixed(1)}%` : `${varEgresos.toFixed(1)}%`}
+                </span>
+              ) : (
+                <span className="text-muted-foreground font-medium">Sin datos prev.</span>
+              )}
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Flujo Neto (Cobrado - Gastos)</span>
               <span className={`font-bold ${netBalance >= 0 ? "text-green-600" : "text-rose-600"}`}>
@@ -354,11 +447,15 @@ export default function Overview() {
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Altas del Mes</span>
-              <span className="font-semibold text-sky-600">{loading ? "—" : empAltas}</span>
+              <span className="font-semibold text-sky-600">
+                {loading ? "—" : `${empAltas} (${tasaAltas.toFixed(1)}%)`}
+              </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Bajas del Mes</span>
-              <span className="font-semibold text-muted-foreground">{loading ? "—" : empBajas}</span>
+              <span className="text-sm text-muted-foreground">Bajas del Mes (Rotación)</span>
+              <span className="font-semibold text-rose-600">
+                {loading ? "—" : `${empBajas} (${tasaBajas.toFixed(1)}%)`}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -461,9 +558,22 @@ export default function Overview() {
               <span className="text-sm text-muted-foreground">Total Dispersado</span>
               <span className="font-bold text-indigo-600">${loading ? "—" : totalNominasPagadas.toLocaleString("es-MX")}</span>
             </div>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground">Colaboradores Calculados</span>
               <span className="font-semibold text-slate-700">{loading ? "—" : totalNominasEmpleados}</span>
+            </div>
+            <div className="flex justify-between items-center text-xs pt-0.5">
+              <span className="text-muted-foreground">vs Mes Anterior:</span>
+              {loading ? (
+                <span className="text-muted-foreground">—</span>
+              ) : varNomina !== null ? (
+                <span className={`inline-flex items-center gap-0.5 font-semibold ${varNomina <= 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                  {varNomina >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {varNomina >= 0 ? `+${varNomina.toFixed(1)}%` : `${varNomina.toFixed(1)}%`}
+                </span>
+              ) : (
+                <span className="text-muted-foreground font-medium">Sin datos prev.</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -484,6 +594,203 @@ export default function Overview() {
               <span className="text-sm text-muted-foreground">Acceso rápido</span>
               <span className="text-xs text-primary font-medium">Ver repositorio →</span>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Estadísticas Comparativas: Mes Actual vs Mes Anterior */}
+        <Card className="col-span-full border shadow-sm bg-card">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 gap-2 border-b">
+            <div className="space-y-1">
+              <CardTitle className="text-base font-bold flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-primary" /> Estadísticas Comparativas: {formatMes(currentMonth)} vs {formatMes(prevMonth)}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Análisis financiero y operativo de variaciones porcentuales y montos contra el mes anterior.
+              </p>
+            </div>
+            <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1 w-fit bg-primary/5 text-primary border-primary/20">
+              Mes a Mes (MoM)
+            </Badge>
+          </CardHeader>
+          <CardContent className="pt-5">
+            {loading ? (
+              <p className="text-xs text-muted-foreground py-8 text-center">Calculando estadísticas comparativas...</p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {/* 1. Nómina */}
+                <div 
+                  className="p-4 rounded-xl border bg-background space-y-3 cursor-pointer hover:border-indigo-400 hover:shadow-sm transition-all"
+                  onClick={() => navigate("/nominas")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                      <Calculator className="w-4 h-4 text-indigo-500" /> Nómina
+                    </span>
+                    {varNomina !== null && (
+                      <Badge 
+                        variant="secondary" 
+                        className={`text-[11px] font-bold px-1.5 py-0.5 ${
+                          varNomina <= 0 
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" 
+                            : "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                        }`}
+                      >
+                        {varNomina >= 0 ? `+${varNomina.toFixed(1)}%` : `${varNomina.toFixed(1)}%`}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="text-xl font-bold text-foreground">
+                      ${totalNominasPagadas.toLocaleString("es-MX")}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Mes anterior: <strong className="text-foreground font-medium">${prevTotalNominasPagadas.toLocaleString("es-MX")}</strong>
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-dashed flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Diferencia:</span>
+                    <span className={`font-semibold flex items-center gap-0.5 ${diffNomina >= 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                      {diffNomina >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                      {diffNomina >= 0 ? `+$${diffNomina.toLocaleString("es-MX")}` : `-$${Math.abs(diffNomina).toLocaleString("es-MX")}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Facturas */}
+                <div 
+                  className="p-4 rounded-xl border bg-background space-y-3 cursor-pointer hover:border-emerald-400 hover:shadow-sm transition-all"
+                  onClick={() => navigate("/facturas")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                      <DollarSign className="w-4 h-4 text-emerald-500" /> Facturación
+                    </span>
+                    {varFacturado !== null && (
+                      <Badge 
+                        variant="secondary" 
+                        className={`text-[11px] font-bold px-1.5 py-0.5 ${
+                          varFacturado >= 0 
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" 
+                            : "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
+                        }`}
+                      >
+                        {varFacturado >= 0 ? `+${varFacturado.toFixed(1)}%` : `${varFacturado.toFixed(1)}%`}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="text-xl font-bold text-foreground">
+                      ${totalFacturadoActual.toLocaleString("es-MX")}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Mes anterior: <strong className="text-foreground font-medium">${prevTotalFacturado.toLocaleString("es-MX")}</strong>
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-dashed flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Diferencia:</span>
+                    <span className={`font-semibold flex items-center gap-0.5 ${diffFacturado >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {diffFacturado >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                      {diffFacturado >= 0 ? `+$${diffFacturado.toLocaleString("es-MX")}` : `-$${Math.abs(diffFacturado).toLocaleString("es-MX")}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Egresos y Gastos */}
+                <div 
+                  className="p-4 rounded-xl border bg-background space-y-3 cursor-pointer hover:border-rose-400 hover:shadow-sm transition-all"
+                  onClick={() => navigate("/egresos")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                      <TrendingDown className="w-4 h-4 text-rose-500" /> Gastos / Egresos
+                    </span>
+                    {varEgresos !== null && (
+                      <Badge 
+                        variant="secondary" 
+                        className={`text-[11px] font-bold px-1.5 py-0.5 ${
+                          varEgresos <= 0 
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" 
+                            : "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
+                        }`}
+                      >
+                        {varEgresos >= 0 ? `+${varEgresos.toFixed(1)}%` : `${varEgresos.toFixed(1)}%`}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="text-xl font-bold text-foreground">
+                      ${totalEgresosCombinado.toLocaleString("es-MX")}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Mes anterior: <strong className="text-foreground font-medium">${prevTotalEgresosCombinado.toLocaleString("es-MX")}</strong>
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-dashed flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Diferencia:</span>
+                    <span className={`font-semibold flex items-center gap-0.5 ${diffEgresos <= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {diffEgresos >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                      {diffEgresos >= 0 ? `+$${diffEgresos.toLocaleString("es-MX")}` : `-$${Math.abs(diffEgresos).toLocaleString("es-MX")}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. Altas y Bajas / Rotación */}
+                <div 
+                  className="p-4 rounded-xl border bg-background space-y-3 cursor-pointer hover:border-blue-400 hover:shadow-sm transition-all"
+                  onClick={() => navigate("/empleados")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                      <Users className="w-4 h-4 text-blue-500" /> Altas y Bajas
+                    </span>
+                    <Badge 
+                      variant="secondary" 
+                      className={`text-[11px] font-bold px-1.5 py-0.5 ${
+                        balancePersonal >= 0 
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" 
+                          : "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
+                      }`}
+                    >
+                      {balancePersonal >= 0 ? `+${balancePersonal} neto` : `${balancePersonal} neto`}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2 rounded-lg bg-muted/50">
+                      <div className="text-[11px] text-muted-foreground font-medium">Altas</div>
+                      <div className="text-base font-bold text-sky-600">
+                        {empAltas} <span className="text-[11px] font-normal text-muted-foreground">({tasaAltas.toFixed(1)}%)</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        Mes ant: {prevEmpAltas}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-muted/50">
+                      <div className="text-[11px] text-muted-foreground font-medium">Bajas</div>
+                      <div className="text-base font-bold text-rose-600">
+                        {empBajas} <span className="text-[11px] font-normal text-muted-foreground">({tasaBajas.toFixed(1)}%)</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        Mes ant: {prevEmpBajas}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-dashed flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Tasa de Rotación:</span>
+                    <span className="font-semibold text-foreground">
+                      {tasaBajas.toFixed(1)}% de plantilla
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

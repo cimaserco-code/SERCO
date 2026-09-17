@@ -192,7 +192,7 @@ export default function Home() {
     async function load() {
       setLoading(true);
       try {
-        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols, usersList] = await Promise.all([
+        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols, usersList, agendaEvents] = await Promise.all([
           (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
           sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
           sercoApi.entities.InventarioItem.filter(sedeFilter).catch(() => []),
@@ -203,7 +203,8 @@ export default function Home() {
           sercoApi.entities.Comunicado.list().catch(() => []),
           sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
           sercoApi.entities.SolicitudInventario.list().catch(() => []),
-          sercoApi.entities.User.list().catch(() => [])
+          sercoApi.entities.User.list().catch(() => []),
+          sercoApi.entities.Agenda ? sercoApi.entities.Agenda.list().catch(() => []) : Promise.resolve([])
         ]);
 
         const activeComs = (coms || []).filter(c => c.activo !== false);
@@ -391,6 +392,29 @@ export default function Home() {
               description: `Se abrió vacante para ${v.puesto} (${v.turno}) en ${servName}.`,
               autor: author,
               hora: formatTimeAndDate(rawTime, v.hora || ""),
+              rawTimestamp: parseToTimestamp(rawTime),
+            });
+          });
+        }
+
+        // 2b. Entrevistas agendadas (RH / Reclutador / Superusuarios)
+        if (isRh || isSuperUser) {
+          (agendaEvents || []).filter(ev => ev.tipo === 'entrevista').forEach(ev => {
+            const rawTime = ev.created_at || ev.fecha || null;
+            if (!isWithinLastWeek(rawTime)) return;
+            const author = resolveAuthorName(ev.creado_por || ev.usuario_creador || ev.responsable_nombre, 'rh', ev.sede_id);
+            const puestoText = ev.puesto ? ` (${ev.puesto})` : '';
+            const candidatoText = ev.candidato_nombre || ev.titulo || 'Candidato';
+            const horaText = ev.hora_inicio ? ` a las ${ev.hora_inicio}` : '';
+            const fechaText = ev.fecha ? ` el ${ev.fecha}` : '';
+            alertsList.push({
+              id: `entrevista-${ev.id}`,
+              type: 'info',
+              categoria: 'Entrevista',
+              title: 'Entrevista Agendada',
+              description: `Se agendó entrevista con ${candidatoText}${puestoText}${fechaText}${horaText}.`,
+              autor: author,
+              hora: formatTimeAndDate(rawTime, ev.hora_inicio || ""),
               rawTimestamp: parseToTimestamp(rawTime),
             });
           });

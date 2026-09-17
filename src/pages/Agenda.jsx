@@ -102,8 +102,10 @@ export default function Agenda() {
 
   if (!canView("agenda")) return <AccessRestricted />;
 
-  // Detectar si el usuario es supervisor (solo puede ver y agendar visitas de supervisión)
-  const isSupervisor = (user?.role || "").toLowerCase().trim() === "supervisor";
+  // Detectar roles con restricciones específicas en Agenda
+  const userRole = (user?.role || "").toLowerCase().trim();
+  const isSupervisor = userRole === "supervisor";
+  const isReclutador = userRole === "reclutador";
   const canCreate = can("agenda", "create");
   const canEdit = can("agenda", "edit");
   const canDelete = can("agenda", "delete");
@@ -241,6 +243,8 @@ export default function Agenda() {
       .filter((ev) => {
         // Supervisores solo ven visitas de supervisión
         if (isSupervisor && ev.tipo !== "visita_supervision") return false;
+        // Reclutadores solo ven entrevistas (no supervisión ni capacitación)
+        if (isReclutador && (ev.tipo === "visita_supervision" || ev.tipo === "capacitacion")) return false;
 
         if (sedeFilter?.sede_id && ev.sede_id && ev.sede_id !== sedeFilter.sede_id) {
           return false;
@@ -344,8 +348,8 @@ export default function Agenda() {
     setFormError("");
     setForm({
       ...emptyEventForm,
-      // Supervisores solo pueden crear visitas de supervisión
-      tipo: isSupervisor ? "visita_supervision" : emptyEventForm.tipo,
+      // Supervisores solo pueden crear visitas de supervisión, reclutadores solo entrevistas
+      tipo: isSupervisor ? "visita_supervision" : isReclutador ? "entrevista" : emptyEventForm.tipo,
       fecha: defaultDate || new Date().toISOString().slice(0, 10),
       sede_id: defaultSedeId || "",
       responsable_id: user?.id || "",
@@ -354,7 +358,7 @@ export default function Agenda() {
     setModalOpen(true);
   };
 
-  // Abrir modal para editar
+  // Abrir modal para editar o ver detalles
   const openEdit = (ev, e) => {
     e?.stopPropagation?.();
     setEditingEvent(ev);
@@ -387,6 +391,11 @@ export default function Agenda() {
 
     if (isSupervisor && form.tipo !== "visita_supervision") {
       setFormError("Como supervisor solo puedes agendar visitas de supervisión.");
+      return;
+    }
+
+    if (isReclutador && form.tipo !== "entrevista") {
+      setFormError("Como reclutador solo puedes agendar entrevistas.");
       return;
     }
 
@@ -599,8 +608,8 @@ export default function Agenda() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Filtro Tipo - oculto para supervisor porque solo ve visitas */}
-              {!isSupervisor && (
+              {/* Filtro Tipo - oculto para supervisor y reclutador porque tienen tipo exclusivo */}
+              {!isSupervisor && !isReclutador && (
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
                   <SelectTrigger className="h-9 text-xs w-[170px]">
                     <SelectValue placeholder="Tipo de evento" />
@@ -737,11 +746,9 @@ export default function Agenda() {
                       return (
                         <div
                           key={ev.id}
-                          onClick={(e) => canEdit && openEdit(ev, e)}
+                          onClick={(e) => openEdit(ev, e)}
                           title={`${ev.hora_inicio || ""}${ev.tipo !== "entrevista" && ev.hora_fin ? ` - ${ev.hora_fin}` : ""} · ${ev.titulo}\nResponsable: ${ev.responsable_nombre || "Sin asignar"}`}
-                          className={`flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border truncate ${
-                            canEdit ? "cursor-pointer" : "cursor-default"
-                          } shadow-2xs hover:brightness-95 transition-all ${
+                          className={`flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border truncate cursor-pointer shadow-2xs hover:brightness-95 transition-all ${
                             typeConfig.badgeClass
                           } ${ev.estado === "completada" ? "opacity-60 line-through" : ""}`}
                         >
@@ -954,7 +961,7 @@ export default function Agenda() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-primary" />
-              {editingEvent ? "Editar Cita / Evento" : "Agendar Nuevo Evento"}
+              {editingEvent ? (canEdit ? "Editar Cita / Evento" : "Detalles del Evento") : "Agendar Nuevo Evento"}
             </DialogTitle>
             <DialogDescription className="text-xs">
               Completa los datos del evento según el área operativa correspondiente.
@@ -977,6 +984,13 @@ export default function Agenda() {
                   <div className="p-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200">
                     <Eye className="w-4 h-4 text-blue-600" />
                     <span>Visita de Supervisión (Operativa)</span>
+                  </div>
+                </div>
+              ) : isReclutador ? (
+                <div className="mt-1.5">
+                  <div className="p-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200">
+                    <User className="w-4 h-4 text-purple-600" />
+                    <span>Entrevista (Reclutamiento / RH)</span>
                   </div>
                 </div>
               ) : (
@@ -1291,11 +1305,13 @@ export default function Agenda() {
 
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => setModalOpen(false)} disabled={saving}>
-              Cancelar
+              {editingEvent && !canEdit ? "Cerrar" : "Cancelar"}
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 font-semibold">
-              {saving ? "Guardando..." : editingEvent ? "Guardar Cambios" : "Agendar Evento"}
-            </Button>
+            {(!editingEvent || canEdit) && (
+              <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 font-semibold">
+                {saving ? "Guardando..." : editingEvent ? "Guardar Cambios" : "Agendar Evento"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
