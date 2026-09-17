@@ -241,17 +241,17 @@ export default function Asistencias() {
           await sercoApi.entities.Asistencia.delete(previous.id);
         }
       } else if (previous?.id && !String(previous.id).startsWith("temp-")) {
-        await sercoApi.entities.Asistencia.update(previous.id, { 
+        const updatePayload = { 
           estado,
-          festivo: false,
           sede_id: emp?.sede_id || null 
-        });
+        };
+        if (previous.festivo !== undefined) updatePayload.festivo = false;
+        await sercoApi.entities.Asistencia.update(previous.id, updatePayload);
       } else {
         const created = await sercoApi.entities.Asistencia.upsert({
           empleado_id: employeeId,
           fecha: dateStr,
           estado,
-          festivo: false,
           sede_id: emp?.sede_id || null
         }, 'empleado_id,fecha');
         
