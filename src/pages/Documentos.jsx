@@ -211,25 +211,72 @@ export default function Documentos() {
               className="pl-9 w-full sm:w-64"
             />
           </div>
-          <Button
-            variant="outline"
-            className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 font-medium"
-            onClick={openContractGenerator}
-          >
-            <FileText className="w-4 h-4 mr-1.5 text-indigo-600" /> Generar Contrato
-          </Button>
-          {can("documentos", "create") && (
-            <Button onClick={openCreate}>
-              <Plus className="w-4 h-4 mr-1" /> Agregar
-            </Button>
-          )}
+          
+          
         </div>
       </div>
 
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Cargando...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-center text-muted-foreground py-12">No hay documentos registrados</div>
+       <div className="flex flex-col items-center justify-center py-12 gap-6">
+ 
+  <div className="flex flex-wrap justify-center gap-3">
+
+    {/* Generar Contrato */}
+    <Button
+      variant="outline"
+      className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 font-medium"
+      onClick={openContractGenerator}
+    >
+      <FileText className="w-4 h-4 mr-1.5" />
+      Generar Contrato
+    </Button>
+
+    {/* Generar Gafete */}
+    <Button
+      variant="outline"
+      onClick={() => {
+        toast({
+          title: "Próximamente",
+          description: "Generación de gafete en desarrollo.",
+        });
+      }}
+    >
+      <FileText className="w-4 h-4 mr-1.5" />
+      Generar Gafete
+    </Button>
+
+    {/* Carta de Renuncia */}
+    <Button
+      variant="outline"
+      onClick={() => {
+        toast({
+          title: "Próximamente",
+          description: "Generación de carta de renuncia en desarrollo.",
+        });
+      }}
+    >
+      <FileText className="w-4 h-4 mr-1.5" />
+      Carta de Renuncia
+    </Button>
+
+    {/* Ficha Técnica */}
+    <Button
+      variant="outline"
+      onClick={() => {
+        toast({
+          title: "Próximamente",
+          description: "Generación de ficha técnica en desarrollo.",
+        });
+      }}
+    >
+      <FileText className="w-4 h-4 mr-1.5" />
+      Ficha Técnica
+    </Button>
+
+  </div>
+</div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((item) => (
