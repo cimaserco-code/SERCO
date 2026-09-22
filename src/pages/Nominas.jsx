@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
+import { resolveEmpleadoNumero, syncAndAssignEmpleadoNumeros } from "@/lib/empleadoNumero";
 
 export default function Nominas() {
   const { user } = useAuth();
@@ -257,7 +258,9 @@ export default function Nominas() {
       const periodStartStr = `${currentMonth}-${String(startDay).padStart(2, '0')}`;
       const periodEndStr = `${currentMonth}-${String(endDay).padStart(2, '0')}`;
 
-      const activeEmps = emps.filter(e => {
+      const syncedEmps = syncAndAssignEmpleadoNumeros(emps);
+
+      const activeEmps = syncedEmps.filter(e => {
         const isBaja = Boolean(e.fecha_baja && (!e.fecha_reingreso || e.fecha_baja > e.fecha_reingreso));
         if (!isBaja) return true;
         // Solo jalar a los dados de baja dentro del tiempo que considera la quincena/periodo
@@ -457,7 +460,7 @@ export default function Nominas() {
       // 1. Sede
       sedeNombre: getSedeName(emp),
       // 2. Numero
-      numero: emp.numero_empleado || (index + 1),
+      numero: resolveEmpleadoNumero(emp) || emp.numero_empleado || (index + 1),
       // 3. Nombre
       nombre: emp.nombre_completo,
       // 4. Servicio
@@ -761,11 +764,12 @@ export default function Nominas() {
   const filteredEmployees = employees.filter(emp => {
     if (!searchTerm) return true;
     const query = searchTerm.toLowerCase();
+    const empNum = String(resolveEmpleadoNumero(emp) || emp.numero_empleado || "");
     return (
       (emp.nombre_completo || "").toLowerCase().includes(query) ||
       (emp.servicio_ubicacion || "").toLowerCase().includes(query) ||
       (emp.puesto || "").toLowerCase().includes(query) ||
-      String(emp.numero_empleado || "").toLowerCase().includes(query)
+      empNum.includes(query)
     );
   });
 
@@ -790,6 +794,12 @@ export default function Nominas() {
     { sensitivity: "base" }
   );
 
+  const compareNumeros = (a, b) => {
+    const numA = resolveEmpleadoNumero(a) || a.numero_empleado || 999999;
+    const numB = resolveEmpleadoNumero(b) || b.numero_empleado || 999999;
+    return Number(numA) - Number(numB);
+  };
+
   const sortedEmployees = useMemo(() => {
     return [...filteredEmployees].sort((a, b) => {
       const aBaja = isBajaInPeriod(a);
@@ -798,6 +808,11 @@ export default function Nominas() {
       // Los empleados dados de baja en el periodo SIEMPRE van al final de la lista
       if (aBaja && !bBaja) return 1;
       if (!aBaja && bBaja) return -1;
+
+      if (sortField === "numero") {
+        const numComp = compareNumeros(a, b);
+        if (numComp !== 0) return numComp * (sortDirection === "asc" ? 1 : -1);
+      }
 
       const primaryCompare = sortField === "name"
         ? compareNames(a, b)
@@ -1078,7 +1093,9 @@ export default function Nominas() {
             <TableHeader className="bg-slate-50 dark:bg-slate-900 border-b">
               {activeTab === "resumen" && (
                 <TableRow>
-                  <TableHead className="font-bold w-12 text-center">#</TableHead>
+                  <TableHead className="font-bold w-16 text-center cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("numero")}>
+                    <span className="inline-flex items-center justify-center gap-1">No. {renderSortIndicator("numero")}</span>
+                  </TableHead>
                   <TableHead
                     className="font-bold min-w-[200px] cursor-pointer select-none"
                     onClick={() => handleSort("name")}
@@ -1104,7 +1121,9 @@ export default function Nominas() {
 
               {activeTab === "percepciones" && (
                 <TableRow>
-                  <TableHead className="font-bold w-12 text-center">#</TableHead>
+                  <TableHead className="font-bold w-16 text-center cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("numero")}>
+                    <span className="inline-flex items-center justify-center gap-1">No. {renderSortIndicator("numero")}</span>
+                  </TableHead>
                   <TableHead
                     className="font-bold min-w-[180px] cursor-pointer select-none"
                     onClick={() => handleSort("name")}
@@ -1129,7 +1148,9 @@ export default function Nominas() {
 
               {activeTab === "deducciones" && (
                 <TableRow>
-                  <TableHead className="font-bold w-12 text-center">#</TableHead>
+                  <TableHead className="font-bold w-16 text-center cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("numero")}>
+                    <span className="inline-flex items-center justify-center gap-1">No. {renderSortIndicator("numero")}</span>
+                  </TableHead>
                   <TableHead
                     className="font-bold min-w-[180px] cursor-pointer select-none"
                     onClick={() => handleSort("name")}
@@ -1156,7 +1177,9 @@ export default function Nominas() {
 
               {activeTab === "todos" && (
                 <TableRow>
-                  <TableHead className="font-bold sticky left-0 bg-slate-50 dark:bg-slate-900 z-10 w-10 text-center">#</TableHead>
+                  <TableHead className="font-bold sticky left-0 bg-slate-50 dark:bg-slate-900 z-10 w-16 text-center cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("numero")}>
+                    <span className="inline-flex items-center justify-center gap-1">No. {renderSortIndicator("numero")}</span>
+                  </TableHead>
                   <TableHead
                     className="font-bold sticky left-10 bg-slate-50 dark:bg-slate-900 z-10 min-w-[180px] cursor-pointer select-none"
                     onClick={() => handleSort("name")}
@@ -1231,8 +1254,12 @@ export default function Nominas() {
                       {/* VISTA RESUMEN */}
                       {activeTab === "resumen" && (
                         <>
-                          <TableCell className="text-center font-bold text-xs text-muted-foreground">
-                            {calc.numero}
+                          <TableCell className="text-center font-bold text-xs text-muted-foreground whitespace-nowrap">
+                            {calc.numero ? (
+                              <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border text-xs">
+                                #{calc.numero}
+                              </Badge>
+                            ) : "—"}
                           </TableCell>
                           <TableCell className="font-semibold">
                             <div className="text-sm text-foreground">{calc.nombre}</div>
@@ -1286,8 +1313,12 @@ export default function Nominas() {
                       {/* VISTA PERCEPCIONES */}
                       {activeTab === "percepciones" && (
                         <>
-                          <TableCell className="text-center font-bold text-xs text-muted-foreground">
-                            {calc.numero}
+                          <TableCell className="text-center font-bold text-xs text-muted-foreground whitespace-nowrap">
+                            {calc.numero ? (
+                              <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border text-xs">
+                                #{calc.numero}
+                              </Badge>
+                            ) : "—"}
                           </TableCell>
                           <TableCell className="font-semibold">
                             <div className="text-sm">{calc.nombre}</div>
@@ -1405,8 +1436,12 @@ export default function Nominas() {
                       {/* VISTA DEDUCCIONES */}
                       {activeTab === "deducciones" && (
                         <>
-                          <TableCell className="text-center font-bold text-xs text-muted-foreground">
-                            {calc.numero}
+                          <TableCell className="text-center font-bold text-xs text-muted-foreground whitespace-nowrap">
+                            {calc.numero ? (
+                              <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border text-xs">
+                                #{calc.numero}
+                              </Badge>
+                            ) : "—"}
                           </TableCell>
                           <TableCell className="font-semibold">
                             <div className="text-sm">{calc.nombre}</div>
@@ -1548,8 +1583,12 @@ export default function Nominas() {
                       {/* VISTA TODOS LOS CAMPOS */}
                       {activeTab === "todos" && (
                         <>
-                          <TableCell className="text-center font-bold text-xs sticky left-0 bg-card z-10">
-                            {calc.numero}
+                          <TableCell className="text-center font-bold text-xs sticky left-0 bg-card z-10 whitespace-nowrap">
+                            {calc.numero ? (
+                              <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border text-xs">
+                                #{calc.numero}
+                              </Badge>
+                            ) : "—"}
                           </TableCell>
                           <TableCell className="font-semibold text-xs sticky left-10 bg-card z-10">
                             <div>{calc.nombre}</div>

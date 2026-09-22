@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -32,6 +33,12 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 import { formatPersonName, formatUserDisplayName } from "@/lib/userNameFormatting";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  resolveEmpleadoNumero,
+  getNextEmpleadoNumero,
+  setStoredEmpleadoNumero,
+  syncAndAssignEmpleadoNumeros,
+} from "@/lib/empleadoNumero";
 
 export function formatProperName(text) {
   return formatPersonName(text);
@@ -120,6 +127,7 @@ export async function compressImage(file, maxWidth = 350, maxHeight = 350, quali
 }
 
 const emptyForm = {
+  numero_empleado: "",
   nombres: "",
   apellido_paterno: "",
   apellido_materno: "",
@@ -175,8 +183,12 @@ export default function Empleados() {
   const { user } = useAuth();
   const { canView, can } = usePermissions();
   const canAccess = canView("empleados");
-  const { sedeFilter, defaultSedeId } = useSedeScope();
+  const { sedeFilter, defaultSedeId, isSuperAdmin } = useSedeScope();
+  const userRole = (user?.role || "").toLowerCase();
+  const isAdmin = userRole === "admin" || userRole === "administrador" || userRole === "super administrador" || isSuperAdmin;
+
   const [items, setItems] = useState([]);
+  const [allEmployees, setAllEmployees] = useState([]);
   const [sedes, setSedes] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -195,6 +207,10 @@ export default function Empleados() {
   const [editMotivoEmpleado, setEditMotivoEmpleado] = useState(null);
   const [editMotivoText, setEditMotivoText] = useState("");
   const [savingMotivo, setSavingMotivo] = useState(false);
+  const [editNumeroEmpleado, setEditNumeroEmpleado] = useState(null);
+  const [newNumeroInput, setNewNumeroInput] = useState("");
+  const [savingNumero, setSavingNumero] = useState(false);
+  const [editNumeroError, setEditNumeroError] = useState("");
   const [sortField, setSortField] = useState("nombre_completo");
   const [sortDirection, setSortDirection] = useState("asc");
   const [serviceComboboxOpen, setServiceComboboxOpen] = useState(false);
@@ -237,17 +253,26 @@ export default function Empleados() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [sedeFilter]);
 
   async function load() {
     setLoading(true);
     try {
-      const [data, s, sv] = await Promise.all([
-        sercoApi.entities.Empleado.filter(sedeFilter, "-created_date"),
+      const [allEmps, s, sv] = await Promise.all([
+        sercoApi.entities.Empleado.list("-created_date").catch(() => []),
         sercoApi.entities.Sede.list(),
         sercoApi.entities.Servicio.filter(sedeFilter),
       ]);
-      setItems(data);
+      // Sincronizar y asignar números reales positivos a todos los empleados de la empresa (van de 1 en 1)
+      const syncedAll = syncAndAssignEmpleadoNumeros(allEmps || []);
+      setAllEmployees(syncedAll);
+
+      // Filtrar por sede seleccionada si aplica
+      const filteredBySede = sedeFilter?.sede_id
+        ? syncedAll.filter((e) => e.sede_id === sedeFilter.sede_id)
+        : syncedAll;
+
+      setItems(filteredBySede);
       setSedes(s);
       setServicios(sv);
     } finally {
@@ -257,11 +282,15 @@ export default function Empleados() {
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
-  const filtered = items.filter((item) =>
-    (item.nombre_completo || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.puesto || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.servicio_ubicacion || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = items.filter((item) => {
+    const s = search.toLowerCase().trim();
+    return (
+      (item.nombre_completo || "").toLowerCase().includes(s) ||
+      (item.puesto || "").toLowerCase().includes(s) ||
+      (item.servicio_ubicacion || "").toLowerCase().includes(s) ||
+      (item.numero_empleado ? String(item.numero_empleado) : "").includes(s)
+    );
+  });
 
   // Divide into Active and Bajas
   const activos = filtered.filter(item => !item.fecha_baja || (item.fecha_reingreso && item.fecha_reingreso >= item.fecha_baja));
@@ -290,6 +319,12 @@ export default function Empleados() {
 
       if (valA == null) valA = "";
       if (valB == null) valB = "";
+
+      if (sortField === "numero_empleado") {
+        const nA = Number(valA) || 0;
+        const nB = Number(valB) || 0;
+        return sortDirection === "asc" ? nA - nB : nB - nA;
+      }
 
       if (sortField === "sueldo") {
         return sortDirection === "asc" ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
@@ -338,6 +373,7 @@ export default function Empleados() {
   const exportToExcel = () => {
     const listToExport = activeTab === "activos" ? sortedActivos : sortedBajas;
     const headers = [
+      "No. Empleado",
       "Apellido Paterno",
       "Apellido Materno",
       "Nombre(s)",
@@ -396,6 +432,7 @@ export default function Empleados() {
       const parsed = parseExistingNombre(emp);
       const isActivo = !emp.fecha_baja || (emp.fecha_reingreso && emp.fecha_reingreso >= emp.fecha_baja);
       return [
+        emp.numero_empleado || "",
         emp.apellido_paterno || parsed.apellido_paterno || "",
         emp.apellido_materno || parsed.apellido_materno || "",
         emp.nombres || parsed.nombres || "",
@@ -473,7 +510,13 @@ export default function Empleados() {
     setPhotoPreview("");
     setPhotoBlob(null);
     setPhotoChanged(false);
-    setForm({ ...emptyForm, sede_id: defaultSedeId });
+    const pool = allEmployees.length > 0 ? allEmployees : items;
+    const autoNum = getNextEmpleadoNumero(pool);
+    setForm({ 
+      ...emptyForm, 
+      sede_id: defaultSedeId,
+      numero_empleado: autoNum,
+    });
     setServiceComboboxOpen(false);
     setModalOpen(true);
   }
@@ -484,9 +527,12 @@ export default function Empleados() {
     setPhotoBlob(null);
     setPhotoChanged(false);
     const parsed = parseExistingNombre(item);
+    const pool = allEmployees.length > 0 ? allEmployees : items;
+    const empNum = resolveEmpleadoNumero(item) || getNextEmpleadoNumero(pool, item.id);
     setForm({ 
       ...emptyForm, 
       ...item, 
+      numero_empleado: empNum,
       foto_url: item.foto_url || "",
       nombres: item.nombres || parsed.nombres || "",
       apellido_paterno: item.apellido_paterno || parsed.apellido_paterno || "",
@@ -509,6 +555,52 @@ export default function Empleados() {
     setSaveError("");
     setServiceComboboxOpen(false);
     setModalOpen(true);
+  }
+
+  function openEditNumero(emp) {
+    if (!isAdmin || !emp) return;
+    setEditNumeroEmpleado(emp);
+    const currentNum = resolveEmpleadoNumero(emp) || "";
+    setNewNumeroInput(String(currentNum));
+    setEditNumeroError("");
+  }
+
+  async function handleSaveNumero() {
+    if (!editNumeroEmpleado || !isAdmin) return;
+    const num = parseInt(newNumeroInput, 10);
+    if (isNaN(num) || num < 1) {
+      setEditNumeroError("Ingresa un número real positivo válido (mayor o igual a 1).");
+      return;
+    }
+    setSavingNumero(true);
+    setEditNumeroError("");
+    try {
+      setStoredEmpleadoNumero(editNumeroEmpleado.id, num);
+      try {
+        await sercoApi.entities.Empleado.update(editNumeroEmpleado.id, { numero_empleado: num });
+      } catch (e) {
+        console.warn("No se pudo actualizar columna numero_empleado en DB:", e?.message);
+      }
+
+      if (viewEmpleado?.id === editNumeroEmpleado.id) {
+        setViewEmpleado(prev => prev ? ({ ...prev, numero_empleado: num }) : null);
+      }
+
+      setItems(prev => prev.map(e => e.id === editNumeroEmpleado.id ? ({ ...e, numero_empleado: num }) : e));
+      setAllEmployees(prev => prev.map(e => e.id === editNumeroEmpleado.id ? ({ ...e, numero_empleado: num }) : e));
+
+      toast({
+        title: "Número actualizado",
+        description: `El número de empleado para ${formatUserDisplayName(editNumeroEmpleado.nombre_completo, user?.role)} se actualizó a #${num}.`,
+      });
+
+      setEditNumeroEmpleado(null);
+    } catch (err) {
+      console.error("Error guardando número:", err);
+      setEditNumeroError("Error al guardar el número de empleado.");
+    } finally {
+      setSavingNumero(false);
+    }
   }
 
 const getMissingFields = (emp) => {
@@ -651,8 +743,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         }
       }
 
+      const cleanNumeroEmpleado = form.numero_empleado != null && form.numero_empleado !== ""
+        ? Math.max(1, parseInt(form.numero_empleado, 10) || 1)
+        : null;
+
       const payload = {
         ...form,
+        numero_empleado: cleanNumeroEmpleado,
         nombres: cleanNombres,
         apellido_paterno: cleanPaterno,
         apellido_materno: cleanMaterno || null,
@@ -695,6 +792,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         if (cleanPayload.fecha_baja && !editing.fecha_baja) {
           cleanPayload.usuario_baja = currentUserName;
         }
+        if (cleanNumeroEmpleado) {
+          setStoredEmpleadoNumero(editing.id, cleanNumeroEmpleado);
+        }
         try {
           await sercoApi.entities.Empleado.update(editing.id, cleanPayload);
         } catch (err) {
@@ -706,6 +806,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             delete fallback.nombres;
             delete fallback.apellido_paterno;
             delete fallback.apellido_materno;
+            delete fallback.numero_empleado;
             await sercoApi.entities.Empleado.update(editing.id, fallback);
           } else {
             throw err;
@@ -716,8 +817,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         }
       } else {
         cleanPayload.usuario_alta = currentUserName;
+        let createdRecord = null;
         try {
-          await sercoApi.entities.Empleado.create(cleanPayload);
+          createdRecord = await sercoApi.entities.Empleado.create(cleanPayload);
         } catch (err) {
           if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
             // Remove optional audit or new columns if not present in older schemas
@@ -727,10 +829,14 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             delete fallback.nombres;
             delete fallback.apellido_paterno;
             delete fallback.apellido_materno;
-            await sercoApi.entities.Empleado.create(fallback);
+            delete fallback.numero_empleado;
+            createdRecord = await sercoApi.entities.Empleado.create(fallback);
           } else {
             throw err;
           }
+        }
+        if (createdRecord?.id && cleanNumeroEmpleado) {
+          setStoredEmpleadoNumero(createdRecord.id, cleanNumeroEmpleado);
         }
       }
 
@@ -1094,6 +1200,11 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground w-16" onClick={() => handleSort("numero_empleado")}>
+                    <div className="flex items-center gap-1">
+                      No. {renderSortIcon("numero_empleado")}
+                    </div>
+                  </TableHead>
                   <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("nombre_completo")}>
                     <div className="flex items-center gap-1.5">
                       Nombre {renderSortIcon("nombre_completo")}
@@ -1132,9 +1243,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedActivos.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
                 ) : (
                   sortedActivos.map((item) => (
                     <TableRow
@@ -1142,6 +1253,15 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                       onClick={() => setViewEmpleado(item)}
                     >
+                      <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
+                        {item.numero_empleado ? (
+                          <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border">
+                            #{item.numero_empleado}
+                          </Badge>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
                       <TableCell className="font-medium flex items-center gap-1.5">
                         {formatUserDisplayName(item.nombre_completo, user?.role)}
                         {hasPendingInfo(item) && (
@@ -1207,6 +1327,11 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="cursor-pointer select-none hover:text-foreground w-16" onClick={() => handleSort("numero_empleado")}>
+                    <div className="flex items-center gap-1">
+                      No. {renderSortIcon("numero_empleado")}
+                    </div>
+                  </TableHead>
                   <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("nombre_completo")}>
                     <div className="flex items-center gap-1.5">
                       Nombre {renderSortIcon("nombre_completo")}
@@ -1232,9 +1357,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedBajas.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
                 ) : (
                   sortedBajas.map((item) => {
                     const est = getFiniquitoEstimation(item.fecha_ingreso, item.fecha_baja, item.sueldo);
@@ -1244,7 +1369,16 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                         onClick={() => setViewEmpleado(item)}
                       >
-                                                <TableCell className="font-medium">{formatUserDisplayName(item.nombre_completo, user?.role)}</TableCell>
+                        <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
+                          {item.numero_empleado ? (
+                            <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border">
+                              #{item.numero_empleado}
+                            </Badge>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium">{formatUserDisplayName(item.nombre_completo, user?.role)}</TableCell>
                         <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                         <TableCell>{item.fecha_ingreso || "—"}</TableCell>
                         <TableCell className="text-destructive font-semibold">{item.fecha_baja || "—"}</TableCell>
@@ -1921,6 +2055,61 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
+              {/* NÚMERO DE EMPLEADO */}
+              <div className="sm:col-span-2 p-3 bg-muted/40 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="numero_empleado" className="font-semibold text-sm">
+                      Número de Empleado
+                    </Label>
+                    <Badge variant={isAdmin ? "default" : "secondary"} className={`text-[10px] font-bold ${isAdmin ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>
+                      {isAdmin ? "Editable por Admin" : "Automático"}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {isAdmin
+                      ? "Número real positivo consecutivo (van de 1 en 1). Como Administrador puedes modificarlo libremente."
+                      : "Número real positivo consecutivo generado automáticamente por el sistema (van de 1 en 1)."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Input
+                    id="numero_empleado"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="Ej. 1"
+                    disabled={!isAdmin}
+                    className={`w-28 font-mono font-bold text-center bg-background text-base h-9 ${!isAdmin ? "opacity-75 cursor-not-allowed" : ""}`}
+                    value={form.numero_empleado ?? ""}
+                    onChange={(e) => {
+                      if (!isAdmin) return;
+                      const val = e.target.value;
+                      setForm({
+                        ...form,
+                        numero_empleado: val === "" ? "" : Math.max(1, parseInt(val, 10) || 1),
+                      });
+                    }}
+                  />
+                  {isAdmin && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs shrink-0 h-9"
+                      onClick={() => {
+                        const pool = allEmployees.length > 0 ? allEmployees : items;
+                        const autoNum = getNextEmpleadoNumero(pool, editing?.id);
+                        setForm({ ...form, numero_empleado: autoNum });
+                      }}
+                      title="Generar el siguiente número positivo disponible (secuencia de 1 en 1)"
+                    >
+                      Autogenerar
+                    </Button>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <Label>Puesto</Label>
                 <Input
@@ -2322,8 +2511,24 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
 
             <DialogHeader>
-              <DialogTitle>
-                              {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role)}
+              <DialogTitle className="flex items-center gap-2">
+                <span>{formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role)}</span>
+                {viewEmpleado?.numero_empleado && (
+                  <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border text-sm">
+                    #{viewEmpleado.numero_empleado}
+                  </Badge>
+                )}
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-primary border-primary/30 hover:bg-primary/10"
+                    onClick={() => openEditNumero(viewEmpleado)}
+                    title="Editar número de empleado"
+                  >
+                    <Pencil className="w-3 h-3 mr-1" /> Editar No.
+                  </Button>
+                )}
               </DialogTitle>
 
               <DialogDescription>
@@ -2341,9 +2546,29 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       <div className="grid grid-cols-2 gap-4 mt-3">
 
         <div>
+          <Label>No. Empleado</Label>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm font-bold text-primary font-mono">
+              {viewEmpleado?.numero_empleado ? `#${viewEmpleado.numero_empleado}` : "—"}
+            </p>
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-xs text-primary hover:bg-primary/10"
+                onClick={() => openEditNumero(viewEmpleado)}
+                title="Editar número de empleado"
+              >
+                <Pencil className="w-3 h-3 mr-1" /> Editar
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div>
           <Label>Nombre</Label>
           <p className="text-sm text-muted-foreground">
-                      {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role) || "—"}
+            {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role) || "—"}
           </p>
         </div>
 
@@ -2933,6 +3158,96 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             </Button>
             <Button onClick={handleSaveMotivo} disabled={savingMotivo}>
               {savingMotivo ? "Guardando..." : "Guardar Cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Numero Empleado Dialog (Admin Only) */}
+      <Dialog open={!!editNumeroEmpleado} onOpenChange={(v) => !v && setEditNumeroEmpleado(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <Pencil className="w-4 h-4 text-primary" /> Editar Número de Empleado
+            </DialogTitle>
+            <DialogDescription>
+              Modificar el número asignado a <strong className="text-foreground">{formatUserDisplayName(editNumeroEmpleado?.nombre_completo, user?.role)}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="input-new-numero-emp" className="text-sm font-semibold">
+                Número de Empleado (Entero positivo)
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="input-new-numero-emp"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Ej. 1"
+                  className="font-mono font-bold text-center text-lg h-10 w-32"
+                  value={newNumeroInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewNumeroInput(val === "" ? "" : String(Math.max(1, parseInt(val, 10) || 1)));
+                  }}
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 text-xs shrink-0"
+                  onClick={() => {
+                    const pool = allEmployees.length > 0 ? allEmployees : items;
+                    const nextNum = getNextEmpleadoNumero(pool, editNumeroEmpleado?.id);
+                    setNewNumeroInput(String(nextNum));
+                  }}
+                  title="Asignar el siguiente consecutivo disponible"
+                >
+                  Siguiente Consecutivo
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Recuerda que por regla del sistema los empleados se registran consecutivamente de 1 en 1.
+              </p>
+            </div>
+
+            {(() => {
+              const currentVal = parseInt(newNumeroInput, 10);
+              if (!currentVal || isNaN(currentVal)) return null;
+              const pool = allEmployees.length > 0 ? allEmployees : items;
+              const conflict = pool.find(
+                (e) => e.id !== editNumeroEmpleado?.id && resolveEmpleadoNumero(e) === currentVal
+              );
+              if (conflict) {
+                return (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      Aviso: El número <strong>#{currentVal}</strong> ya está asignado a <strong>{conflict.nombre_completo}</strong>.
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {editNumeroError && (
+              <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+                {editNumeroError}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditNumeroEmpleado(null)} disabled={savingNumero}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveNumero} disabled={savingNumero || !newNumeroInput}>
+              {savingNumero ? "Guardando..." : "Guardar Número"}
             </Button>
           </DialogFooter>
         </DialogContent>
