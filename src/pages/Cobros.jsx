@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, Clock4, FileText, ChevronLeft, ChevronRight, CreditCard, Banknote, CalendarDays } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -81,6 +81,23 @@ export function setServicioCobroConfig(servicioId, cfg) {
   }
 }
 
+function getParteNombre(frecuencia, index) {
+  if (frecuencia === "semanal") return index === 4 ? "Cierre" : `Semana ${index + 1}`;
+  if (frecuencia === "quincenal") return `Quincena ${index + 1}`;
+  return index === 0 ? "Mensual" : `Parte ${index + 1}`;
+}
+
+function getPartePeriodo(frecuencia, index, mes) {
+  if (!mes || frecuencia === "mensual") return null;
+  const diasMes = getDiasMesFactura(mes);
+  if (frecuencia === "semanal") {
+    if (index < 4) return `Días ${index * 7 + 1} al ${(index + 1) * 7}`;
+    return `Días 29 al ${diasMes}`;
+  }
+  if (index === 0) return "Días 1 al 15";
+  return `Días 16 al ${diasMes}`;
+}
+
 export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, calcularIva, frecuencia }) {
   const monto = Number(montoBase) || 0;
   const cDia = Number(costoDia) || (diasMes > 0 ? monto / diasMes : 0);
@@ -102,8 +119,8 @@ export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, ca
         iva,
         tipo: "quincenal",
         detalles: [
-          { id: "q1", nombre: `1ª Quincena (Días 1 al ${diasQ1} • ${diasQ1} días)`, monto: q1 },
-          { id: "q2", nombre: `2ª Quincena (Días 16 al cierre • ${diasQ2} días)`, monto: q2 },
+          { id: "q1", nombre: "Quincena 1", monto: q1 },
+          { id: "q2", nombre: "Quincena 2", monto: q2 },
         ],
       };
     } else {
@@ -114,8 +131,8 @@ export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, ca
         iva,
         tipo: "quincenal",
         detalles: [
-          { id: "q1", nombre: "1ª Quincena (50%)", monto: q1 },
-          { id: "q2", nombre: "2ª Quincena (50%)", monto: q2 },
+          { id: "q1", nombre: "Quincena 1", monto: q1 },
+          { id: "q2", nombre: "Quincena 2", monto: q2 },
         ],
       };
     }
@@ -128,15 +145,15 @@ export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, ca
       const montoRemanente = total - (cuotaSemana * 4);
 
       const detalles = [
-        { id: "w1", nombre: "Semana 1 (7 días)", monto: cuotaSemana },
-        { id: "w2", nombre: "Semana 2 (7 días)", monto: cuotaSemana },
-        { id: "w3", nombre: "Semana 3 (7 días)", monto: cuotaSemana },
-        { id: "w4", nombre: "Semana 4 (7 días)", monto: cuotaSemana },
+        { id: "w1", nombre: "Semana 1", monto: cuotaSemana },
+        { id: "w2", nombre: "Semana 2", monto: cuotaSemana },
+        { id: "w3", nombre: "Semana 3", monto: cuotaSemana },
+        { id: "w4", nombre: "Semana 4", monto: cuotaSemana },
       ];
       if (diasSobrantes > 0 && montoRemanente > 0) {
         detalles.push({
           id: "w5",
-          nombre: `Cierre (${diasSobrantes} días restantes)`,
+          nombre: "Cierre",
           monto: montoRemanente,
         });
       }
@@ -154,10 +171,10 @@ export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, ca
         iva,
         tipo: "semanal",
         detalles: [
-          { id: "w1", nombre: "Semana 1 (25%)", monto: cuota },
-          { id: "w2", nombre: "Semana 2 (25%)", monto: cuota },
-          { id: "w3", nombre: "Semana 3 (25%)", monto: cuota },
-          { id: "w4", nombre: "Semana 4 (Ajuste)", monto: c4 },
+          { id: "w1", nombre: "Semana 1", monto: cuota },
+          { id: "w2", nombre: "Semana 2", monto: cuota },
+          { id: "w3", nombre: "Semana 3", monto: cuota },
+          { id: "w4", nombre: "Semana 4", monto: c4 },
         ],
       };
     }
@@ -213,7 +230,13 @@ export function getCobroPartesInfo(cobro, meta = null) {
     frecuencia,
   });
 
-  const partes = plan.detalles || [];
+  const partes = Array.isArray(m?.partes_personalizadas) && m.partes_personalizadas.length > 0
+    ? m.partes_personalizadas.map((parte, index) => ({
+        id: parte.id || `custom-${index + 1}`,
+        nombre: getParteNombre(frecuencia, index),
+        monto: Number(parte.monto) || 0,
+      }))
+    : (plan.detalles || []);
   const totalPartes = partes.length;
 
   let partesPagadas = Array.isArray(m?.partes_pagadas) ? [...m.partes_pagadas] : [];
@@ -366,6 +389,7 @@ export default function Cobros() {
   const [saving, setSaving] = useState(false);
   const [kpiMode, setKpiMode] = useState("total");
   const [deleteId, setDeleteId] = useState(null);
+  const [excludeId, setExcludeId] = useState(null);
 
   // Estado del modal de registro de pago (abono parcial o pago completo)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -475,7 +499,7 @@ export default function Cobros() {
         nextCobros = await sercoApi.entities.Cobro.filter(cobroQuery, "-created_date");
       }
 
-      setItems(nextCobros);
+      setItems(nextCobros.filter((c) => !getCobroMeta(c.id)?.excluida));
       setServicios(allServicios);
       setSedes(allSedes);
     } catch (e) {
@@ -508,7 +532,7 @@ export default function Cobros() {
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
-  const monthlyItems = items.filter((item) => item.mes === currentMonth);
+  const monthlyItems = items.filter((item) => item.mes === currentMonth && !getCobroMeta(item.id)?.excluida);
 
   const filtered = monthlyItems.filter((item) => {
     const txt = search.toLowerCase();
@@ -533,6 +557,7 @@ export default function Cobros() {
       frecuencia_pago: "mensual",
       partes_pagadas: [],
       fechas_partes: {},
+      partes_personalizadas: null,
     });
     setModalOpen(true);
   }
@@ -560,6 +585,7 @@ export default function Cobros() {
       frecuencia_pago: frecuenciaPago,
       partes_pagadas: info.partesPagadas,
       fechas_partes: info.fechasPartes,
+      partes_personalizadas: Array.isArray(meta.partes_personalizadas) ? info.partes : null,
       estado: info.estadoEfectivo,
     });
 
@@ -682,6 +708,69 @@ export default function Cobros() {
     }
   };
 
+  async function handleExclude() {
+    if (!excludeId) return;
+    const meta = getCobroMeta(excludeId) || {};
+    setCobroMeta(excludeId, { ...meta, excluida: true });
+    setExcludeId(null);
+    setModalOpen(false);
+    setEditing(null);
+    await load();
+  }
+
+  function getFormPlan() {
+    const diasMes = getDiasMesFactura(form.mes || currentMonth);
+    return calcularPlanPagos({
+      montoBase: Number(form.monto) || 0,
+      costoDia: form.costo_dia,
+      esVariable: form.es_variable,
+      diasMes,
+      calcularIva: form.calcular_iva,
+      frecuencia: form.frecuencia_pago,
+    });
+  }
+
+  function getEditableParts() {
+    return form.partes_personalizadas || getFormPlan().detalles;
+  }
+
+  function enableCustomParts() {
+    if (!form.partes_personalizadas) {
+      setForm({ ...form, partes_personalizadas: getFormPlan().detalles.map((part) => ({ ...part })) });
+    }
+  }
+
+  function updateCustomPart(partId, value) {
+    const parts = getEditableParts().map((part) => (
+      part.id === partId ? { ...part, monto: value } : part
+    ));
+    setForm({ ...form, partes_personalizadas: parts });
+  }
+
+  function addCustomPart() {
+    const parts = getEditableParts();
+    setForm({
+      ...form,
+      partes_personalizadas: [
+        ...parts,
+        { id: `custom-${Date.now()}`, nombre: getParteNombre(form.frecuencia_pago, parts.length), monto: 0 },
+      ],
+    });
+  }
+
+  function removeCustomPart(partId) {
+    const parts = getEditableParts().filter((part) => part.id !== partId);
+    const paidParts = (form.partes_pagadas || []).filter((id) => id !== partId);
+    const dates = { ...(form.fechas_partes || {}) };
+    delete dates[partId];
+    setForm({
+      ...form,
+      partes_personalizadas: parts,
+      partes_pagadas: paidParts,
+      fechas_partes: dates,
+    });
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -700,12 +789,24 @@ export default function Cobros() {
         frecuencia: form.frecuencia_pago,
       });
 
+      const partesActuales = form.partes_personalizadas || planActual.detalles;
+      const totalDistribuido = partesActuales.reduce((total, parte) => total + (Number(parte.monto) || 0), 0);
+      if (form.partes_personalizadas && totalDistribuido !== planActual.total) {
+        toast({
+          title: "Distribución incompleta",
+          description: `Las partes deben sumar exactamente $${planActual.total.toLocaleString("es-MX")}.`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const checkedParts = form.partes_pagadas || [];
       let finalEstado = form.estado;
-      if (form.frecuencia_pago !== "mensual") {
+      if (form.partes_personalizadas || form.frecuencia_pago !== "mensual") {
         if (checkedParts.length === 0) {
           finalEstado = form.estado === "vencido" ? "vencido" : "pendiente";
-        } else if (checkedParts.length === planActual.detalles.length) {
+        } else if (checkedParts.length === partesActuales.length) {
           finalEstado = "pagado";
         } else {
           finalEstado = "parcial";
@@ -750,6 +851,7 @@ export default function Cobros() {
           frecuencia_pago: form.frecuencia_pago,
           partes_pagadas: checkedParts,
           fechas_partes: form.fechas_partes || {},
+          partes_personalizadas: form.partes_personalizadas || undefined,
         });
 
         try {
@@ -774,6 +876,7 @@ export default function Cobros() {
                   cMonto = Math.round(Number(form.costo_dia) * cDias);
                 }
                 setCobroMeta(c.id, {
+                  ...getCobroMeta(c.id),
                   es_variable: form.es_variable,
                   costo_dia: form.costo_dia,
                   metodo_pago: form.metodo_pago,
@@ -815,6 +918,7 @@ export default function Cobros() {
             frecuencia_pago: form.frecuencia_pago,
             partes_pagadas: checkedParts,
             fechas_partes: form.fechas_partes || {},
+            partes_personalizadas: form.partes_personalizadas || undefined,
           });
         }
         toast({ title: "Factura creada con éxito" });
@@ -916,6 +1020,13 @@ export default function Cobros() {
     pendienteTotal += info.pendienteTotal;
   });
 
+  const distributionTotal = form.partes_personalizadas
+    ? form.partes_personalizadas.reduce((total, part) => total + (Number(part.monto) || 0), 0)
+    : getFormPlan().total;
+  const distributionIsInvalid = Boolean(
+    form.partes_personalizadas && distributionTotal !== getFormPlan().total
+  );
+
   return (
     <div className="space-y-4">
 
@@ -983,12 +1094,6 @@ export default function Cobros() {
               className="pl-9 w-full sm:w-64"
             />
           </div>
-          {(can("cobros", "create") || can("cobros", "edit")) && (
-            <Button onClick={openCreate} className="gap-2 shrink-0">
-              <Plus className="w-4 h-4" />
-              Nueva Factura
-            </Button>
-          )}
         </div>
       </div>
 
@@ -1075,6 +1180,7 @@ export default function Cobros() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
+                      <div className="flex justify-end items-center gap-1">
                       {!info.isFullPaid ? (
                         <Button
                           size="sm"
@@ -1107,6 +1213,7 @@ export default function Cobros() {
                           Pagos
                         </Button>
                       )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -1175,7 +1282,7 @@ export default function Cobros() {
                       const newMes = e.target.value;
                       const dias = getDiasMesFactura(newMes);
                       let newMonto = form.monto;
-                      if (form.es_variable && form.costo_dia) {
+                      if (!form.partes_personalizadas && form.es_variable && form.costo_dia) {
                         newMonto = Math.round(Number(form.costo_dia) * dias);
                       }
                       setForm({ ...form, mes: newMes, monto: newMonto });
@@ -1211,7 +1318,7 @@ export default function Cobros() {
                     onCheckedChange={(checked) => {
                       const dias = getDiasMesFactura(form.mes || currentMonth);
                       let newMonto = form.monto;
-                      if (checked && form.costo_dia) {
+                      if (checked && !form.partes_personalizadas && form.costo_dia) {
                         newMonto = Math.round(Number(form.costo_dia) * dias);
                       }
                       setForm({ ...form, es_variable: checked, monto: newMonto });
@@ -1249,7 +1356,7 @@ export default function Cobros() {
                         setForm({
                           ...form,
                           costo_dia: val,
-                          monto: calcMonto,
+                          monto: form.partes_personalizadas ? form.monto : calcMonto,
                         });
                       }}
                     />
@@ -1308,6 +1415,7 @@ export default function Cobros() {
                         frecuencia_pago: val,
                         partes_pagadas: [],
                         fechas_partes: {},
+                        partes_personalizadas: null,
                         estado: form.estado === "pagado" ? "pendiente" : form.estado,
                       });
                     }
@@ -1380,90 +1488,103 @@ export default function Cobros() {
                     </div>
                   </div>
 
-                  {/* Tarjeta de desglose Quincenal / Semanal con control de cuotas */}
-                  {form.frecuencia_pago !== "mensual" && (
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase">
-                          <CalendarDays className="w-3.5 h-3.5" />
-                          Desglose y Control de Cuotas ({form.frecuencia_pago})
-                        </span>
-                        <Badge variant="outline" className="text-[10px] bg-background font-semibold">
-                          Cubiertas: {form.partes_pagadas?.length || 0} de {plan.detalles.length}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Marca qué partes han sido pagadas y especifica su fecha de pago correspondiente:
-                      </p>
-                      <div className="space-y-2">
-                        {plan.detalles.map((d) => {
-                          const isPaid = (form.partes_pagadas || []).includes(d.id);
-                          return (
-                            <div
-                              key={d.id}
-                              className={cn(
-                                "flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-background border shadow-xs gap-2 transition-colors",
-                                isPaid && "bg-emerald-50/60 border-emerald-300 dark:bg-emerald-950/20"
-                              )}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <Checkbox
-                                  id={`edit-part-${d.id}`}
-                                  checked={isPaid}
-                                  onCheckedChange={(checked) => {
-                                    const cur = form.partes_pagadas || [];
-                                    const nextParts = checked ? [...cur, d.id] : cur.filter((id) => id !== d.id);
-                                    const nextFechas = { ...(form.fechas_partes || {}) };
-                                    if (checked && !nextFechas[d.id]) {
-                                      nextFechas[d.id] = new Date().toISOString().slice(0, 10);
-                                    }
-                                    let nextEstado = "pendiente";
-                                    if (nextParts.length === plan.detalles.length) {
-                                      nextEstado = "pagado";
-                                    } else if (nextParts.length > 0) {
-                                      nextEstado = "parcial";
-                                    }
-                                    setForm({
-                                      ...form,
-                                      partes_pagadas: nextParts,
-                                      fechas_partes: nextFechas,
-                                      estado: nextEstado,
-                                    });
-                                  }}
-                                />
-                                <div>
-                                  <label htmlFor={`edit-part-${d.id}`} className="font-semibold text-xs cursor-pointer block text-slate-800">
-                                    {d.nombre}
-                                  </label>
-                                  <span className="font-bold text-slate-700 text-xs">${d.monto.toLocaleString("es-MX")}</span>
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2.5">
+                    {(() => {
+                      const parts = form.partes_personalizadas || plan.detalles;
+                      const totalDistributed = parts.reduce((total, part) => total + (Number(part.monto) || 0), 0);
+                      const distributionDifference = totalDistributed - plan.total;
+                      const formattedDifference = `${distributionDifference > 0 ? "+" : distributionDifference < 0 ? "-" : ""}$${Math.abs(distributionDifference).toLocaleString("es-MX")}`;
+                      return (
+                        <>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase">
+                              <CalendarDays className="w-3.5 h-3.5" />
+                              Distribución de pagos
+                            </span>
+                            <Badge variant="outline" className="text-[10px] bg-background font-semibold">
+                              Cubiertas: {form.partes_pagadas?.length || 0} de {parts.length}
+                            </Badge>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            La distribución automática se conserva por defecto. Puedes personalizar esta factura sin cambiar otros meses.
+                          </p>
+                          <div className="grid grid-cols-[1fr_7rem_2rem_2rem] gap-2 px-2 text-[10px] font-semibold uppercase text-muted-foreground">
+                            <span>Parte</span><span>Monto</span><span>Pagada</span><span />
+                          </div>
+                          <div className="space-y-2">
+                            {parts.map((part, index) => {
+                              const isPaid = (form.partes_pagadas || []).includes(part.id);
+                              const periodo = getPartePeriodo(form.frecuencia_pago, index, form.mes);
+                              return (
+                                <div key={part.id} className={cn("rounded bg-background border p-2 space-y-2", isPaid && "bg-emerald-50/60 border-emerald-300 dark:bg-emerald-950/20")}>
+                                  <div className="grid grid-cols-[1fr_7rem_2rem_2rem] items-center gap-2">
+                                    <div>
+                                      <span className="text-xs font-semibold text-slate-800 block">{part.nombre}</span>
+                                      {periodo && <span className="text-[10px] text-muted-foreground">{periodo}</span>}
+                                    </div>
+                                    {form.partes_personalizadas ? (
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        value={part.monto}
+                                        className="h-8 text-xs"
+                                        onChange={(e) => updateCustomPart(part.id, e.target.value)}
+                                      />
+                                    ) : (
+                                      <span className="text-xs font-bold text-slate-700">${Number(part.monto).toLocaleString("es-MX")}</span>
+                                    )}
+                                    <Checkbox
+                                      id={`edit-part-${part.id}`}
+                                      checked={isPaid}
+                                      onCheckedChange={(checked) => {
+                                        const nextParts = checked
+                                          ? [...new Set([...(form.partes_pagadas || []), part.id])]
+                                          : (form.partes_pagadas || []).filter((id) => id !== part.id);
+                                        const nextFechas = { ...(form.fechas_partes || {}) };
+                                        if (checked && !nextFechas[part.id]) nextFechas[part.id] = new Date().toISOString().slice(0, 10);
+                                        const nextEstado = nextParts.length === parts.length ? "pagado" : nextParts.length > 0 ? "parcial" : "pendiente";
+                                        setForm({ ...form, partes_pagadas: nextParts, fechas_partes: nextFechas, estado: nextEstado });
+                                      }}
+                                    />
+                                    {form.partes_personalizadas ? (
+                                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeCustomPart(part.id)}>
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    ) : <span />}
+                                  </div>
+                                  <div className="flex items-center gap-2 pl-1">
+                                    <Label htmlFor={`date-part-${part.id}`} className="text-[10px] text-muted-foreground whitespace-nowrap">Fecha de la parte</Label>
+                                    <Input
+                                      id={`date-part-${part.id}`}
+                                      type="date"
+                                      className="h-7 text-xs w-36 bg-background"
+                                      value={form.fechas_partes?.[part.id] || ""}
+                                      onChange={(e) => setForm({ ...form, fechas_partes: { ...(form.fechas_partes || {}), [part.id]: e.target.value } })}
+                                    />
+                                  </div>
                                 </div>
-                              </div>
-                              {isPaid && (
-                                <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                                  <span className="text-[10px] text-muted-foreground font-medium">Fecha pago:</span>
-                                  <Input
-                                    type="date"
-                                    className="h-7 text-xs w-32 bg-background"
-                                    value={form.fechas_partes?.[d.id] || ""}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setForm({
-                                        ...form,
-                                        fechas_partes: {
-                                          ...(form.fechas_partes || {}),
-                                          [d.id]: val,
-                                        },
-                                      });
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                              );
+                            })}
+                          </div>
+                          {!form.partes_personalizadas && (
+                            <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={enableCustomParts}>
+                              <Pencil className="h-3.5 w-3.5" /> Editar distribución
+                            </Button>
+                          )}
+                          {form.partes_personalizadas && (
+                            <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={addCustomPart}>
+                              <Plus className="h-3.5 w-3.5" /> Agregar parte
+                            </Button>
+                          )}
+                          <div className="grid grid-cols-3 gap-2 border-t pt-2 text-xs">
+                            <div><span className="text-muted-foreground">Total factura</span><p className="font-bold">${plan.total.toLocaleString("es-MX")}</p></div>
+                            <div><span className="text-muted-foreground">Total distribuido</span><p className="font-bold">${totalDistributed.toLocaleString("es-MX")}</p></div>
+                            <div><span className="text-muted-foreground">Diferencia</span><p className={cn("font-bold", distributionDifference !== 0 ? "text-amber-600" : "text-emerald-600")}>{formattedDifference}</p></div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               );
             })()}
@@ -1531,8 +1652,18 @@ export default function Cobros() {
           </div>
 
           <DialogFooter>
+            {editing && can("cobros", "edit") && (
+              <Button
+                variant="ghost"
+                className="mr-auto text-muted-foreground hover:text-foreground"
+                onClick={() => setExcludeId(editing.id)}
+              >
+                <EyeOff className="w-4 h-4 mr-1.5" />
+                Excluir
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={handleSave} disabled={saving || distributionIsInvalid}>
               {saving ? "Guardando..." : "Guardar"}
             </Button>
           </DialogFooter>
@@ -1590,7 +1721,9 @@ export default function Cobros() {
 
               {/* Lista interactiva de cuotas */}
               <div className="space-y-2.5">
-                {paymentParts.map((part) => (
+                {paymentParts.map((part, index) => {
+                  const periodo = getPartePeriodo(paymentMeta?.frecuencia_pago, index, paymentCobro?.mes);
+                  return (
                   <div
                     key={part.id}
                     className={cn(
@@ -1621,6 +1754,7 @@ export default function Cobros() {
                           className="text-sm font-semibold cursor-pointer select-none text-slate-800"
                         >
                           {part.nombre}
+                          {periodo && <span className="block text-[10px] font-normal text-muted-foreground">{periodo}</span>}
                         </label>
                       </div>
                       <span className="font-bold text-sm text-slate-800">
@@ -1647,7 +1781,8 @@ export default function Cobros() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Estado resultante de la factura */}
@@ -1693,6 +1828,16 @@ export default function Cobros() {
         title="¿Eliminar factura?"
         description="Esta acción no se puede deshacer."
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={!!excludeId}
+        onOpenChange={(open) => !open && setExcludeId(null)}
+        title="¿Excluir factura?"
+        description="La factura dejará de mostrarse en este módulo, pero el servicio y sus facturas de otros meses permanecerán intactos."
+        confirmLabel="Excluir"
+        loadingLabel="Excluyendo..."
+        onConfirm={handleExclude}
       />
     </div>
   );
