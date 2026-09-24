@@ -393,13 +393,13 @@ export default function Overview() {
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <Smartphone className="w-3.5 h-3.5" /> Saldos (Celulares)
+                <Smartphone className="w-3.5 h-3.5" /> Celulares
               </span>
               <span className="font-semibold text-slate-700">${loading ? "—" : totalSaldos.toLocaleString("es-MX")}</span>
             </div>
             <div className="flex justify-between items-center border-b pb-2">
               <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <Car className="w-3.5 h-3.5" /> Mantenimiento (Carros)
+                <Car className="w-3.5 h-3.5" /> Automóviles
               </span>
               <span className="font-semibold text-slate-700">${loading ? "—" : totalMantenimientos.toLocaleString("es-MX")}</span>
             </div>

@@ -13,6 +13,7 @@ const tableMap = {
   Documento: 'documentos',
   Asistencia: 'asistencias',
   Egreso: 'egresos',
+  EgresoPago: 'egreso_pagos',
   Comunicado: 'comunicados',
   Nominas: 'nominas',
   Vacante: 'vacantes',
@@ -20,7 +21,10 @@ const tableMap = {
   Rondin: 'rondines',
   ReporteSupervision: 'reportes_supervision',
   Saldo: 'saldos',
+  RecargaCelular: 'recargas_celular',
   Mantenimiento: 'mantenimientos',
+  Gasolina: 'gasolina',
+  Automovil: 'automoviles',
   Agenda: 'agenda'
 };
 
@@ -233,11 +237,14 @@ class EntityService {
   }
 }
 
+/** @type {Record<string, EntityService>} */
+const entities = Object.keys(tableMap).reduce((acc, key) => {
+  acc[key] = new EntityService(key);
+  return acc;
+}, {});
+
 export const sercoApi = {
-  entities: Object.keys(tableMap).reduce((acc, key) => {
-    acc[key] = new EntityService(key);
-    return acc;
-  }, {}),
+  entities,
 
   users: {
     async inviteUser(email, role) {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Search, ChevronLeft, ChevronRight, Smartphone, Car } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Smartphone, Car, Fuel } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -23,18 +23,18 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { useToast } from "@/components/ui/use-toast";
 
-const emptyEgresoForm = { concepto: "", descripcion: "", monto: "", fecha: "", sede_id: "" };
+const emptyEgresoForm = { concepto: "", descripcion: "", monto: "", fecha: "", dia_vencimiento: "", mensual: false, estado: "pendiente", sede_id: "" };
 const emptySaldoForm = {
   numero_telefono: "",
   nombre: "",
-  responsable: "",
   servicio: "",
   compania: "Telcel",
-  monto: "50",
-  fecha: "",
+  saldo_actual: "0",
   sede_id: "",
 };
-const emptyMantenimientoForm = { vehiculo: "", tipo_mantenimiento: "", descripcion: "", monto: "", fecha: "", kilometraje: "", sede_id: "", taller: "" };
+const emptyMantenimientoForm = { automovil_id: "", vehiculo: "", tipo_mantenimiento: "", descripcion: "", monto: "", fecha: "", kilometraje: "", sede_id: "", taller: "" };
+const emptyGasolinaForm = { automovil_id: "", vehiculo: "", fecha: "", litros: "", precio_litro: "", monto: "", kilometraje: "", gasolinera: "", sede_id: "" };
+const emptyAutomovilForm = { nombre: "", marca: "", modelo: "", anio: "", placas: "", numero_economico: "", sede_id: "" };
 
 function parseSaldoMetadata(saldo) {
   let compania = saldo.compania || "";
@@ -68,6 +68,7 @@ export default function Egresos() {
   const { canView, can } = usePermissions();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("egresos");
+  const [automovilTab, setAutomovilTab] = useState("vehiculos");
 
   // Egresos state
   const [items, setItems] = useState([]);
@@ -90,6 +91,11 @@ export default function Egresos() {
   const [saldoForm, setSaldoForm] = useState(emptySaldoForm);
   const [saldoSaving, setSaldoSaving] = useState(false);
   const [saldoDeleteId, setSaldoDeleteId] = useState(null);
+  const [recargas, setRecargas] = useState([]);
+  const [recargaModalOpen, setRecargaModalOpen] = useState(false);
+  const [recargaEditing, setRecargaEditing] = useState(null);
+  const [recargaForm, setRecargaForm] = useState({ monto: "50", fecha: "" });
+  const [recargaSaving, setRecargaSaving] = useState(false);
 
   // Mantenimiento state
   const [mantenimientos, setMantenimientos] = useState([]);
@@ -101,6 +107,26 @@ export default function Egresos() {
   const [mantenimientoSaving, setMantenimientoSaving] = useState(false);
   const [mantenimientoDeleteId, setMantenimientoDeleteId] = useState(null);
 
+  // Gasolina state
+  const [gasolinas, setGasolinas] = useState([]);
+  const [gasolinaLoading, setGasolinaLoading] = useState(true);
+  const [gasolinaSearch, setGasolinaSearch] = useState("");
+  const [gasolinaModalOpen, setGasolinaModalOpen] = useState(false);
+  const [gasolinaEditing, setGasolinaEditing] = useState(null);
+  const [gasolinaForm, setGasolinaForm] = useState(emptyGasolinaForm);
+  const [gasolinaSaving, setGasolinaSaving] = useState(false);
+  const [gasolinaDeleteId, setGasolinaDeleteId] = useState(null);
+
+  // Automoviles state
+  const [automoviles, setAutomoviles] = useState([]);
+  const [automovilLoading, setAutomovilLoading] = useState(true);
+  const [automovilSearch, setAutomovilSearch] = useState("");
+  const [automovilModalOpen, setAutomovilModalOpen] = useState(false);
+  const [automovilEditing, setAutomovilEditing] = useState(null);
+  const [automovilForm, setAutomovilForm] = useState(emptyAutomovilForm);
+  const [automovilSaving, setAutomovilSaving] = useState(false);
+  const [automovilDeleteId, setAutomovilDeleteId] = useState(null);
+
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -111,17 +137,24 @@ export default function Egresos() {
     loadEgresos();
     loadSaldos();
     loadMantenimientos();
-  }, [currentMonth]);
+    loadGasolina();
+    loadAutomoviles();
+  }, [currentMonth, sedeFilter]);
 
   // ── Egresos ──
   async function loadEgresos() {
     setLoading(true);
     try {
       const [data, s] = await Promise.all([
-        sercoApi.entities.Egreso.filter({ ...sedeFilter, mes: currentMonth }, "-fecha"),
+        sercoApi.entities.Egreso.filter(sedeFilter, "-fecha"),
         sercoApi.entities.Sede.list(),
       ]);
-      setItems(data);
+      setItems((data || [])
+        .filter((item) => item.mensual === true || item.mes === currentMonth)
+        .map((item) => ({
+          ...item,
+          fecha: item.mensual ? `${currentMonth}-${String(item.dia_vencimiento || item.fecha?.slice(8, 10) || 1).padStart(2, "0")}` : item.fecha,
+        })));
       setSedes(s);
     } catch (e) {
       console.error(e);
@@ -136,15 +169,52 @@ export default function Egresos() {
     setSaldoLoading(true);
     try {
       const [data, sv] = await Promise.all([
-        sercoApi.entities.Saldo.filter({ ...sedeFilter, mes: currentMonth }, "-fecha").catch(() => []),
+        sercoApi.entities.Saldo.filter(sedeFilter, "-created_date").catch(() => []),
         sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
       ]);
       setSaldos(data || []);
+      let rechargeData = null;
+      if (sercoApi.entities.RecargaCelular) {
+        rechargeData = await sercoApi.entities.RecargaCelular
+          .filter({ saldo_id: { $in: (data || []).map((saldo) => saldo.id) } })
+          .catch(() => null);
+      }
+      setRecargas(rechargeData || (data || []).filter((saldo) => saldo.monto && (saldo.fecha || saldo.mes)).map((saldo) => ({
+        id: `legacy-${saldo.id}`,
+        saldo_id: saldo.id,
+        monto: saldo.monto,
+        fecha: saldo.fecha,
+        mes: saldo.mes || saldo.fecha?.slice(0, 7),
+      })));
       if (sv) setServicios(sv);
     } catch {
       setSaldos([]);
     } finally {
       setSaldoLoading(false);
+    }
+  }
+
+  async function loadGasolina() {
+    setGasolinaLoading(true);
+    try {
+      const data = sercoApi.entities.Gasolina
+        ? await sercoApi.entities.Gasolina.filter({ ...sedeFilter, mes: currentMonth }, "-fecha").catch(() => [])
+        : [];
+      setGasolinas(data || []);
+    } finally {
+      setGasolinaLoading(false);
+    }
+  }
+
+  async function loadAutomoviles() {
+    setAutomovilLoading(true);
+    try {
+      const data = sercoApi.entities.Automovil
+        ? await sercoApi.entities.Automovil.filter(sedeFilter, "nombre").catch(() => [])
+        : [];
+      setAutomoviles(data || []);
+    } finally {
+      setAutomovilLoading(false);
     }
   }
 
@@ -187,6 +257,7 @@ export default function Egresos() {
   };
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
+  const automovilNombre = (automovilId, legacyName) => automoviles.find((automovil) => automovil.id === automovilId)?.nombre || legacyName || "—";
 
   // ── Egresos Filtered ──
   const filtered = items.filter((item) =>
@@ -199,11 +270,17 @@ export default function Egresos() {
   const filteredSaldos = saldos.map(parseSaldoMetadata).filter((s) =>
     (s.numero_telefono || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
     (s.nombre || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
-    (s.responsable || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
     (s.servicio || "").toLowerCase().includes(saldoSearch.toLowerCase()) ||
     (s.compania || "").toLowerCase().includes(saldoSearch.toLowerCase())
   );
-  const totalSaldos = filteredSaldos.reduce((sum, s) => sum + (Number(s.monto) || 0), 0);
+  const filteredRecargas = recargas.filter((r) => r.mes === currentMonth);
+  const totalSaldos = filteredRecargas.reduce((sum, r) => sum + (Number(r.monto) || 0), 0);
+  const ultimaRecarga = (saldoId) => {
+    const recharge = recargas
+      .filter((recarga) => recarga.saldo_id === saldoId)
+      .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))[0];
+    return recharge?.fecha || "Sin recargas";
+  };
 
   // ── Mantenimientos Filtered ──
   const filteredMantenimientos = mantenimientos.filter((m) =>
@@ -212,6 +289,16 @@ export default function Egresos() {
     (m.taller || "").toLowerCase().includes(mantenimientoSearch.toLowerCase())
   );
   const totalMantenimientos = filteredMantenimientos.reduce((sum, m) => sum + (Number(m.monto) || 0), 0);
+
+  const filteredGasolinas = gasolinas.filter((g) =>
+    (g.vehiculo || "").toLowerCase().includes(gasolinaSearch.toLowerCase()) ||
+    (g.gasolinera || "").toLowerCase().includes(gasolinaSearch.toLowerCase())
+  );
+  const totalGasolina = filteredGasolinas.reduce((sum, g) => sum + (Number(g.monto) || 0), 0);
+  const filteredAutomoviles = automoviles.filter((automovil) =>
+    [automovil.nombre, automovil.marca, automovil.modelo, automovil.placas, automovil.numero_economico]
+      .some((value) => (value || "").toLowerCase().includes(automovilSearch.toLowerCase()))
+  );
 
   // ── Egresos CRUD ──
   function openCreate() {
@@ -231,10 +318,13 @@ export default function Egresos() {
     setSaving(true);
     try {
       const mes = form.fecha ? form.fecha.slice(0, 7) : currentMonth;
-      const payload = { 
+      const payload = {
         ...form, 
         monto: form.monto === "" ? 0 : Number(form.monto),
-        mes: mes
+        mes,
+        mensual: Boolean(form.mensual),
+        dia_vencimiento: form.mensual ? Number(form.dia_vencimiento || form.fecha?.slice(8, 10) || 1) : null,
+        estado: form.estado || "pendiente",
       };
       if (editing) {
         await sercoApi.entities.Egreso.update(editing.id, payload);
@@ -260,8 +350,7 @@ export default function Egresos() {
     const today = new Date().toISOString().split("T")[0];
     setSaldoForm({
       ...emptySaldoForm,
-      fecha: today,
-      monto: "50",
+      saldo_actual: "0",
       compania: "Telcel",
       sede_id: defaultSedeId,
     });
@@ -275,10 +364,9 @@ export default function Egresos() {
       ...emptySaldoForm,
       ...item,
       nombre: parsed.nombre !== "—" ? parsed.nombre : "",
-      responsable: parsed.responsable !== "—" ? parsed.responsable : "",
       servicio: parsed.servicio !== "—" ? parsed.servicio : "",
       compania: parsed.compania !== "—" ? parsed.compania : "Telcel",
-      monto: String(item.monto ?? "50"),
+      saldo_actual: String(item.saldo_actual ?? item.monto ?? "0"),
     });
     setSaldoModalOpen(true);
   }
@@ -286,18 +374,18 @@ export default function Egresos() {
   async function handleSaldoSave() {
     setSaldoSaving(true);
     try {
-      const mes = saldoForm.fecha ? saldoForm.fecha.slice(0, 7) : currentMonth;
       const metadataNotas = JSON.stringify({
         compania: saldoForm.compania || "Telcel",
         servicio: saldoForm.servicio || "",
-        nombre: saldoForm.nombre || saldoForm.responsable || "",
+        nombre: saldoForm.nombre || "",
       });
 
       const fullPayload = {
         ...saldoForm,
-        responsable: saldoForm.nombre || saldoForm.responsable || "",
-        monto: saldoForm.monto === "" ? 50 : Number(saldoForm.monto),
-        mes,
+        saldo_actual: Number(saldoForm.saldo_actual) || 0,
+        monto: Number(saldoForm.saldo_actual) || 0,
+        fecha: new Date().toISOString().slice(0, 10),
+        mes: currentMonth,
         notas: metadataNotas,
       };
 
@@ -312,11 +400,11 @@ export default function Egresos() {
         if (msg.includes("Could not find the") && msg.includes("column of 'saldos'")) {
           const safePayload = {
             numero_telefono: saldoForm.numero_telefono,
-            responsable: saldoForm.nombre || saldoForm.responsable || "",
-            monto: Number(saldoForm.monto) || 50,
-            fecha: saldoForm.fecha,
+            responsable: saldoForm.nombre,
+            monto: Number(saldoForm.saldo_actual) || 0,
+            fecha: new Date().toISOString().slice(0, 10),
+            mes: currentMonth,
             sede_id: saldoForm.sede_id || null,
-            mes,
             notas: metadataNotas,
           };
           if (saldoEditing) {
@@ -341,6 +429,99 @@ export default function Egresos() {
     } finally {
       setSaldoSaving(false);
     }
+  }
+
+  function openRecarga(item) {
+    setRecargaEditing(item);
+    setRecargaForm({ monto: "50", fecha: new Date().toISOString().slice(0, 10) });
+    setRecargaModalOpen(true);
+  }
+
+  async function handleRecargaSave() {
+    setRecargaSaving(true);
+    try {
+      const monto = Number(recargaForm.monto) || 0;
+      const mes = recargaForm.fecha.slice(0, 7);
+      await sercoApi.entities.RecargaCelular.create({ saldo_id: recargaEditing.id, monto, fecha: recargaForm.fecha, mes });
+      setRecargaModalOpen(false);
+      await loadSaldos();
+      toast({ title: "Recarga registrada" });
+    } catch (e) {
+      toast({ title: "Error al registrar recarga", description: e?.message || "No se pudo registrar", variant: "destructive" });
+    } finally {
+      setRecargaSaving(false);
+    }
+  }
+
+  function openGasolinaCreate() {
+    setGasolinaEditing(null);
+    setGasolinaForm({ ...emptyGasolinaForm, fecha: new Date().toISOString().slice(0, 10), sede_id: defaultSedeId });
+    setGasolinaModalOpen(true);
+  }
+
+  function openAutomovilCreate() {
+    setAutomovilEditing(null);
+    setAutomovilForm({ ...emptyAutomovilForm, sede_id: defaultSedeId });
+    setAutomovilModalOpen(true);
+  }
+
+  function openAutomovilEdit(item) {
+    setAutomovilEditing(item);
+    setAutomovilForm({ ...emptyAutomovilForm, ...item, anio: item.anio ?? "" });
+    setAutomovilModalOpen(true);
+  }
+
+  async function handleAutomovilSave() {
+    setAutomovilSaving(true);
+    try {
+      const payload = { ...automovilForm, anio: automovilForm.anio === "" ? null : Number(automovilForm.anio) };
+      if (automovilEditing) await sercoApi.entities.Automovil.update(automovilEditing.id, payload);
+      else await sercoApi.entities.Automovil.create(payload);
+      setAutomovilModalOpen(false);
+      await loadAutomoviles();
+      toast({ title: "Automóvil guardado" });
+    } catch (e) {
+      toast({ title: "Error al guardar automóvil", description: e?.message || "No se pudo guardar", variant: "destructive" });
+    } finally {
+      setAutomovilSaving(false);
+    }
+  }
+
+  async function handleAutomovilDelete() {
+    await sercoApi.entities.Automovil.delete(automovilDeleteId);
+    setAutomovilDeleteId(null);
+    await loadAutomoviles();
+  }
+
+  function openGasolinaEdit(item) {
+    setGasolinaEditing(item);
+    setGasolinaForm({ ...emptyGasolinaForm, ...item, automovil_id: item.automovil_id || automoviles.find((automovil) => automovil.nombre === item.vehiculo)?.id || "" });
+    setGasolinaModalOpen(true);
+  }
+
+  async function handleGasolinaSave() {
+    setGasolinaSaving(true);
+    try {
+      const litros = Number(gasolinaForm.litros) || 0;
+      const precio = Number(gasolinaForm.precio_litro) || 0;
+      const selectedAutomovil = automoviles.find((automovil) => automovil.id === gasolinaForm.automovil_id);
+      const payload = { ...gasolinaForm, vehiculo: selectedAutomovil?.nombre || gasolinaForm.vehiculo || null, litros, precio_litro: precio, monto: litros * precio, mes: gasolinaForm.fecha.slice(0, 7), kilometraje: gasolinaForm.kilometraje === "" ? null : Number(gasolinaForm.kilometraje) };
+      if (gasolinaEditing) await sercoApi.entities.Gasolina.update(gasolinaEditing.id, payload);
+      else await sercoApi.entities.Gasolina.create(payload);
+      setGasolinaModalOpen(false);
+      await loadGasolina();
+      toast({ title: "Carga de gasolina guardada" });
+    } catch (e) {
+      toast({ title: "Error al guardar gasolina", description: e?.message || "No se pudo guardar", variant: "destructive" });
+    } finally {
+      setGasolinaSaving(false);
+    }
+  }
+
+  async function handleGasolinaDelete() {
+    await sercoApi.entities.Gasolina.delete(gasolinaDeleteId);
+    setGasolinaDeleteId(null);
+    await loadGasolina();
   }
 
   async function handleSaldoDelete() {
@@ -368,7 +549,7 @@ export default function Egresos() {
 
   function openMantenimientoEdit(item) {
     setMantenimientoEditing(item);
-    setMantenimientoForm({ ...emptyMantenimientoForm, ...item, monto: item.monto ?? "", kilometraje: item.kilometraje ?? "" });
+    setMantenimientoForm({ ...emptyMantenimientoForm, ...item, automovil_id: item.automovil_id || automoviles.find((automovil) => automovil.nombre === item.vehiculo)?.id || "", monto: item.monto ?? "", kilometraje: item.kilometraje ?? "" });
     setMantenimientoModalOpen(true);
   }
 
@@ -376,8 +557,10 @@ export default function Egresos() {
     setMantenimientoSaving(true);
     try {
       const mes = mantenimientoForm.fecha ? mantenimientoForm.fecha.slice(0, 7) : currentMonth;
+      const selectedAutomovil = automoviles.find((automovil) => automovil.id === mantenimientoForm.automovil_id);
       const payload = {
         ...mantenimientoForm,
+        vehiculo: selectedAutomovil?.nombre || mantenimientoForm.vehiculo || null,
         monto: mantenimientoForm.monto === "" ? 0 : Number(mantenimientoForm.monto),
         kilometraje: mantenimientoForm.kilometraje === "" ? null : Number(mantenimientoForm.kilometraje),
         mes
@@ -443,15 +626,15 @@ export default function Egresos() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full sm:w-[450px] grid-cols-3">
+        <TabsList className="grid w-full sm:w-[520px] grid-cols-3">
           <TabsTrigger value="egresos">Egresos</TabsTrigger>
           <TabsTrigger value="saldos" className="flex items-center gap-1">
             <Smartphone className="h-3.5 w-3.5" />
-            <span>Saldos</span>
+            <span>Celulares</span>
           </TabsTrigger>
           <TabsTrigger value="mantenimiento" className="flex items-center gap-1">
             <Car className="h-3.5 w-3.5" />
-            <span>Mantenimiento</span>
+            <span>Automóviles</span>
           </TabsTrigger>
         </TabsList>
 
@@ -495,7 +678,7 @@ export default function Egresos() {
                   <TableHead>Concepto</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Fecha</TableHead>
+                  <TableHead>Vencimiento</TableHead>
                   {!defaultSedeId && <TableHead>Sede</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -525,7 +708,6 @@ export default function Egresos() {
             </Table>
           </div>
         </TabsContent>
-
         {/* ════════════════════════════ SALDOS TAB ════════════════════════════ */}
         <TabsContent value="saldos" className="mt-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
@@ -533,7 +715,7 @@ export default function Egresos() {
               <CardContent className="p-4">
                 <h3 className="tracking-tight text-sm font-medium text-muted-foreground">Total en Saldos ({formatMes(currentMonth)})</h3>
                 <div className="text-2xl font-bold mt-1">${totalSaldos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</div>
-                <p className="text-xs text-muted-foreground mt-1">Recargas de saldo en celulares</p>
+                <p className="text-xs text-muted-foreground mt-1">{filteredRecargas.length} recarga(s) en {formatMes(currentMonth)}</p>
               </CardContent>
             </Card>
           </div>
@@ -552,7 +734,7 @@ export default function Egresos() {
               </div>
               {can("egresos", "create") && (
                 <Button onClick={openSaldoCreate}>
-                  <Plus className="w-4 h-4 mr-1" /> Agregar Saldo
+                  <Plus className="w-4 h-4 mr-1" /> Agregar Celular
                 </Button>
               )}
             </div>
@@ -566,8 +748,8 @@ export default function Egresos() {
                   <TableHead>Nombre</TableHead>
                   <TableHead>Servicio</TableHead>
                   <TableHead>Compañía</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Fecha</TableHead>
+                  <TableHead>Última Recarga</TableHead>
+                  <TableHead>Acción</TableHead>
                   {!defaultSedeId && <TableHead>Sede</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -584,7 +766,7 @@ export default function Egresos() {
                       onClick={() => can("egresos", "edit") && openSaldoEdit(s)}
                     >
                       <TableCell className="font-medium">{s.numero_telefono || "—"}</TableCell>
-                      <TableCell className="font-medium">{s.nombre || s.responsable || "—"}</TableCell>
+                      <TableCell className="font-medium">{s.nombre || "—"}</TableCell>
                       <TableCell>{s.servicio || "—"}</TableCell>
                       <TableCell>
                         <Badge
@@ -600,10 +782,10 @@ export default function Egresos() {
                           {s.compania || "—"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                        ${(Number(s.monto) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      <TableCell>{ultimaRecarga(s.id)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {can("egresos", "edit") && <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openRecarga(s); }}>Recarga</Button>}
                       </TableCell>
-                      <TableCell>{s.fecha || "—"}</TableCell>
                       {!defaultSedeId && <TableCell>{sedeNombre(s.sede_id)}</TableCell>}
                     </TableRow>
                   ))
@@ -615,6 +797,40 @@ export default function Egresos() {
 
         {/* ════════════════════════════ MANTENIMIENTO TAB ════════════════════════════ */}
         <TabsContent value="mantenimiento" className="mt-4">
+          <Tabs value={automovilTab} onValueChange={setAutomovilTab}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="vehiculos" className="flex items-center gap-1"><Car className="h-3.5 w-3.5" /> Automóviles</TabsTrigger>
+              <TabsTrigger value="gasolina" className="flex items-center gap-1"><Fuel className="h-3.5 w-3.5" /> Gasolina</TabsTrigger>
+              <TabsTrigger value="mantenimiento">Mantenimiento</TabsTrigger>
+            </TabsList>
+            <TabsContent value="vehiculos">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <p className="text-sm text-muted-foreground">{filteredAutomoviles.length} automóvil(es) registrado(s)</p>
+                <div className="flex gap-2">
+                  <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Buscar automóvil..." value={automovilSearch} onChange={(e) => setAutomovilSearch(e.target.value)} className="pl-9 w-full sm:w-64" /></div>
+                  {can("egresos", "create") && <Button onClick={openAutomovilCreate}><Plus className="w-4 h-4 mr-1" /> Agregar Automóvil</Button>}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card overflow-hidden"><Table><TableHeader><TableRow><TableHead>Nombre</TableHead><TableHead>Marca</TableHead><TableHead>Modelo</TableHead><TableHead>Año</TableHead><TableHead>Placas</TableHead><TableHead>Número económico</TableHead>{!defaultSedeId && <TableHead>Sede</TableHead>}</TableRow></TableHeader><TableBody>
+                {automovilLoading ? <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow> : filteredAutomoviles.length === 0 ? <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">No hay automóviles registrados</TableCell></TableRow> : filteredAutomoviles.map((automovil) => <TableRow key={automovil.id} className="cursor-pointer hover:bg-muted/50" onClick={() => can("egresos", "edit") && openAutomovilEdit(automovil)}><TableCell className="font-medium">{automovil.nombre}</TableCell><TableCell>{automovil.marca || "—"}</TableCell><TableCell>{automovil.modelo || "—"}</TableCell><TableCell>{automovil.anio || "—"}</TableCell><TableCell>{automovil.placas || "—"}</TableCell><TableCell>{automovil.numero_economico || "—"}</TableCell>{!defaultSedeId && <TableCell>{sedeNombre(automovil.sede_id)}</TableCell>}</TableRow>)}
+              </TableBody></Table></div>
+            </TabsContent>
+            <TabsContent value="gasolina">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+                <Card><CardContent className="p-4"><h3 className="tracking-tight text-sm font-medium text-muted-foreground">Total gasolina ({formatMes(currentMonth)})</h3><div className="text-2xl font-bold mt-1">${totalGasolina.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</div></CardContent></Card>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <p className="text-sm text-muted-foreground">{filteredGasolinas.length} registro(s)</p>
+                <div className="flex gap-2">
+                  <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Buscar vehículo o gasolinera..." value={gasolinaSearch} onChange={(e) => setGasolinaSearch(e.target.value)} className="pl-9 w-full sm:w-64" /></div>
+                  {can("egresos", "create") && <Button onClick={openGasolinaCreate}><Plus className="w-4 h-4 mr-1" /> Agregar</Button>}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card overflow-hidden"><Table><TableHeader><TableRow><TableHead>Vehículo</TableHead><TableHead>Fecha</TableHead><TableHead>Litros</TableHead><TableHead className="text-right">Monto</TableHead><TableHead>Km</TableHead><TableHead>Gasolinera</TableHead>{!defaultSedeId && <TableHead>Sede</TableHead>}</TableRow></TableHeader><TableBody>
+                {gasolinaLoading ? <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow> : filteredGasolinas.length === 0 ? <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">No hay cargas registradas</TableCell></TableRow> : filteredGasolinas.map((g) => <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50" onClick={() => can("egresos", "edit") && openGasolinaEdit(g)}><TableCell className="font-medium">{automovilNombre(g.automovil_id, g.vehiculo)}</TableCell><TableCell>{g.fecha || "—"}</TableCell><TableCell>{g.litros ? `${Number(g.litros).toLocaleString()} L` : "—"}</TableCell><TableCell className="text-right font-medium">${(Number(g.monto) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</TableCell><TableCell>{g.kilometraje ? `${Number(g.kilometraje).toLocaleString()} km` : "—"}</TableCell><TableCell>{g.gasolinera || "—"}</TableCell>{!defaultSedeId && <TableCell>{sedeNombre(g.sede_id)}</TableCell>}</TableRow>)}
+              </TableBody></Table></div>
+            </TabsContent>
+            <TabsContent value="mantenimiento">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
             <Card>
               <CardContent className="p-4">
@@ -671,7 +887,7 @@ export default function Egresos() {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => can("egresos", "edit") && openMantenimientoEdit(m)}
                     >
-                      <TableCell className="font-medium">{m.vehiculo || "—"}</TableCell>
+                      <TableCell className="font-medium">{automovilNombre(m.automovil_id, m.vehiculo)}</TableCell>
                       <TableCell>{m.tipo_mantenimiento || "—"}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{m.descripcion || "—"}</TableCell>
                       <TableCell className="text-right font-medium">${(Number(m.monto) || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</TableCell>
@@ -685,6 +901,8 @@ export default function Egresos() {
               </TableBody>
             </Table>
           </div>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
 
@@ -714,6 +932,26 @@ export default function Egresos() {
                 <Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>¿Es mensual?</Label>
+                <Select value={form.mensual ? "si" : "no"} onValueChange={(value) => setForm({ ...form, mensual: value === "si" })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="no">No</SelectItem><SelectItem value="si">Sí</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{form.mensual ? "Día de vencimiento" : "Estado"}</Label>
+                {form.mensual ? (
+                  <Input type="number" min="1" max="31" value={form.dia_vencimiento} onChange={(e) => setForm({ ...form, dia_vencimiento: e.target.value })} />
+                ) : (
+                  <Select value={form.estado || "pendiente"} onValueChange={(value) => setForm({ ...form, estado: value })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="pendiente">Pendiente</SelectItem><SelectItem value="pagado">Pagado</SelectItem></SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
             {!defaultSedeId && (
               <div>
                 <SedeSelector
@@ -740,12 +978,12 @@ export default function Egresos() {
         </DialogContent>
       </Dialog>
 
-      {/* ════════════════════════════ SALDO MODAL ════════════════════════════ */}
+      {/* ════════════════════════════ CELULAR MODAL ════════════════════════════ */}
       <Dialog open={saldoModalOpen} onOpenChange={setSaldoModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{saldoEditing ? "Editar Saldo" : "Nuevo Saldo"}</DialogTitle>
-            <DialogDescription>Registra la recarga de saldo al celular</DialogDescription>
+            <DialogTitle>{saldoEditing ? "Editar Celular" : "Nuevo Celular"}</DialogTitle>
+            <DialogDescription>Administra el catálogo de teléfonos de la empresa</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-4 py-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -760,9 +998,9 @@ export default function Egresos() {
               <div>
                 <Label>Nombre *</Label>
                 <Input
-                  value={saldoForm.nombre || saldoForm.responsable || ""}
-                  onChange={(e) => setSaldoForm({ ...saldoForm, nombre: e.target.value, responsable: e.target.value })}
-                  placeholder="Nombre de la persona"
+                  value={saldoForm.nombre || ""}
+                  onChange={(e) => setSaldoForm({ ...saldoForm, nombre: e.target.value })}
+                  placeholder="Persona, área o ubicación"
                 />
               </div>
             </div>
@@ -809,33 +1047,6 @@ export default function Egresos() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>Monto *</Label>
-                <Select
-                  value={String(saldoForm.monto || "50")}
-                  onValueChange={(val) => setSaldoForm({ ...saldoForm, monto: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona el monto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="50">$50.00 MXN</SelectItem>
-                    <SelectItem value="100">$100.00 MXN</SelectItem>
-                    <SelectItem value="150">$150.00 MXN</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Fecha *</Label>
-                <Input
-                  type="date"
-                  value={saldoForm.fecha}
-                  onChange={(e) => setSaldoForm({ ...saldoForm, fecha: e.target.value })}
-                />
-              </div>
-            </div>
-
             {!defaultSedeId && (
               <div>
                 <SedeSelector
@@ -859,9 +1070,7 @@ export default function Egresos() {
                 disabled={
                   saldoSaving ||
                   !saldoForm.numero_telefono ||
-                  !(saldoForm.nombre || saldoForm.responsable) ||
-                  !saldoForm.monto ||
-                  !saldoForm.fecha ||
+                  !saldoForm.nombre ||
                   (!defaultSedeId && !saldoForm.sede_id)
                 }
               >
@@ -869,6 +1078,45 @@ export default function Egresos() {
               </Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={recargaModalOpen} onOpenChange={setRecargaModalOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Recargar celular</DialogTitle><DialogDescription>Registra la recarga del celular.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div><Label>Monto *</Label><Select value={String(recargaForm.monto)} onValueChange={(value) => setRecargaForm({ ...recargaForm, monto: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="50">$50.00 MXN</SelectItem><SelectItem value="100">$100.00 MXN</SelectItem><SelectItem value="150">$150.00 MXN</SelectItem></SelectContent></Select></div>
+            <div><Label>Fecha *</Label><Input type="date" value={recargaForm.fecha} onChange={(event) => setRecargaForm({ ...recargaForm, fecha: event.target.value })} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setRecargaModalOpen(false)}>Cancelar</Button><Button onClick={handleRecargaSave} disabled={recargaSaving || !recargaForm.monto || !recargaForm.fecha}>{recargaSaving ? "Guardando..." : "Guardar"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={automovilModalOpen} onOpenChange={setAutomovilModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{automovilEditing ? "Editar Automóvil" : "Nuevo Automóvil"}</DialogTitle><DialogDescription>Registra los datos permanentes del vehículo.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div><Label>Nombre o identificación *</Label><Input value={automovilForm.nombre} onChange={(event) => setAutomovilForm({ ...automovilForm, nombre: event.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4"><div><Label>Marca</Label><Input value={automovilForm.marca} onChange={(event) => setAutomovilForm({ ...automovilForm, marca: event.target.value })} /></div><div><Label>Modelo</Label><Input value={automovilForm.modelo} onChange={(event) => setAutomovilForm({ ...automovilForm, modelo: event.target.value })} /></div></div>
+            <div className="grid grid-cols-2 gap-4"><div><Label>Año</Label><Input type="number" value={automovilForm.anio} onChange={(event) => setAutomovilForm({ ...automovilForm, anio: event.target.value })} /></div><div><Label>Placas</Label><Input value={automovilForm.placas} onChange={(event) => setAutomovilForm({ ...automovilForm, placas: event.target.value })} /></div></div>
+            <div><Label>Número económico</Label><Input value={automovilForm.numero_economico} onChange={(event) => setAutomovilForm({ ...automovilForm, numero_economico: event.target.value })} /></div>
+            {!defaultSedeId && <SedeSelector value={automovilForm.sede_id} onChange={(value) => setAutomovilForm({ ...automovilForm, sede_id: value })} sedes={sedes} />}
+          </div>
+          <DialogFooter className="flex justify-between"><div>{automovilEditing && can("egresos", "delete") && <Button variant="destructive" onClick={() => { setAutomovilModalOpen(false); setAutomovilDeleteId(automovilEditing.id); }}>Eliminar</Button>}</div><div className="flex gap-2"><Button variant="outline" onClick={() => setAutomovilModalOpen(false)}>Cancelar</Button><Button onClick={handleAutomovilSave} disabled={automovilSaving || !automovilForm.nombre || (!defaultSedeId && !automovilForm.sede_id)}>{automovilSaving ? "Guardando..." : "Guardar"}</Button></div></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={gasolinaModalOpen} onOpenChange={setGasolinaModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{gasolinaEditing ? "Editar gasolina" : "Nueva carga de gasolina"}</DialogTitle><DialogDescription>El monto se calcula con litros por precio.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4"><div><Label>Automóvil *</Label><Select value={gasolinaForm.automovil_id || "none"} onValueChange={(value) => setGasolinaForm({ ...gasolinaForm, automovil_id: value === "none" ? "" : value })}><SelectTrigger><SelectValue placeholder="Selecciona automóvil" /></SelectTrigger><SelectContent><SelectItem value="none">Selecciona automóvil</SelectItem>{automoviles.map((automovil) => <SelectItem key={automovil.id} value={automovil.id}>{automovil.nombre}</SelectItem>)}</SelectContent></Select></div><div><Label>Fecha *</Label><Input type="date" value={gasolinaForm.fecha} onChange={(event) => setGasolinaForm({ ...gasolinaForm, fecha: event.target.value })} /></div></div>
+            <div className="grid grid-cols-2 gap-4"><div><Label>Litros *</Label><Input type="number" step="0.01" value={gasolinaForm.litros} onChange={(event) => setGasolinaForm({ ...gasolinaForm, litros: event.target.value })} /></div><div><Label>Precio por litro *</Label><Input type="number" step="0.01" value={gasolinaForm.precio_litro} onChange={(event) => setGasolinaForm({ ...gasolinaForm, precio_litro: event.target.value })} /></div></div>
+            <div className="grid grid-cols-2 gap-4"><div><Label>Monto total</Label><Input value={(Number(gasolinaForm.litros || 0) * Number(gasolinaForm.precio_litro || 0)).toFixed(2)} readOnly /></div><div><Label>Kilometraje</Label><Input type="number" value={gasolinaForm.kilometraje} onChange={(event) => setGasolinaForm({ ...gasolinaForm, kilometraje: event.target.value })} /></div></div>
+            <div><Label>Gasolinera</Label><Input value={gasolinaForm.gasolinera} onChange={(event) => setGasolinaForm({ ...gasolinaForm, gasolinera: event.target.value })} /></div>
+            {!defaultSedeId && <SedeSelector value={gasolinaForm.sede_id} onChange={(value) => setGasolinaForm({ ...gasolinaForm, sede_id: value })} sedes={sedes} />}
+          </div>
+          <DialogFooter className="flex justify-between"><div>{gasolinaEditing && can("egresos", "delete") && <Button variant="destructive" onClick={() => { setGasolinaModalOpen(false); setGasolinaDeleteId(gasolinaEditing.id); }}>Eliminar</Button>}</div><div className="flex gap-2"><Button variant="outline" onClick={() => setGasolinaModalOpen(false)}>Cancelar</Button><Button onClick={handleGasolinaSave} disabled={gasolinaSaving || !gasolinaForm.automovil_id || !gasolinaForm.fecha || !gasolinaForm.litros || !gasolinaForm.precio_litro || (!defaultSedeId && !gasolinaForm.sede_id)}>{gasolinaSaving ? "Guardando..." : "Guardar"}</Button></div></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -882,8 +1130,8 @@ export default function Egresos() {
           <div className="grid grid-cols-1 gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Vehículo *</Label>
-                <Input value={mantenimientoForm.vehiculo} onChange={(e) => setMantenimientoForm({ ...mantenimientoForm, vehiculo: e.target.value })} placeholder="Ej: Nissan Versa 2020" />
+                <Label>Automóvil *</Label>
+                <Select value={mantenimientoForm.automovil_id || "none"} onValueChange={(value) => setMantenimientoForm({ ...mantenimientoForm, automovil_id: value === "none" ? "" : value })}><SelectTrigger><SelectValue placeholder="Selecciona automóvil" /></SelectTrigger><SelectContent><SelectItem value="none">Selecciona automóvil</SelectItem>{automoviles.map((automovil) => <SelectItem key={automovil.id} value={automovil.id}>{automovil.nombre}</SelectItem>)}</SelectContent></Select>
               </div>
               <div>
                 <Label>Tipo de Mantenimiento *</Label>
@@ -930,7 +1178,7 @@ export default function Egresos() {
             )}
             <div className="flex gap-2 justify-end ml-auto">
               <Button variant="outline" onClick={() => setMantenimientoModalOpen(false)}>Cancelar</Button>
-              <Button onClick={handleMantenimientoSave} disabled={mantenimientoSaving || !mantenimientoForm.vehiculo || !mantenimientoForm.tipo_mantenimiento || !mantenimientoForm.monto || !mantenimientoForm.fecha || (!defaultSedeId && !mantenimientoForm.sede_id)}>
+              <Button onClick={handleMantenimientoSave} disabled={mantenimientoSaving || !mantenimientoForm.automovil_id || !mantenimientoForm.tipo_mantenimiento || !mantenimientoForm.monto || !mantenimientoForm.fecha || (!defaultSedeId && !mantenimientoForm.sede_id)}>
                 {mantenimientoSaving ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -959,6 +1207,20 @@ export default function Egresos() {
         title="¿Eliminar registro de mantenimiento?"
         description="Esta acción no se puede deshacer."
         onConfirm={handleMantenimientoDelete}
+      />
+      <ConfirmDialog
+        open={!!gasolinaDeleteId}
+        onOpenChange={(v) => !v && setGasolinaDeleteId(null)}
+        title="¿Eliminar carga de gasolina?"
+        description="Esta acción no se puede deshacer."
+        onConfirm={handleGasolinaDelete}
+      />
+      <ConfirmDialog
+        open={!!automovilDeleteId}
+        onOpenChange={(v) => !v && setAutomovilDeleteId(null)}
+        title="¿Eliminar automóvil?"
+        description="Los movimientos asociados conservarán su información histórica."
+        onConfirm={handleAutomovilDelete}
       />
     </div>
   );
