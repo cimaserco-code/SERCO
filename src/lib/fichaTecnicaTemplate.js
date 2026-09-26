@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { formatNombreNatural } from "@/lib/userNameFormatting";
+import { supabase } from "@/lib/supabaseClient";
 
 export function loadLogoImage(src = "/favicon.png") {
   return new Promise((resolve) => {
@@ -11,7 +12,7 @@ export function loadLogoImage(src = "/favicon.png") {
   });
 }
 
-export function loadImageSafe(url) {
+export function loadImageSafe(url, emp) {
   if (!url) return Promise.resolve(null);
   return new Promise((resolve) => {
     const img = new Image();
@@ -20,6 +21,48 @@ export function loadImageSafe(url) {
     img.onerror = () => resolve(null);
     img.src = url;
   });
+}
+
+/** @param {string} fotoUrl */
+function getEmployeePhotoPath(fotoUrl) {
+  try {
+    const url = new URL(fotoUrl);
+    const objectPrefix = "/storage/v1/object/public/documentos/";
+    if (!url.pathname.startsWith(objectPrefix)) return null;
+
+    const path = decodeURIComponent(url.pathname.slice(objectPrefix.length));
+    const segments = path.split("/");
+    if (segments[0] !== "fotos" || segments.length < 2 || segments.some((part) => !part || part === "." || part === "..")) {
+      return null;
+    }
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} fotoUrl */
+async function loadEmployeePhoto(fotoUrl) {
+  if (typeof fotoUrl === "string" && /^data:image\/(?:webp|jpeg|png);base64,/i.test(fotoUrl)) {
+    return loadImageSafe(fotoUrl);
+  }
+
+  const path = getEmployeePhotoPath(fotoUrl);
+  if (!path) return null;
+
+  try {
+    const { data, error } = await supabase.storage.from("documentos").download(path);
+    if (error || !data) return null;
+
+    const objectUrl = URL.createObjectURL(data);
+    try {
+      return await loadImageSafe(objectUrl);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  } catch {
+    return null;
+  }
 }
 
 function calcularEdad(fechaNacimiento) {
@@ -43,7 +86,7 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
 
   const [logoImg, photoImg] = await Promise.all([
     loadLogoImage("/favicon.png"),
-    emp?.foto_url ? loadImageSafe(emp.foto_url) : Promise.resolve(null)
+    emp?.foto_url ? loadEmployeePhoto(emp.foto_url) : Promise.resolve(null)
   ]);
 
   const pageWidth = doc.internal.pageSize.width; // 215.9 mm
@@ -247,7 +290,17 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
 
   if (photoImg) {
     try {
-      doc.addImage(photoImg, "JPEG", photoX + 1, photoY + 1, photoW - 2, photoH - 2);
+      const photoCanvas = document.createElement("canvas");
+      photoCanvas.width = photoImg.naturalWidth || photoImg.width;
+      photoCanvas.height = photoImg.naturalHeight || photoImg.height;
+      photoCanvas.getContext("2d").drawImage(photoImg, 0, 0);
+      const photoData = photoCanvas.toDataURL("image/jpeg", 0.92);
+      const photoScale = Math.min((photoW - 2) / photoCanvas.width, (photoH - 2) / photoCanvas.height);
+      const renderedPhotoW = photoCanvas.width * photoScale;
+      const renderedPhotoH = photoCanvas.height * photoScale;
+      const renderedPhotoX = photoX + (photoW - renderedPhotoW) / 2;
+      const renderedPhotoY = photoY + (photoH - renderedPhotoH) / 2;
+      doc.addImage(photoData, "JPEG", renderedPhotoX, renderedPhotoY, renderedPhotoW, renderedPhotoH);
     } catch {
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);

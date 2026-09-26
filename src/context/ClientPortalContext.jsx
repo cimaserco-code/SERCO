@@ -1,9 +1,28 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
+import { supabase } from "@/lib/supabaseClient";
 
 const ClientPortalContext = createContext(null);
+
+/** @param {string} fotoUrl */
+function getEmployeePhotoPath(fotoUrl) {
+  try {
+    const url = new URL(fotoUrl);
+    const objectPrefix = "/storage/v1/object/public/documentos/";
+    if (!url.pathname.startsWith(objectPrefix)) return null;
+
+    const path = decodeURIComponent(url.pathname.slice(objectPrefix.length));
+    const segments = path.split("/");
+    if (segments[0] !== "fotos" || segments.length < 2 || segments.some((part) => !part || part === "." || part === "..")) {
+      return null;
+    }
+    return path;
+  } catch {
+    return null;
+  }
+}
 
 export function ClientPortalProvider({ children }) {
   const { user } = useAuth();
@@ -20,6 +39,7 @@ export function ClientPortalProvider({ children }) {
   const [cobros, setCobros] = useState([]);
   const [asignaciones, setAsignaciones] = useState([]);
   const [empleados, setEmpleados] = useState([]);
+  const photoObjectUrls = useRef(new Map());
   const [telefonos, setTelefonos] = useState([]);
   const [agendaEvents, setAgendaEvents] = useState([]);
   const [reportesCliente, setReportesCliente] = useState([]);
@@ -69,6 +89,34 @@ export function ClientPortalProvider({ children }) {
     };
     window.addEventListener("serco_datos_bancarios_updated", handleBankUpdate);
     return () => window.removeEventListener("serco_datos_bancarios_updated", handleBankUpdate);
+  }, []);
+
+  useEffect(() => () => {
+    photoObjectUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    photoObjectUrls.current.clear();
+  }, []);
+
+  const getPhotoRuntimeUrl = useCallback(/** @param {string} fotoUrl */ async (fotoUrl) => {
+    if (typeof fotoUrl === "string" && /^data:image\/(?:webp|jpeg|png);base64,/i.test(fotoUrl)) {
+      return fotoUrl;
+    }
+
+    const path = getEmployeePhotoPath(fotoUrl);
+    if (!path) return null;
+
+    const cachedUrl = photoObjectUrls.current.get(fotoUrl);
+    if (cachedUrl) return cachedUrl;
+
+    try {
+      const { data, error } = await supabase.storage.from("documentos").download(path);
+      if (error || !data) return null;
+
+      const runtimeUrl = URL.createObjectURL(data);
+      photoObjectUrls.current.set(fotoUrl, runtimeUrl);
+      return runtimeUrl;
+    } catch {
+      return null;
+    }
   }, []);
 
   // Load all services and determine which ones belong to this client
@@ -193,8 +241,12 @@ export function ClientPortalProvider({ children }) {
       const servAsignaciones = (asigData || []).filter(
         (a) => a.servicio_id === selectedServicio.id
       );
+      const employeesWithPhotoUrls = await Promise.all((empData || []).map(async (emp) => ({
+        ...emp,
+        foto_url_runtime: emp.foto_url ? await getPhotoRuntimeUrl(emp.foto_url) : null,
+      })));
       setAsignaciones(servAsignaciones);
-      setEmpleados(empData || []);
+      setEmpleados(employeesWithPhotoUrls);
 
       // 3. Telefonos asignados al servicio (tomados exclusivamente del apartado de celulares en el módulo de egresos)
       const parsedSaldos = (saldosData || []).map((saldo) => {
@@ -295,7 +347,7 @@ export function ClientPortalProvider({ children }) {
     const list = asignaciones.map((asig) => {
       const emp = empleados.find(
         (e) =>
-          e.id === asig.empleado_id ||
+          (asig.empleado_id != null && String(e.id) === String(asig.empleado_id)) ||
           (e.nombre_completo &&
             asig.empleado_nombre &&
             e.nombre_completo.trim().toLowerCase() === asig.empleado_nombre.trim().toLowerCase())
@@ -306,6 +358,7 @@ export function ClientPortalProvider({ children }) {
         nombre: emp?.nombre_completo || asig.empleado_nombre || "Guardia Asignado",
         puesto: emp?.puesto || "Guardia de Seguridad",
         foto_url: emp?.foto_url || null,
+        foto_url_runtime: emp?.foto_url_runtime || null,
         telefono: emp?.telefono || null,
         estado: emp?.estado || "activo"
       };

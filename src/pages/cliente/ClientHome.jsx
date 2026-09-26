@@ -487,7 +487,7 @@ export default function ClientHome() {
                     className="p-3.5 rounded-xl border border-border bg-card hover:bg-muted/40 transition flex items-center gap-3.5 shadow-2xs"
                   >
                     <Avatar className="w-12 h-12 border border-border shadow-xs shrink-0">
-                      <AvatarImage src={guardia.foto_url} alt={guardia.nombre} />
+                      <AvatarImage src={guardia.foto_url_runtime || undefined} alt={guardia.nombre} className="object-cover" />
                       <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                         {guardia.nombre
                           .split(" ")

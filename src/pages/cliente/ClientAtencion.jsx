@@ -366,7 +366,7 @@ export default function ClientAtencion() {
                       <div className="space-y-3">
                         <div className="flex items-start gap-3">
                           <Avatar className="w-12 h-12 border border-border shadow-xs shrink-0">
-                            <AvatarImage src={emp.foto_url} alt={emp.nombre_completo} />
+                            <AvatarImage src={emp.foto_url_runtime || undefined} alt={emp.nombre_completo} className="object-cover" />
                             <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                               {(emp.nombre_completo || "S")
                                 .split(" ")
