@@ -51,16 +51,6 @@ export default function Asistencias() {
   // Modo marcado rápido (Pincel): cuando está activo, hacer clic en una casilla aplica directamente este estado
   const [selectedStampState, setSelectedStampState] = useState(null); // null (modo menú por celda) | key de estadosConfig | "limpiar"
 
-  const isMonterreyEmp = (emp) => {
-    const sName = sedes.find((s) => s.id === emp?.sede_id)?.nombre || "";
-    if (sName.toLowerCase().includes("monterrey")) return true;
-    if (activeSedeId && activeSedeId !== "all") {
-      const activeSedeObj = availableSedes?.find((s) => s.id === activeSedeId);
-      if (activeSedeObj?.nombre?.toLowerCase()?.includes("monterrey")) return true;
-    }
-    return false;
-  };
-  
   // Single active cell state for fast floating picker
   const [activeCell, setActiveCell] = useState(null); // { employeeId, employeeName, day, currentVal, rect }
   const [secondaryAttendanceStates, setSecondaryAttendanceStates] = useState({});
@@ -809,8 +799,6 @@ export default function Asistencias() {
                           const asig = asistenciasMap.get(`${emp.id}_${dateStr}`);
                           const currentVal = asig?.festivo ? "festivo" : (asig?.estado || null);
                           const todayFlag = isToday(day);
-                          const isMty = isMonterreyEmp(emp);
-                          const cellSlots = isMty ? [0, 1] : [0];
                           const cellState = getAttendanceCellState(emp, dateStr);
 
                           if (cellState !== "active") {
@@ -823,6 +811,8 @@ export default function Asistencias() {
                             );
                           }
 
+                          const cfg = currentVal ? estadosConfig[currentVal] : null;
+
                           return (
                             <TableCell 
                               key={day} 
@@ -830,71 +820,56 @@ export default function Asistencias() {
                                 todayFlag ? "bg-primary/5 border-x border-primary/10" : ""
                               }`}
                             >
-                              <div className="flex flex-col gap-0.5">
-                                {cellSlots.map((slot) => {
-                                  const slotVal = slot === 1
-                                    ? secondaryAttendanceStates[`${emp.id}_${dateStr}`] || null
-                                    : currentVal;
-                                  const cfg = slotVal ? estadosConfig[slotVal] : null;
-
-                                  return (
-                                    <button
-                                      key={slot}
-                                      type="button"
-                                      onClick={(e) => {
-                                        if (selectedStampState) {
-                                          // Modo Marcado Rápido (Pincel): estampa directamente sin abrir menú
-                                          const targetState = selectedStampState === "limpiar" ? null : selectedStampState;
-                                          if (selectedStampState === "festivo") {
-                                            handleToggleFestivo(emp.id, day);
-                                          } else if (slot === 1) {
-                                            handleSetSecondaryEstado(emp.id, day, targetState);
-                                          } else {
-                                            handleSetEstado(emp.id, day, targetState);
-                                          }
-                                        } else {
-                                          // Modo tradicional: abre menú flotante
-                                          const rect = e.currentTarget.getBoundingClientRect();
-                                          setActiveCell({
-                                            employeeId: emp.id,
-                                            employeeName: formatUserDisplayName(emp.nombre_completo, user?.role),
-                                            day,
-                                            currentVal: slotVal,
-                                            isSecondary: slot === 1,
-                                            rect: {
-                                              top: rect.top,
-                                              bottom: rect.bottom,
-                                              left: rect.left,
-                                              right: rect.right
-                                            }
-                                          });
-                                        }
-                                      }}
-                                      className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto p-0 rounded flex items-center justify-center border transition-all cursor-pointer select-none text-[11px] font-bold ${
-                                        selectedStampState ? "hover:scale-110 hover:ring-2 hover:ring-primary" : ""
-                                      } ${
-                                        cfg 
-                                          ? cfg.color 
-                                          : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
-                                      }`}
-                                      title={
-                                        selectedStampState
-                                          ? `Clic para aplicar "${selectedStampState === 'limpiar' ? 'Borrar' : estadosConfig[selectedStampState]?.name}"`
-                                          : `${formatUserDisplayName(emp.nombre_completo, user?.role)} - Día ${day}: ${slotVal ? estadosConfig[slotVal]?.name : "Sin registro"}`
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  if (selectedStampState) {
+                                    // Modo Marcado Rápido (Pincel): estampa directamente sin abrir menú
+                                    const targetState = selectedStampState === "limpiar" ? null : selectedStampState;
+                                    if (selectedStampState === "festivo") {
+                                      handleToggleFestivo(emp.id, day);
+                                    } else {
+                                      handleSetEstado(emp.id, day, targetState);
+                                    }
+                                  } else {
+                                    // Modo tradicional: abre menú flotante
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setActiveCell({
+                                      employeeId: emp.id,
+                                      employeeName: formatUserDisplayName(emp.nombre_completo, user?.role),
+                                      day,
+                                      currentVal,
+                                      rect: {
+                                        top: rect.top,
+                                        bottom: rect.bottom,
+                                        left: rect.left,
+                                        right: rect.right
                                       }
-                                    >
-                                      <span className="relative">
-                                        {cfg ? cfg.label : "-"}
-                                        {asig?.festivo && slot === 0 && (
-                                          <span className="absolute -right-2 -top-2 rounded-full bg-amber-500 px-1 text-[8px] leading-3 text-white shadow-sm" title="Día festivo">
-                                            F
-                                          </span>
-                                        )}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                    });
+                                  }
+                                }}
+                                className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto p-0 rounded flex items-center justify-center border transition-all cursor-pointer select-none text-[11px] font-bold ${
+                                  selectedStampState ? "hover:scale-110 hover:ring-2 hover:ring-primary" : ""
+                                } ${
+                                  cfg 
+                                    ? cfg.color 
+                                    : "bg-background text-muted-foreground/40 border-border/60 hover:bg-muted hover:text-foreground"
+                                }`}
+                                title={
+                                  selectedStampState
+                                    ? `Clic para aplicar "${selectedStampState === 'limpiar' ? 'Borrar' : estadosConfig[selectedStampState]?.name}"`
+                                    : `${formatUserDisplayName(emp.nombre_completo, user?.role)} - Día ${day}: ${currentVal ? estadosConfig[currentVal]?.name : "Sin registro"}`
+                                }
+                              >
+                                <span className="relative">
+                                  {cfg ? cfg.label : "-"}
+                                  {asig?.festivo && (
+                                    <span className="absolute -right-2 -top-2 rounded-full bg-amber-500 px-1 text-[8px] leading-3 text-white shadow-sm" title="Día festivo">
+                                      F
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
                             </TableCell>
                           );
                         })}

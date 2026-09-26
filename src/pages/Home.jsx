@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { Users, Briefcase, Package, FileText, ArrowRight, Clock, CheckCircle, DollarSign, AlertCircle, ChevronLeft, ChevronRight, Plus, Megaphone, Bell, X, RotateCcw, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,12 @@ export default function Home() {
   const { user } = useAuth();
   const { canView } = usePermissions();
   const { sedeFilter } = useSedeScope();
+
+  // Si el usuario tiene rol de cliente, redirigir a su portal exclusivo
+  const userRole = (user?.role || "").toLowerCase().trim();
+  if (userRole === "cliente") {
+    return <Navigate to="/cliente" replace />;
+  }
   
   if (!canView("inicio")) return <AccessRestricted />;
   

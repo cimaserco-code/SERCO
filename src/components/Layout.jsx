@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Outlet, NavLink, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, CalendarDays, LogOut, TrendingDown, LayoutGrid, Megaphone, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -63,9 +63,16 @@ const adminNavItems = [
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { canView, isAdmin } = usePermissions();
   const { showSedeSelector, isSuperAdmin, availableSedes, activeSedeId, setActiveSedeId } = useSedeScope();
+
+  // Si el usuario es de rol cliente, redirigir automáticamente al portal de cliente
+  const userRole = (user?.role || "").toLowerCase().trim();
+  if (userRole === "cliente") {
+    return <Navigate to="/cliente" replace />;
+  }
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({ full_name: "", email: "", password: "", username: "" });
@@ -359,6 +366,18 @@ export default function Layout() {
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium capitalize hidden sm:inline-block">
                 {user.role}
               </span>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/cliente")}
+                  className="h-9 px-2.5 sm:px-3 border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5 text-xs font-bold rounded-lg shadow-xs"
+                  title="Vista de prueba: Interfaz de cliente"
+                >
+                  <Eye className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="hidden sm:inline">Vista Cliente</span>
+                </Button>
+              )}
               <Button
                 onClick={openProfile}
                 title="Mi Perfil"

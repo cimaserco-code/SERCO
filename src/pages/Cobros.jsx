@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -78,6 +78,37 @@ export function setServicioCobroConfig(servicioId, cfg) {
     localStorage.setItem(`serco_serv_cobro_cfg_${servicioId}`, JSON.stringify(cfg));
   } catch (e) {
     console.error("Error guardando config cobro servicio:", e);
+  }
+}
+
+export const DEFAULT_DATOS_BANCARIOS = {
+  beneficiario: "SERCO SEGURIDAD PRIVADA S.A. DE C.V.",
+  banco: "BBVA México",
+  clabe: "012 180 00123456789 0",
+  cuenta: "",
+  notas: ""
+};
+
+export function getDatosBancarios() {
+  try {
+    const raw = localStorage.getItem("serco_datos_bancarios_empresa");
+    if (!raw) return DEFAULT_DATOS_BANCARIOS;
+    const parsed = JSON.parse(raw);
+    if (parsed.notas === "Favor de indicar como referencia el nombre de su servicio") {
+      parsed.notas = "";
+    }
+    return { ...DEFAULT_DATOS_BANCARIOS, ...parsed };
+  } catch {
+    return DEFAULT_DATOS_BANCARIOS;
+  }
+}
+
+export function setDatosBancarios(data) {
+  try {
+    localStorage.setItem("serco_datos_bancarios_empresa", JSON.stringify(data));
+    window.dispatchEvent(new Event("serco_datos_bancarios_updated"));
+  } catch (e) {
+    console.error("Error guardando datos bancarios:", e);
   }
 }
 
@@ -397,6 +428,31 @@ export default function Cobros() {
   const [paymentMeta, setPaymentMeta] = useState(null);
   const [paymentParts, setPaymentParts] = useState([]);
   const [savingPayment, setSavingPayment] = useState(false);
+
+  // Modal de configuración de datos bancarios para finanzas
+  const [bankModalOpen, setBankModalOpen] = useState(false);
+  const [bankForm, setBankForm] = useState(getDatosBancarios);
+  const [savingBank, setSavingBank] = useState(false);
+
+  const handleSaveBankInfo = () => {
+    setSavingBank(true);
+    try {
+      setDatosBancarios(bankForm);
+      toast({
+        title: "Datos Bancarios Actualizados",
+        description: "La información de la cuenta se ha guardado y se reflejará en el portal de clientes.",
+      });
+      setBankModalOpen(false);
+    } catch {
+      toast({
+        title: "Error al guardar",
+        description: "No se pudieron actualizar los datos bancarios.",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingBank(false);
+    }
+  };
 
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
@@ -1085,6 +1141,21 @@ export default function Cobros() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {can("cobros", "edit") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBankForm(getDatosBancarios());
+                setBankModalOpen(true);
+              }}
+              className="gap-2 text-xs font-semibold h-9 border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 shadow-2xs"
+              title="Configurar cuenta bancaria visible para los clientes"
+            >
+              <CreditCard className="w-4 h-4 text-emerald-600" />
+              <span>Datos Bancarios</span>
+            </Button>
+          )}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1817,6 +1888,93 @@ export default function Cobros() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
             >
               {savingPayment ? "Guardando..." : "Guardar Pago"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL DE DATOS BANCARIOS (FINANZAS) ══════════════════ */}
+      <Dialog open={bankModalOpen} onOpenChange={setBankModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Configuración de Cuenta Bancaria</DialogTitle>
+                <DialogDescription className="text-xs">
+                  Esta información se mostrará en el portal de clientes para pagos por transferencia SPEI.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Beneficiario / Razón Social *</Label>
+              <Input
+                value={bankForm.beneficiario}
+                onChange={(e) => setBankForm({ ...bankForm, beneficiario: e.target.value })}
+                placeholder="Ej: SERCO SEGURIDAD PRIVADA S.A. DE C.V."
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Institución Bancaria *</Label>
+                <Input
+                  value={bankForm.banco}
+                  onChange={(e) => setBankForm({ ...bankForm, banco: e.target.value })}
+                  placeholder="Ej: BBVA México"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Número de Cuenta</Label>
+                <Input
+                  value={bankForm.cuenta || ""}
+                  onChange={(e) => setBankForm({ ...bankForm, cuenta: e.target.value })}
+                  placeholder="Opcional"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">CLABE Interbancaria (18 dígitos) *</Label>
+              <Input
+                value={bankForm.clabe}
+                onChange={(e) => setBankForm({ ...bankForm, clabe: e.target.value })}
+                placeholder="012 180 00123456789 0"
+                className="h-8 text-xs font-mono font-semibold"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Instrucciones / Concepto de Pago</Label>
+              <Input
+                value={bankForm.notas}
+                onChange={(e) => setBankForm({ ...bankForm, notas: e.target.value })}
+                placeholder="Ej: Favor de indicar como referencia el nombre de su servicio"
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setBankModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveBankInfo}
+              disabled={savingBank}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+            >
+              {savingBank ? "Guardando..." : "Guardar Cambios"}
             </Button>
           </DialogFooter>
         </DialogContent>

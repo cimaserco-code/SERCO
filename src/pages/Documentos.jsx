@@ -1,34 +1,55 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, FileText, Check, ChevronsUpDown } from "lucide-react";
+import {
+  FileText,
+  Check,
+  ChevronsUpDown,
+  Eye,
+  Download,
+  Printer,
+  Loader2,
+  FileCheck,
+  CreditCard,
+  UserCheck,
+  Shield,
+  FileSignature
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
-  Card, CardHeader, CardTitle, CardContent,
-} from "@/components/ui/card";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Popover, PopoverContent, PopoverTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
 } from "@/components/ui/command";
-import ConfirmDialog from "@/components/ConfirmDialog";
 import { usePermissions } from "@/lib/PermissionsContext";
 import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
-import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 import { useSedeScope } from "@/hooks/useSedeScope";
-import { formatUserDisplayName } from "@/lib/userNameFormatting";
+import { formatNombreNatural } from "@/lib/userNameFormatting";
 import { generateContractPDF } from "@/lib/contratoTemplate";
+import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 import { cn } from "@/lib/utils";
-
-const emptyForm = { titulo: "", contenido: "", sede_id: "" };
 
 const defaultContractForm = {
   bono_mensual: "2000",
@@ -38,23 +59,23 @@ const defaultContractForm = {
   duracion_meses: "3",
 };
 
+const defaultFichaForm = {
+  tipo_movimiento: "ALTA",
+  fecha_movimiento: new Date().toISOString().split("T")[0],
+  servicio_capacita: "",
+  dias_capacitacion: "",
+  observaciones: "",
+};
+
 export default function Documentos() {
   const { user } = useAuth();
   const { sedeFilter, defaultSedeId } = useSedeScope();
-  const { canView, can } = usePermissions();
+  const { canView } = usePermissions();
   const { toast } = useToast();
-  const [items, setItems] = useState([]);
+
   const [empleados, setEmpleados] = useState([]);
   const [sedes, setSedes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(emptyForm);
-  const [file, setFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
-  const [viewItem, setViewItem] = useState(null);
 
   // Contract Generation States
   const [contractModalOpen, setContractModalOpen] = useState(false);
@@ -62,17 +83,31 @@ export default function Documentos() {
   const [empComboboxOpen, setEmpComboboxOpen] = useState(false);
   const [contractForm, setContractForm] = useState(defaultContractForm);
 
-  useEffect(() => { load(); }, []);
+  // Ficha Tecnica Generation States
+  const [fichaModalOpen, setFichaModalOpen] = useState(false);
+  const [selectedFichaEmpId, setSelectedFichaEmpId] = useState("");
+  const [fichaComboboxOpen, setFichaComboboxOpen] = useState(false);
+  const [fichaForm, setFichaForm] = useState(defaultFichaForm);
 
-  async function load() {
+  // General Document Preview Modal States
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [currentDocToSave, setCurrentDocToSave] = useState(null);
+  const [downloadFilename, setDownloadFilename] = useState("");
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
     setLoading(true);
     try {
-      const [data, emps, s] = await Promise.all([
-        sercoApi.entities.Documento.filter(sedeFilter, "-created_date"),
+      const [emps, s] = await Promise.all([
         sercoApi.entities.Empleado.filter(sedeFilter, "nombre_completo"),
         sercoApi.entities.Sede.list(),
       ]);
-      setItems(data);
       const activeEmps = (emps || []).filter(
         (e) => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)
       );
@@ -83,25 +118,9 @@ export default function Documentos() {
     }
   }
 
-  const filtered = items.filter((item) =>
-    (item.titulo || "").toLowerCase().includes(search.toLowerCase()) ||
-    (item.tipo || "").toLowerCase().includes(search.toLowerCase())
-  );
-
-  function openCreate() {
-    setEditing(null);
-    setForm({ ...emptyForm, sede_id: defaultSedeId });
-    setFile(null);
-    setModalOpen(true);
-  }
-
-  function openEdit(item) {
-    setEditing(item);
-    setForm({ ...emptyForm, ...item });
-    setFile(null);
-    setModalOpen(true);
-  }
-
+  // ══════════════════════════════════════════════════════════
+  // HANDLERS: CONTRATO LABORAL
+  // ══════════════════════════════════════════════════════════
   function openContractGenerator() {
     setSelectedEmpId("");
     setContractForm(defaultContractForm);
@@ -121,7 +140,7 @@ export default function Documentos() {
     setEmpComboboxOpen(false);
   }
 
-  function handleGenerateContract() {
+  async function handleGenerateContract() {
     const emp = empleados.find((e) => e.id === selectedEmpId);
     if (!emp) {
       toast({
@@ -131,197 +150,166 @@ export default function Documentos() {
       });
       return;
     }
-    generateContractPDF(emp, contractForm, sedes);
-    setContractModalOpen(false);
-    toast({
-      title: "Contrato generado",
-      description: `Se ha descargado el contrato de ${formatUserDisplayName(emp.nombre_completo, user?.role)}.`,
-    });
-  }
-
-  async function handleSave() {
-    setSaving(true);
+    setGeneratingPdf(true);
     try {
-      let finalContenido = form.contenido;
-      if (file) {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const filePath = `uploads/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("documentos")
-          .upload(filePath, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-          .from("documentos")
-          .createSignedUrl(filePath, 60 * 60);
-
-        if (signedUrlError) throw signedUrlError;
-
-        finalContenido = signedUrlData.signedUrl;
-      }
-
-      const payload = { ...form, contenido: finalContenido };
-
-      if (editing) {
-        await sercoApi.entities.Documento.update(editing.id, payload);
-      } else {
-        await sercoApi.entities.Documento.create(payload);
-      }
-      setModalOpen(false);
-      setFile(null);
-      await load();
-      toast({ title: "Documento guardado con éxito" });
+      const result = await generateContractPDF(emp, contractForm, sedes, { returnDoc: true });
+      setContractModalOpen(false);
+      setCurrentDocToSave(result.doc);
+      setPreviewPdfUrl(result.blobUrl);
+      setDownloadFilename(result.filename);
+      setPreviewTitle(`Contrato Laboral - ${formatNombreNatural(emp)}`);
+      setPreviewModalOpen(true);
     } catch (e) {
+      console.error(e);
       toast({
-        title: "Error",
-        description: e.message || "No se pudo subir o guardar el documento",
+        title: "Error al generar vista previa",
+        description: "No se pudo generar el contrato en PDF.",
         variant: "destructive",
       });
     } finally {
-      setSaving(false);
+      setGeneratingPdf(false);
     }
   }
 
-  async function handleDelete() {
-    await sercoApi.entities.Documento.delete(deleteId);
-    setDeleteId(null);
-    await load();
+  // ══════════════════════════════════════════════════════════
+  // HANDLERS: FICHA TÉCNICA
+  // ══════════════════════════════════════════════════════════
+  function openFichaGenerator() {
+    setSelectedFichaEmpId("");
+    setFichaForm({
+      ...defaultFichaForm,
+      fecha_movimiento: new Date().toISOString().split("T")[0],
+    });
+    setFichaComboboxOpen(false);
+    setFichaModalOpen(true);
   }
+
+  function handleSelectFichaEmployee(emp) {
+    setSelectedFichaEmpId(emp.id);
+    const isBaja = !!emp.fecha_baja;
+    setFichaForm({
+      tipo_movimiento: isBaja ? "BAJA" : "ALTA",
+      fecha_movimiento: (isBaja ? emp.fecha_baja : emp.fecha_ingreso) || new Date().toISOString().split("T")[0],
+      servicio_capacita: emp.servicio_ubicacion || "",
+      dias_capacitacion: [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") || "3 días inducción RH",
+      observaciones: isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : "",
+    });
+    setFichaComboboxOpen(false);
+  }
+
+  async function handleGenerateFicha() {
+    const emp = empleados.find((e) => e.id === selectedFichaEmpId);
+    if (!emp) {
+      toast({
+        title: "Error",
+        description: "Por favor selecciona un empleado para generar la ficha técnica.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setGeneratingPdf(true);
+    try {
+      const sedeObj = sedes.find((s) => s.id === (emp.sede_id || defaultSedeId));
+      const result = await generateFichaTecnicaPDF(
+        emp,
+        { ...fichaForm, sede_nombre: sedeObj?.nombre || "Monterrey" },
+        { returnDoc: true }
+      );
+      setFichaModalOpen(false);
+      setCurrentDocToSave(result.doc);
+      setPreviewPdfUrl(result.blobUrl);
+      setDownloadFilename(result.filename);
+      setPreviewTitle(`Ficha Técnica (${fichaForm.tipo_movimiento}) - ${formatNombreNatural(emp)}`);
+      setPreviewModalOpen(true);
+    } catch (e) {
+      console.error(e);
+      toast({
+        title: "Error al generar vista previa",
+        description: "No se pudo generar la ficha técnica en PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
   const selectedEmpleadoObj = empleados.find((e) => e.id === selectedEmpId);
+  const selectedFichaEmpObj = empleados.find((e) => e.id === selectedFichaEmpId);
 
   if (!canView("documentos")) return <AccessRestricted />;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+      {/* Encabezado Principal */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border pb-4">
         <div>
-          <h2 className="text-2xl font-heading font-bold">Documentos</h2>
-          <p className="text-sm text-muted-foreground mt-1">Plantillas de contratos, renuncias y más</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 w-full sm:w-64"
-            />
-          </div>
-          
-          
+          <h2 className="text-2xl sm:text-3xl font-heading font-extrabold tracking-tight text-foreground">
+            Documentos y Plantillas
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Generación y descarga de formatos oficiales SERCO con vista previa
+          </p>
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-center text-muted-foreground py-12">Cargando...</div>
-      ) : filtered.length === 0 ? (
-       <div className="flex flex-col items-center justify-center py-12 gap-6">
- 
-  <div className="flex flex-wrap justify-center gap-3">
+      {/* Botones de Documentos Directos */}
+      <div className="flex flex-wrap items-center gap-3 pt-2">
+        <Button
+          size="lg"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-xs h-11 px-5"
+          onClick={openContractGenerator}
+        >
+          <FileSignature className="w-4 h-4 mr-2" />
+          Contrato Laboral
+        </Button>
 
-    {/* Generar Contrato */}
-    <Button
-      variant="outline"
-      className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 font-medium"
-      onClick={openContractGenerator}
-    >
-      <FileText className="w-4 h-4 mr-1.5" />
-      Generar Contrato
-    </Button>
+        <Button
+          size="lg"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs h-11 px-5"
+          onClick={openFichaGenerator}
+        >
+          <FileCheck className="w-4 h-4 mr-2" />
+          Ficha Técnica
+        </Button>
 
-    {/* Generar Gafete */}
-    <Button
-      variant="outline"
-      onClick={() => {
-        toast({
-          title: "Próximamente",
-          description: "Generación de gafete en desarrollo.",
-        });
-      }}
-    >
-      <FileText className="w-4 h-4 mr-1.5" />
-      Generar Gafete
-    </Button>
+        <Button
+          size="lg"
+          variant="outline"
+          className="font-medium h-11 px-5"
+          onClick={() => {
+            toast({
+              title: "Próximamente",
+              description: "Generación de gafete en desarrollo.",
+            });
+          }}
+        >
+          <CreditCard className="w-4 h-4 mr-2" />
+          Gafete
+        </Button>
 
-    {/* Carta de Renuncia */}
-    <Button
-      variant="outline"
-      onClick={() => {
-        toast({
-          title: "Próximamente",
-          description: "Generación de carta de renuncia en desarrollo.",
-        });
-      }}
-    >
-      <FileText className="w-4 h-4 mr-1.5" />
-      Carta de Renuncia
-    </Button>
+        <Button
+          size="lg"
+          variant="outline"
+          className="font-medium h-11 px-5"
+          onClick={() => {
+            toast({
+              title: "Próximamente",
+              description: "Generación de carta de renuncia en desarrollo.",
+            });
+          }}
+        >
+          <FileText className="w-4 h-4 mr-2" />
+          Carta de Renuncia
+        </Button>
+      </div>
 
-    {/* Ficha Técnica */}
-    <Button
-      variant="outline"
-      onClick={() => {
-        toast({
-          title: "Próximamente",
-          description: "Generación de ficha técnica en desarrollo.",
-        });
-      }}
-    >
-      <FileText className="w-4 h-4 mr-1.5" />
-      Ficha Técnica
-    </Button>
-
-  </div>
-</div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((item) => (
-            <Card key={item.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => setViewItem(item)}>
-              <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                          <FileText className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base leading-tight">{item.titulo}</CardTitle>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-              <CardContent className="pt-0">
-                <p className="text-sm text-muted-foreground">
-                   Archivo adjunto
-                </p>
-                <div className="flex gap-1 mt-3" onClick={(e) => e.stopPropagation()}>
-                  {can("documentos", "edit") && (
-                  <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
-                    <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
-                  </Button>
-                  )}
-                  {can("documentos", "delete") && (
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteId(item.id)}>
-                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                  </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Contract Generator Dialog */}
+      {/* ══════════════════ MODAL: CONTRATO LABORAL ══════════════════ */}
       <Dialog open={contractModalOpen} onOpenChange={setContractModalOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Generar Contrato Laboral</DialogTitle>
             <DialogDescription>
-              Selecciona el empleado y completa los datos para descargar el contrato en PDF.
+              Selecciona el empleado para generar la vista previa del contrato en PDF.
             </DialogDescription>
           </DialogHeader>
 
@@ -339,7 +327,7 @@ export default function Documentos() {
                   >
                     <span className="truncate">
                       {selectedEmpleadoObj
-                        ? `${formatUserDisplayName(selectedEmpleadoObj.nombre_completo, user?.role)} (${selectedEmpleadoObj.puesto || "Sin puesto"})`
+                        ? `${formatNombreNatural(selectedEmpleadoObj)} (${selectedEmpleadoObj.puesto || "Guardia"})`
                         : "Selecciona o busca un empleado..."}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -360,7 +348,7 @@ export default function Documentos() {
                         {empleados.map((emp) => (
                           <CommandItem
                             key={emp.id}
-                            value={`${emp.nombre_completo} ${emp.puesto || ""} ${emp.curp || ""}`}
+                            value={`${formatNombreNatural(emp)} ${emp.nombre_completo} ${emp.puesto || ""} ${emp.curp || ""}`}
                             onSelect={() => handleSelectEmployee(emp)}
                             className="cursor-pointer font-medium"
                           >
@@ -371,9 +359,9 @@ export default function Documentos() {
                               )}
                             />
                             <div className="flex flex-col">
-                              <span>{formatUserDisplayName(emp.nombre_completo, user?.role)}</span>
+                              <span>{formatNombreNatural(emp)}</span>
                               <span className="text-xs text-muted-foreground">
-                                {emp.puesto || "Sin puesto"} · {emp.servicio_ubicacion || "Sin servicio"}
+                                {emp.puesto || "Guardia"} · {emp.servicio_ubicacion || "Sin servicio"}
                               </span>
                             </div>
                           </CommandItem>
@@ -438,131 +426,259 @@ export default function Documentos() {
             <Button 
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
               onClick={handleGenerateContract}
-              disabled={!selectedEmpId}
+              disabled={!selectedEmpId || generatingPdf}
             >
-              <FileText className="w-4 h-4 mr-1.5" /> Descargar PDF
+              {generatingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Generando...
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 mr-1.5" /> Generar Vista Previa
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Create/Edit Modal */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* ══════════════════ MODAL: FICHA TÉCNICA ══════════════════ */}
+      <Dialog open={fichaModalOpen} onOpenChange={setFichaModalOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar Documento" : "Nuevo Documento"}</DialogTitle>
-            <DialogDescription>Crea una plantilla de documento</DialogDescription>
+            <DialogTitle>Formato de Movimiento de Personal (Ficha Técnica)</DialogTitle>
+            <DialogDescription>
+              Selecciona el empleado y tipo de movimiento para generar la vista previa oficial.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Título *</Label>
-              <Input value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
-            </div>
-            <div>
-              <Label>Subir Archivo</Label>
-              <Input
-                type="file"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="cursor-pointer mb-3"
-              />
-              {file && (
-                <p className="text-xs text-emerald-600 font-semibold mb-3">
-                  Archivo seleccionado: {file.name}
-                </p>
-              )}
-              {form.contenido && form.contenido.startsWith("http") && (
-                <p className="text-xs text-blue-600 font-semibold mb-3">
-                  Este documento ya tiene un archivo subido:{" "}
-                  <a href={form.contenido} target="_blank" rel="noreferrer" className="underline">
-                    Ver archivo actual
-                  </a>
-                </p>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button 
-              onClick={handleSave} 
-              disabled={saving || !form.titulo|| (!editing && !file)}
-            >
-              {saving ? "Guardando..." : "Guardar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* View Modal */}
-      <Dialog open={!!viewItem} onOpenChange={(v) => !v && setViewItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <DialogTitle>{viewItem?.titulo}</DialogTitle>
-                <DialogDescription>
-                </DialogDescription>
+          <div className="space-y-4 py-2">
+            {/* Searchable Empleado Combobox */}
+            <div className="flex flex-col gap-1.5">
+              <Label>Empleado *</Label>
+              <Popover open={fichaComboboxOpen} onOpenChange={setFichaComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={fichaComboboxOpen}
+                    className="w-full justify-between font-normal h-10 px-3 bg-background"
+                  >
+                    <span className="truncate">
+                      {selectedFichaEmpObj
+                        ? `${formatNombreNatural(selectedFichaEmpObj)} (${selectedFichaEmpObj.puesto || "Guardia"})`
+                        : "Selecciona o busca un empleado..."}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[320px] p-0" align="start">
+                  <Command
+                    filter={(value, search) => {
+                      const normalize = (str) =>
+                        (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                      return normalize(value).includes(normalize(search)) ? 1 : 0;
+                    }}
+                  >
+                    <CommandInput placeholder="Escribe el nombre del empleado..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró ningún empleado.</CommandEmpty>
+                      <CommandGroup>
+                        {empleados.map((emp) => (
+                          <CommandItem
+                            key={emp.id}
+                            value={`${formatNombreNatural(emp)} ${emp.nombre_completo} ${emp.puesto || ""} ${emp.curp || ""}`}
+                            onSelect={() => handleSelectFichaEmployee(emp)}
+                            className="cursor-pointer font-medium"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 text-primary",
+                                selectedFichaEmpId === emp.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex flex-col">
+                              <span>{formatNombreNatural(emp)}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {emp.puesto || "Guardia"} · {emp.servicio_ubicacion || "Sin servicio"}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Selector de Tipo de Movimiento */}
+            <div>
+              <Label className="block mb-1.5">Tipo de Movimiento *</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant={fichaForm.tipo_movimiento === "ALTA" ? "default" : "outline"}
+                  className={cn(
+                    "w-full font-bold",
+                    fichaForm.tipo_movimiento === "ALTA"
+                      ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                      : "text-emerald-700 border-emerald-300 dark:border-emerald-800"
+                  )}
+                  onClick={() => setFichaForm({ ...fichaForm, tipo_movimiento: "ALTA" })}
+                >
+                  ✓ ALTA DE PERSONAL
+                </Button>
+                <Button
+                  type="button"
+                  variant={fichaForm.tipo_movimiento === "BAJA" ? "default" : "outline"}
+                  className={cn(
+                    "w-full font-bold",
+                    fichaForm.tipo_movimiento === "BAJA"
+                      ? "bg-red-600 hover:bg-red-700 text-white"
+                      : "text-red-700 border-red-300 dark:border-red-800"
+                  )}
+                  onClick={() => setFichaForm({ ...fichaForm, tipo_movimiento: "BAJA" })}
+                >
+                  ✕ BAJA DE PERSONAL
+                </Button>
               </div>
             </div>
-          </DialogHeader>
-          {viewItem?.contenido && viewItem.contenido.startsWith("http") ? (
-            <div className="mt-4 space-y-4">
-              {viewItem.contenido.toLowerCase().includes(".pdf") ? (
-                <iframe
-                  src={viewItem.contenido}
-                  className="w-full h-[600px] rounded-lg border"
-                  title="Vista previa del documento"
-                />
-              ) : (
-                <div className="p-8 bg-muted/30 rounded-lg border text-center flex flex-col items-center gap-3">
-                  <FileText className="w-12 h-12 text-primary opacity-80" />
-                  <p className="text-sm font-medium">
-                    Este formato no tiene vista previa disponible.
-                  </p>
-                  <Button asChild>
-                    <a
-                      href={viewItem.contenido}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Abrir documento
-                    </a>
-                  </Button>
-                </div>
-              )}
 
-              <Button variant="outline" asChild>
-                <a
-                  href={viewItem.contenido}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Abrir en nueva pestaña
-                </a>
-              </Button>
+            {/* Fecha del Movimiento y Servicio de Capacitación */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Fecha Efectiva del Movimiento</Label>
+                <Input
+                  type="date"
+                  value={fichaForm.fecha_movimiento}
+                  onChange={(e) => setFichaForm({ ...fichaForm, fecha_movimiento: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Servicio en el que se capacita</Label>
+                <Input
+                  value={fichaForm.servicio_capacita}
+                  placeholder="Ej. Oficina / Centro Operativo"
+                  onChange={(e) => setFichaForm({ ...fichaForm, servicio_capacita: e.target.value })}
+                />
+              </div>
             </div>
-          ) : (
-            <div className="mt-2 p-4 bg-muted/50 rounded-lg border whitespace-pre-wrap text-sm font-mono">
-              {viewItem?.contenido || "Sin contenido"}
+
+            {/* Días de Capacitación RH */}
+            <div>
+              <Label>Días de Capacitación RH</Label>
+              <Input
+                value={fichaForm.dias_capacitacion}
+                placeholder="Ej. 3 días teórico / práctico en base"
+                onChange={(e) => setFichaForm({ ...fichaForm, dias_capacitacion: e.target.value })}
+              />
             </div>
-          )}
+
+            {/* Observaciones */}
+            <div>
+              <Label>Observaciones / Comentarios</Label>
+              <Textarea
+                rows={3}
+                value={fichaForm.observaciones}
+                placeholder="Indica cualquier anotación, motivo de baja o detalle relevante..."
+                onChange={(e) => setFichaForm({ ...fichaForm, observaciones: e.target.value })}
+              />
+            </div>
+          </div>
+
           <DialogFooter>
-            {can("documentos", "edit") && (
-            <Button variant="outline" onClick={() => { setViewItem(null); if (viewItem) openEdit(viewItem); }}>
-              <Pencil className="w-4 h-4 mr-1" /> Editar
+            <Button variant="outline" onClick={() => setFichaModalOpen(false)}>Cancelar</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+              onClick={handleGenerateFicha}
+              disabled={!selectedFichaEmpId || generatingPdf}
+            >
+              {generatingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Generando...
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 mr-1.5" /> Generar Vista Previa
+                </>
+              )}
             </Button>
-            )}
-            <Button onClick={() => setViewItem(null)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={!!deleteId}
-        onOpenChange={(v) => !v && setDeleteId(null)}
-        title="¿Eliminar documento?"
-        description="Esta acción no se puede deshacer."
-        onConfirm={handleDelete}
-      />
+      {/* ══════════════════ MODAL: VISTA PREVIA PDF ══════════════════ */}
+      <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
+        <DialogContent className="max-w-5xl w-[95vw] h-[92vh] flex flex-col p-4 sm:p-6">
+          <DialogHeader className="pb-2 border-b border-border">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-5 h-5 text-primary shrink-0" />
+                <DialogTitle className="text-base sm:text-lg font-bold truncate">
+                  {previewTitle || "Vista Previa de Documento"}
+                </DialogTitle>
+              </div>
+              <Badge variant="outline" className="hidden sm:inline-flex text-xs shrink-0">
+                Documento Oficial SERCO
+              </Badge>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Revisa el formato antes de descargarlo o imprimirlo.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* PDF Viewer Container */}
+          <div className="flex-1 w-full my-2 bg-muted/30 rounded-xl overflow-hidden border border-border min-h-[400px]">
+            {previewPdfUrl ? (
+              <iframe
+                src={previewPdfUrl}
+                className="w-full h-full border-0 rounded-lg"
+                title="Vista previa del documento generado"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground text-sm">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                Cargando vista previa del documento...
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border flex flex-row items-center justify-between gap-2 w-full">
+            <Button variant="outline" onClick={() => setPreviewModalOpen(false)}>
+              Cerrar
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (previewPdfUrl) {
+                    window.open(previewPdfUrl, "_blank");
+                  }
+                }}
+              >
+                <Printer className="w-4 h-4 mr-1.5" />
+                Imprimir
+              </Button>
+              <Button
+                className="bg-primary text-primary-foreground font-semibold"
+                onClick={() => {
+                  if (currentDocToSave && downloadFilename) {
+                    currentDocToSave.save(downloadFilename);
+                    toast({
+                      title: "Descarga iniciada",
+                      description: `Se ha descargado el archivo ${downloadFilename}.`,
+                    });
+                  }
+                }}
+              >
+                <Download className="w-4 h-4 mr-1.5" />
+                Descargar PDF
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

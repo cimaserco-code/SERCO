@@ -33,6 +33,10 @@ import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import VersionBadge from "@/components/VersionBadge";
+import ClientLayout from '@/components/cliente/ClientLayout';
+import ClientHome from '@/pages/cliente/ClientHome';
+import ClientAgenda from '@/pages/cliente/ClientAgenda';
+import ClientAtencion from '@/pages/cliente/ClientAtencion';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -67,6 +71,13 @@ const AuthenticatedApp = () => {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+            {/* Interfaz de Cliente (Portal de Clientes con 3 módulos: Inicio, Agenda, Atención) */}
+            <Route path="/cliente" element={<ClientLayout />}>
+              <Route index element={<ClientHome />} />
+              <Route path="agenda" element={<ClientAgenda />} />
+              <Route path="atencion" element={<ClientAtencion />} />
+            </Route>
+
             <Route element={<Layout />}>
               <Route path="/" element={<Home />} />
               <Route path="/overview" element={<Overview />} />

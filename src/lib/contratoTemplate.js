@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { formatPersonName } from "@/lib/userNameFormatting";
+import { formatPersonName, formatNombreNatural } from "@/lib/userNameFormatting";
 
 export function numeroALetras(num) {
   if (num === 0) return "CERO PESOS";
@@ -116,12 +116,24 @@ function calcularEdad(fechaNacimiento) {
   return edad;
 }
 
-export function generateContractPDF(emp, params, sedes) {
+export function loadLogoImage(src = "/favicon.png") {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+export async function generateContractPDF(emp, params, sedes, options = {}) {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
     format: "letter"
   });
+
+  const logoImg = await loadLogoImage("/favicon.png");
 
   const pageHeight = doc.internal.pageSize.height;
   const pageWidth = doc.internal.pageSize.width;
@@ -129,13 +141,26 @@ export function generateContractPDF(emp, params, sedes) {
   const contentWidth = pageWidth - (margin * 2);
   let y = 25;
 
-  const totalPagesAlias = "{total_pages}";
+  const addPageDecorations = (pageNum, totalPages) => {
+    // Watermark Logo de la empresa en el fondo
+    if (logoImg) {
+      try {
+        doc.saveGraphicsState();
+        doc.setGState(new doc.GState({ opacity: 0.08 }));
+        const logoSize = 105;
+        const logoX = (pageWidth - logoSize) / 2;
+        const logoY = (pageHeight - logoSize) / 2;
+        doc.addImage(logoImg, "PNG", logoX, logoY, logoSize, logoSize, undefined, "FAST");
+        doc.restoreGraphicsState();
+      } catch (err) {
+        console.warn("No se pudo dibujar la marca de agua:", err);
+      }
+    }
 
-  const addPageDecorations = (pageNum) => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
-    doc.text(`Página ${pageNum} de ${totalPagesAlias}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+    doc.text(`Página ${pageNum} de ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: "center" });
     doc.text("CONTRATO INDIVIDUAL DE TRABAJO - CIMA-SERCO", margin, 12);
     doc.setDrawColor(200, 200, 200);
     doc.line(margin, 14, pageWidth - margin, 14);
@@ -187,7 +212,7 @@ export function generateContractPDF(emp, params, sedes) {
       tempY += 4;
     });
 
-    const trabNameLines = doc.splitTextToSize(`${formatPersonName(emp.nombre_completo)}\nTrabajador`, contentWidth / 2 - 10);
+    const trabNameLines = doc.splitTextToSize(`${formatNombreNatural(emp)}\nTrabajador`, contentWidth / 2 - 10);
     tempY = y;
     trabNameLines.forEach(line => {
       doc.text(line, pageWidth / 2 + 10, tempY);
@@ -195,6 +220,7 @@ export function generateContractPDF(emp, params, sedes) {
     });
   };
 
+  const nombreTrabajador = formatNombreNatural(emp).toUpperCase();
   const sueldoBase = Number(emp.sueldo || 0);
   const sueldoBaseLetras = numeroALetras(sueldoBase);
   const sueldoSemanal = Math.round(sueldoBase / 4);
@@ -216,7 +242,7 @@ export function generateContractPDF(emp, params, sedes) {
   const duracionTexto = params.duracion_meses === "3" ? "3 (tres meses)" : `${params.duracion_meses} meses`;
 
   const paragraphs = [
-    `CONTRATO POR TIEMPO DETERMINADO, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V., REPRESENTADA POR SU APODERADO LEGAL JUAN CARLOS CANALIZO HERNÁNDEZ, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${emp.nombre_completo.toUpperCase()}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`,
+    `CONTRATO POR TIEMPO DETERMINADO, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V., REPRESENTADA POR SU APODERADO LEGAL JUAN CARLOS CANALIZO HERNÁNDEZ, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`,
     `DECLARACIONES:`,
     `I. Declara “El Patrón”:`,
     `Ser una persona moral legalmente constituida conforme a las leyes mexicanas, acreditando constitución a través del instrumento notarial con número 24,017 (veinticuatro mil diecisiete), de fecha doce de abril del año dos mil veintiuno, otorgada ante la fe del Licenciado Rafael De La Huerta Manjarrez, Titular de la Notaría Pública número Dieciséis de la Décima Primera Demarcación Notarial, con residencia en la Ciudad de Xalapa, Veracruz.`,
@@ -251,8 +277,8 @@ export function generateContractPDF(emp, params, sedes) {
     `“El Patrón” otorgará, por cada seis días trabajados, un día de descanso; reservándose el derecho “El Patrón” de modificar el día de descanso con previo aviso, respetando siempre un día de descanso a la semana.`,
     `SEXTA. ACUERDOS. - “El Trabajador” disfrutará de un día de descanso tal como se establece en la cláusula anterior; sin embargo, “El Trabajador” conviene en laborar los días domingos en que “El Patrón” necesite de sus servicios.Asimismo, “El Trabajador” se obliga a laborar los días festivos que establece el artículo 74 de “La Ley” cuando así lo requieran las necesidades del servicio, teniendo derecho al pago del salario conforme a lo que establece “La Ley” del día en que prestó sus servicios.`,
     `“El Trabajador” únicamente podrá laborar tiempo extraordinario cuando “El Patrón” se lo indique mediante orden por escrito, en la cual señalará él o los días y horarios en el cual laborará tiempo extra.`,
-    `SÉPTIMA. - SALARIO BASE Y FORMA DE PAGO. “El Trabajador” recibirá como contraprestación por los servicios personales subordinados prestados un salario base mensual bruto de \${sueldoBase.toLocaleString('es-MX')} (${sueldoBaseLetras} 00/100 M.N.), dicho salario será cubierto los viernes de cada semana, por la cantidad de \$______________________, (__________________________________00/100 M.N.) , en el lugar de trabajo asignado o mediante depósito o transferencia a la cuenta o tarjeta bancaria que designe “El Trabajador”, previa expedición del recibo de nómina correspondiente. El salario señalado comprende el pago proporcional de los días de descanso semanal y obligatorio que legalmente correspondan, sin perjuicio de las demás prestaciones a que tenga derecho “El Trabajador”.`,
-    `SÉPTIMA BIS. - BONO POR ASIGNACIÓN DE SERVICIO. Adicionalmente al salario base establecido en la cláusula anterior, “El Trabajador” recibirá un bono mensual por asignación de servicio, por la cantidad de \${bonoBase.toLocaleString('es-MX')} (${bonoBaseLetras} 00/100 M.N.), el cual será cubierto los viernes de cada semana, por la cantidad de \$______________________, (__________________________________00/100 M.N.) , según el servicio, centro de trabajo, nivel de responsabilidad, condiciones operativas y funciones específicas que le sean asignadas. El monto aplicable será informado por escrito a “El Trabajador” al momento de su asignación o cambio de servicio. Cuando la asignación comprenda únicamente una parte del mes, el bono se cubrirá de manera proporcional a los días efectivamente laborados en dicho servicio. En caso de reasignación a un servicio distinto, el monto del bono se ajustará al nivel correspondiente al nuevo servicio, sin que dicha modificación implique una reducción del salario base mensual ni afecte cantidades previamente devengadas. El bono será cubierto junto con el salario de cada semana, en la parte proporcional correspondiente, y deberá identificarse por separado en el recibo de nómina. Para todos los efectos legales y de seguridad social, su integración salarial se determinará conforme a la legislación aplicable.`,
+    `SÉPTIMA. - SALARIO BASE Y FORMA DE PAGO. “El Trabajador” recibirá como contraprestación por los servicios personales subordinados prestados un salario base mensual bruto de $${sueldoBase.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${sueldoBaseLetras} 00/100 M.N.), dicho salario será cubierto los viernes de cada semana, por la cantidad de $${sueldoSemanal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, (${sueldoSemanalLetras} 00/100 M.N.) , en el lugar de trabajo asignado o mediante depósito o transferencia a la cuenta o tarjeta bancaria que designe “El Trabajador”, previa expedición del recibo de nómina correspondiente. El salario señalado comprende el pago proporcional de los días de descanso semanal y obligatorio que legalmente correspondan, sin perjuicio de las demás prestaciones a que tenga derecho “El Trabajador”.`,
+    `SÉPTIMA BIS. - BONO POR ASIGNACIÓN DE SERVICIO. Adicionalmente al salario base establecido en la cláusula anterior, “El Trabajador” recibirá un bono mensual por asignación de servicio, por la cantidad de $${bonoBase.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${bonoBaseLetras} 00/100 M.N.), el cual será cubierto los viernes de cada semana, por la cantidad de $${bonoSemanal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, (${bonoSemanalLetras} 00/100 M.N.) , según el servicio, centro de trabajo, nivel de responsabilidad, condiciones operativas y funciones específicas que le sean asignadas. El monto aplicable será informado por escrito a “El Trabajador” al momento de su asignación o cambio de servicio. Cuando la asignación comprenda únicamente una parte del mes, el bono se cubrirá de manera proporcional a los días efectivamente laborados en dicho servicio. En caso de reasignación a un servicio distinto, el monto del bono se ajustará al nivel correspondiente al nuevo servicio, sin que dicha modificación implique una reducción del salario base mensual ni afecte cantidades previamente devengadas. El bono será cubierto junto con el salario de cada semana, en la parte proporcional correspondiente, y deberá identificarse por separado en el recibo de nómina. Para todos los efectos legales y de seguridad social, su integración salarial se determinará conforme a la legislación aplicable.`,
     `OCTAVA. DEDUCCIONES. - “El Trabajador” autoriza a “El Patrón” deducir de su salario el Impuesto sobre el Producto del Trabajo o también conocido como el Impuesto sobre la Renta y demás impuestos correspondientes, de conformidad con lo establecido en las disposiciones legales en vigor al momento en que se realice el descuento respectivo. Así como demás descuentos descritos en el artículo 97 de la Ley, tales como pensiones alimenticias decretadas por la autoridad competente, pago de rentas, pago de abonos para cubrir préstamos provenientes del Fondo Nacional de la Vivienda para los Trabajadores, etc., según sea el caso de “El Trabajador”.`,
     `NOVENA. - RECIBOS. “El Trabajador” queda obligado a otorgar su firma al recibo de pago a favor del “Patrón” por el total de los salarios devengados a que tuviere derecho, conviniendo que la firma implicará un finiquito total hasta la fecha del recibo correspondiente.`,
     `DÉCIMA. - CONTROL DE ASISTENCIA. “El Trabajador” deberá registrar el inicio y término de su jornada laboral mediante los mecanismos de control de asistencia que establezca “El Patrón”, los cuales podrán consistir en listas de asistencia, sistemas electrónicos, aplicaciones móviles, reportes operativos, mensajes institucionales o cualquier otro medio de control implementado por la empresa.`,
@@ -310,8 +336,16 @@ export function generateContractPDF(emp, params, sedes) {
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    addPageDecorations(i);
+    addPageDecorations(i, pageCount);
   }
 
-  doc.save(`Contrato_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`);
+  const filename = `Contrato_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`;
+
+  if (options.returnDoc) {
+    const blobUrl = doc.output("bloburl");
+    return { doc, blobUrl, filename };
+  }
+
+  doc.save(filename);
+  return { doc, filename };
 }
