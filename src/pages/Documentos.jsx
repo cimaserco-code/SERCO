@@ -47,6 +47,7 @@ import AccessRestricted from "@/components/AccessRestricted";
 import { useToast } from "@/components/ui/use-toast";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { formatNombreNatural } from "@/lib/userNameFormatting";
+import { resolveEmpleadoNumero } from "@/lib/empleadoNumero";
 import { generateContractPDF } from "@/lib/contratoTemplate";
 import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 import { cn } from "@/lib/utils";
@@ -108,10 +109,14 @@ export default function Documentos() {
         sercoApi.entities.Empleado.filter(sedeFilter, "nombre_completo"),
         sercoApi.entities.Sede.list(),
       ]);
-      const activeEmps = (emps || []).filter(
+      const employeesWithNumero = (emps || []).map((emp) => ({
+        ...emp,
+        numero_empleado: resolveEmpleadoNumero(emp),
+      }));
+      const activeEmps = employeesWithNumero.filter(
         (e) => !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja)
       );
-      setEmpleados(activeEmps.length > 0 ? activeEmps : (emps || []));
+      setEmpleados(activeEmps.length > 0 ? activeEmps : employeesWithNumero);
       setSedes(s || []);
     } finally {
       setLoading(false);

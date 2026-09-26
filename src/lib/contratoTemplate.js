@@ -236,8 +236,12 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
   const rfc = emp.rfc || "______";
   const curp = emp.curp || "______";
   
-  const today = new Date();
   const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const fechaCapacitacionParts = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(emp.fecha_ingreso || "");
+  const monthIndex = fechaCapacitacionParts ? Number(fechaCapacitacionParts[2]) - 1 : -1;
+  const fechaContrato = fechaCapacitacionParts && meses[monthIndex]
+    ? `${Number(fechaCapacitacionParts[3])} de ${meses[monthIndex]} del año ${fechaCapacitacionParts[1]}`
+    : "___ de ______ del año ______";
 
   const duracionTexto = params.duracion_meses === "3" ? "3 (tres meses)" : `${params.duracion_meses} meses`;
 
@@ -316,7 +320,7 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
     `Reportar de manera inmediata cualquier desperfecto, daño o anomalía que presente el mobiliario.`,
     `El incumplimiento de estas obligaciones podrá dar lugar a las responsabilidades que correspondan conforme a la legislación laboral aplicable y a las disposiciones internas de la empresa.`,
     `VIGÉSIMA OCTAVA. - ENCABEZADOS Y JURISDICCIÓN. Los encabezados de las cláusulas del presente contrato se han colocado para conveniencia de “Las Partes”, con el exclusivo objeto de facilitar su lectura y localización; por tanto, no necesariamente definen ni limitan el contenido de estas. Para la interpretación de cada cláusula deberá entenderse exclusivamente a su contenido, y de ninguna manera a su título, por lo que no afectará la interpretación y la validez de este instrumento, ni los términos, condiciones, derechos u obligaciones en el presente contrato. Así mismo se someten a la jurisdicción de los Juzgados Laborales de la ciudad de Monterrey Nuevo León, renunciando a cualquier otro fuero que pudiera corresponderles por domicilio futuro. Ambas partes convienen en que lo no previsto en el presente contrato se sujetará a las disposiciones de la Ley Federal del Trabajo en vigor.`,
-    `Leído que fue por ambas partes el presente contrato individual de trabajo, enterados de su contenido, alcance, fuerza y valor legal, sabedores y conscientes de las obligaciones que contraen, lo ratifican y firman de conformidad en la ciudad de Monterrey, Nuevo León, el día ${today.getDate()} de ${meses[today.getMonth()]} del año ${today.getFullYear()}.`,
+    `Leído que fue por ambas partes el presente contrato individual de trabajo, enterados de su contenido, alcance, fuerza y valor legal, sabedores y conscientes de las obligaciones que contraen, lo ratifican y firman de conformidad en la ciudad de Monterrey, Nuevo León, el día ${fechaContrato}.`,
     `“El Patrón”`,
     `JUAN CARLOS CANALIZO HERNÁNDEZAPODERADO LEGAL DE “CIMA-SERCO SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V.”`,
     `“El Trabajador”`,
