@@ -30,7 +30,6 @@ const navigationSections = [
       { to: "/servicios/plantilla", label: "Plantilla", icon: Clock, module: "turnos" },
       { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
       { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
-      { to: "/supervisiones", label: "Supervisiones", icon: Eye, module: "supervisiones" },
       { to: "/agenda", label: "Agenda", icon: CalendarDays, module: "agenda" },
     ]
   },

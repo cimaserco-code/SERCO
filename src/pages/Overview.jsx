@@ -61,8 +61,6 @@ export default function Overview() {
     mantenimientos: [],
     asistencias: [],
     nominas: [],
-    rondines: [],
-    reportes: [],
     solicitudes: []
   });
 
@@ -73,7 +71,7 @@ export default function Overview() {
   async function load() {
     setLoading(true);
     try {
-      const [emp, serv, inv, docs, cobros, egresos, saldos, mantenimientos, asistencias, noms, rondines, reportes, sols, seds] = await Promise.all([
+      const [emp, serv, inv, docs, cobros, egresos, saldos, mantenimientos, asistencias, noms, sols, seds] = await Promise.all([
         (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("servicios") ? sercoApi.entities.Servicio.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("inventario") ? sercoApi.entities.InventarioItem.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
@@ -84,8 +82,6 @@ export default function Overview() {
         (canView("egresos") && sercoApi.entities.Mantenimiento ? sercoApi.entities.Mantenimiento.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("asistencias") ? sercoApi.entities.Asistencia.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (sercoApi.entities.Nominas ? sercoApi.entities.Nominas.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
-        (canView("supervisiones") && sercoApi.entities.Rondin ? sercoApi.entities.Rondin.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
-        (canView("supervisiones") && sercoApi.entities.ReporteSupervision ? sercoApi.entities.ReporteSupervision.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
         (canView("inventario") && sercoApi.entities.SolicitudInventario ? sercoApi.entities.SolicitudInventario.list() : Promise.resolve([])).catch(() => []),
         sercoApi.entities.Sede.list().catch(() => [])
       ]);
@@ -101,8 +97,6 @@ export default function Overview() {
         mantenimientos,
         asistencias,
         nominas: noms,
-        rondines,
-        reportes,
         solicitudes: sols
       });
       setSedes(seds);
@@ -150,8 +144,6 @@ export default function Overview() {
   const filteredMantenimientos = selectedSedeId === "all" ? rawData.mantenimientos : rawData.mantenimientos.filter(m => m.sede_id === selectedSedeId);
   const filteredAsistencias = selectedSedeId === "all" ? rawData.asistencias : rawData.asistencias.filter(a => a.sede_id === selectedSedeId);
   const filteredNominas = selectedSedeId === "all" ? rawData.nominas : (rawData.nominas || []).filter(n => n.sede_id === selectedSedeId);
-  const filteredRondines = selectedSedeId === "all" ? rawData.rondines : rawData.rondines.filter(r => r.sede_id === selectedSedeId);
-  const filteredReportes = selectedSedeId === "all" ? rawData.reportes : rawData.reportes.filter(r => r.sede_id === selectedSedeId);
   const filteredSolicitudes = selectedSedeId === "all" ? rawData.solicitudes : rawData.solicitudes.filter(s => s.sede_id === selectedSedeId);
 
   // Stats calculation
@@ -260,9 +252,6 @@ export default function Overview() {
   const varAltas = prevEmpAltas > 0 ? (((diffAltas) / prevEmpAltas) * 100) : null;
   const varBajas = prevEmpBajas > 0 ? (((diffBajas) / prevEmpBajas) * 100) : null;
   const balancePersonal = empAltas - empBajas;
-
-  const monthlyRondines = filteredRondines.filter(r => (r.fecha && r.fecha.slice(0, 7) === currentMonth) || (r.created_date && r.created_date.slice(0, 7) === currentMonth)).length;
-  const monthlyReportes = filteredReportes.filter(r => (r.fecha && r.fecha.slice(0, 7) === currentMonth) || (r.created_date && r.created_date.slice(0, 7) === currentMonth)).length;
 
   const availableSedes = isSuperAdmin
     ? sedes
@@ -475,29 +464,6 @@ export default function Overview() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Suspendidos / Inactivos</span>
               <span className="font-semibold text-muted-foreground">{loading ? "—" : servInactivos}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Supervisiones (Rondines y Reportes) */}
-        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/supervisiones")}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base font-bold flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-amber-500" /> Supervisiones
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" /> Rondines del Mes
-              </span>
-              <span className="font-semibold text-amber-600">{loading ? "—" : monthlyRondines}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <ClipboardList className="w-3.5 h-3.5" /> Reportes de Supervisión
-              </span>
-              <span className="font-semibold text-indigo-600">{loading ? "—" : monthlyReportes}</span>
             </div>
           </CardContent>
         </Card>

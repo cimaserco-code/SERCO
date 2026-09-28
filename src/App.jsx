@@ -20,7 +20,6 @@ import Documentos from '@/pages/Documentos';
 import Plantilla from '@/pages/Plantilla';
 import Egresos from '@/pages/Egresos';
 import Overview from '@/pages/Overview';
-import Supervisiones from '@/pages/Supervisiones';
 import Agenda from '@/pages/Agenda';
 import Nominas from '@/pages/Nominas';
 import Administracion from '@/pages/Administracion';
@@ -95,7 +94,6 @@ const AuthenticatedApp = () => {
               <Route path="/inventario" element={<Inventario />} />
               <Route path="/documentos" element={<Documentos />} />
               <Route path="/egresos" element={<Egresos />} />
-              <Route path="/supervisiones" element={<Supervisiones />} />
               <Route path="/agenda" element={<Agenda />} />
             </Route>
           </Route>
