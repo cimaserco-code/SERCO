@@ -43,6 +43,13 @@ export function getDiasMesFactura(mesString) {
   }
 }
 
+/** @param {string} mesString @param {string} frecuencia */
+function getDiasMesParaFrecuencia(mesString, frecuencia) {
+  if (frecuencia !== "quincenal" || !mesString) return getDiasMesFactura(mesString);
+  const [year, month] = mesString.split("-").map(Number);
+  return new Date(year, month, 0).getDate();
+}
+
 export function getCobroMeta(id) {
   if (!id) return null;
   try {
@@ -118,19 +125,22 @@ function getParteNombre(frecuencia, index) {
   return index === 0 ? "Mensual" : `Parte ${index + 1}`;
 }
 
-function getPartePeriodo(frecuencia, index, mes, diasQuincena = 15) {
+function getPartePeriodo(frecuencia, index, mes, diasQuincena = 15, diasQuincenaPartes = {}) {
   if (!mes || frecuencia === "mensual") return null;
-  const diasMes = getDiasMesFactura(mes);
   if (frecuencia === "semanal") {
+    const diasMes = getDiasMesFactura(mes);
     if (index < 4) return `Días ${index * 7 + 1} al ${(index + 1) * 7}`;
     return `Días 29 al ${diasMes}`;
   }
-  const dQ1 = Number(diasQuincena) === 16 ? 16 : 15;
-  if (index === 0) return `Días 1 al ${dQ1}`;
-  return `Días ${dQ1 + 1} al ${diasMes}`;
+  const diasMes = getDiasMesParaFrecuencia(mes, frecuencia);
+  const dQ1 = Number(diasQuincenaPartes?.q1 ?? diasQuincena) === 16 ? 16 : 15;
+  const dQ2 = Number(diasQuincenaPartes?.q2) === 16 ? 16 : 15;
+  if (index === 0) return `Días 1 al ${Math.min(dQ1, diasMes)}`;
+  const startDay = dQ1 + 1;
+  return `Días ${startDay} al ${Math.min(startDay + dQ2 - 1, diasMes)}`;
 }
 
-export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, calcularIva, frecuencia, diasQuincena = 15 }) {
+export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, calcularIva, frecuencia, diasQuincena = 15, diasQuincenaPartes = {} }) {
   const monto = Number(montoBase) || 0;
   const cDia = Number(costoDia) || (diasMes > 0 ? monto / diasMes : 0);
   const factorIva = calcularIva ? 1.16 : 1;
@@ -138,29 +148,20 @@ export function calcularPlanPagos({ montoBase, costoDia, esVariable, diasMes, ca
   const iva = calcularIva ? Math.round(monto * 0.16) : 0;
 
   if (frecuencia === "quincenal") {
-    let q1 = 0;
-    let q2 = 0;
-    const numDiasQ1 = Number(diasQuincena) === 16 ? 16 : 15;
-    const diasQ1 = Math.min(numDiasQ1, diasMes > 0 ? diasMes : numDiasQ1);
-    const diasQ2 = diasMes > 0 ? Math.max(0, diasMes - diasQ1) : (numDiasQ1 === 16 ? 15 : 15);
-
-    if (esVariable && cDia > 0) {
-      const baseQ1 = Math.round(diasQ1 * cDia);
-      q1 = Math.round(baseQ1 * factorIva);
-      q2 = total - q1;
-    } else {
-      const divisor = diasMes > 0 ? diasMes : (diasQ1 + diasQ2);
-      q1 = divisor > 0 ? Math.round((total * diasQ1) / divisor) : Math.round(total / 2);
-      q2 = total - q1;
-    }
+    const numDiasQ1 = Number(diasQuincenaPartes?.q1 ?? diasQuincena) === 16 ? 16 : 15;
+    const numDiasQ2 = Number(diasQuincenaPartes?.q2) === 16 ? 16 : 15;
+    const totalDiasQuincena = numDiasQ1 + numDiasQ2;
+    const q1 = Math.round((total * numDiasQ1) / totalDiasQuincena);
+    const q2 = total - q1;
     return {
       total,
       iva,
       tipo: "quincenal",
       diasQuincena: numDiasQ1,
+      diasQuincenaPartes: { q1: numDiasQ1, q2: numDiasQ2 },
       detalles: [
-        { id: "q1", nombre: `Quincena 1 (${diasQ1} días)`, monto: q1, dias: diasQ1 },
-        { id: "q2", nombre: `Quincena 2 (${diasQ2} días)`, monto: q2, dias: diasQ2 },
+        { id: "q1", nombre: `Quincena 1 (${numDiasQ1} días)`, monto: q1, dias: numDiasQ1 },
+        { id: "q2", nombre: `Quincena 2 (${numDiasQ2} días)`, monto: q2, dias: numDiasQ2 },
       ],
     };
   }
@@ -243,11 +244,16 @@ export function getCobroPartesInfo(cobro, meta = null) {
   }
 
   const m = meta || getCobroMeta(cobro.id) || {};
-  const diasMes = getDiasMesFactura(cobro.mes);
+  const frecuencia = m?.frecuencia_pago || "mensual";
+  const diasMes = getDiasMesParaFrecuencia(cobro.mes, frecuencia);
   const montoBase = Number(cobro.monto) || 0;
   const calcularIva = m?.calcular_iva !== undefined ? m.calcular_iva : true;
-  const frecuencia = m?.frecuencia_pago || "mensual";
   const diasQuincena = m?.dias_quincena || 15;
+  const diasRestantes = diasMes - (Number(diasQuincena) === 16 ? 16 : 15);
+  const diasQuincenaPartes = {
+    q1: m?.dias_quincena_partes?.q1 ?? diasQuincena,
+    q2: m?.dias_quincena_partes?.q2 ?? (diasRestantes === 16 ? 16 : 15),
+  };
 
   const plan = calcularPlanPagos({
     montoBase,
@@ -257,6 +263,7 @@ export function getCobroPartesInfo(cobro, meta = null) {
     calcularIva,
     frecuencia,
     diasQuincena,
+    diasQuincenaPartes,
   });
 
   const partes = Array.isArray(m?.partes_personalizadas) && m.partes_personalizadas.length > 0
@@ -378,6 +385,7 @@ const emptyForm = {
   calcular_iva: true,
   frecuencia_pago: "mensual", // mensual | quincenal | semanal
   dias_quincena: 15, // 15 | 16
+  dias_quincena_partes: { q1: 15, q2: 15 },
   partes_pagadas: [],
   fechas_partes: {},
   partes_personalizadas: null,
@@ -548,6 +556,7 @@ export default function Cobros() {
                 calcular_iva: cfg.calcular_iva,
                 frecuencia_pago: cfg.frecuencia_pago,
                 dias_quincena: cfg.dias_quincena || 15,
+                dias_quincena_partes: cfg.dias_quincena_partes || { q1: cfg.dias_quincena || 15, q2: 15 },
               });
             }
           }
@@ -613,6 +622,7 @@ export default function Cobros() {
       calcular_iva: true,
       frecuencia_pago: "mensual",
       dias_quincena: 15,
+      dias_quincena_partes: { q1: 15, q2: 15 },
       partes_pagadas: [],
       fechas_partes: {},
       partes_personalizadas: null,
@@ -629,6 +639,12 @@ export default function Cobros() {
     const calcularIva = meta.calcular_iva !== undefined ? meta.calcular_iva : (metodoPago !== "efectivo");
     const frecuenciaPago = meta.frecuencia_pago ?? "mensual";
     const diasQuincena = meta.dias_quincena ?? 15;
+    const diasMes = getDiasMesParaFrecuencia(item.mes, frecuenciaPago);
+    const diasRestantes = diasMes - (Number(diasQuincena) === 16 ? 16 : 15);
+    const diasQuincenaPartes = {
+      q1: meta.dias_quincena_partes?.q1 ?? diasQuincena,
+      q2: meta.dias_quincena_partes?.q2 ?? (diasRestantes === 16 ? 16 : 15),
+    };
 
     const info = getCobroPartesInfo(item, meta);
 
@@ -643,6 +659,7 @@ export default function Cobros() {
       calcular_iva: calcularIva,
       frecuencia_pago: frecuenciaPago,
       dias_quincena: diasQuincena,
+      dias_quincena_partes: diasQuincenaPartes,
       partes_pagadas: info.partesPagadas,
       fechas_partes: info.fechasPartes,
       partes_personalizadas: Array.isArray(meta.partes_personalizadas) ? info.partes : null,
@@ -680,7 +697,10 @@ export default function Cobros() {
     });
 
     setPaymentCobro(item);
-    setPaymentMeta(meta);
+    setPaymentMeta({
+      ...meta,
+      dias_quincena_partes: info.plan.diasQuincenaPartes || meta.dias_quincena_partes,
+    });
     setPaymentParts(partsState);
     setPaymentModalOpen(true);
   };
@@ -779,7 +799,7 @@ export default function Cobros() {
   }
 
   function getFormPlan() {
-    const diasMes = getDiasMesFactura(form.mes || currentMonth);
+    const diasMes = getDiasMesParaFrecuencia(form.mes || currentMonth, form.frecuencia_pago);
     return calcularPlanPagos({
       montoBase: Number(form.monto) || 0,
       costoDia: form.costo_dia,
@@ -788,6 +808,7 @@ export default function Cobros() {
       calcularIva: form.calcular_iva,
       frecuencia: form.frecuencia_pago,
       diasQuincena: form.dias_quincena,
+      diasQuincenaPartes: form.dias_quincena_partes,
     });
   }
 
@@ -845,10 +866,11 @@ export default function Cobros() {
         montoBase: finalMonto || 0,
         costoDia: form.costo_dia,
         esVariable: form.es_variable,
-        diasMes,
+        diasMes: getDiasMesParaFrecuencia(form.mes || currentMonth, form.frecuencia_pago),
         calcularIva: form.calcular_iva,
         frecuencia: form.frecuencia_pago,
         diasQuincena: form.dias_quincena,
+        diasQuincenaPartes: form.dias_quincena_partes,
       });
 
       const partesActuales = form.partes_personalizadas || planActual.detalles;
@@ -912,6 +934,7 @@ export default function Cobros() {
           calcular_iva: form.calcular_iva,
           frecuencia_pago: form.frecuencia_pago,
           dias_quincena: form.dias_quincena || 15,
+          dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
           partes_pagadas: checkedParts,
           fechas_partes: form.fechas_partes || {},
           partes_personalizadas: form.partes_personalizadas || undefined,
@@ -946,6 +969,7 @@ export default function Cobros() {
                   calcular_iva: form.calcular_iva,
                   frecuencia_pago: form.frecuencia_pago,
                   dias_quincena: form.dias_quincena || 15,
+                  dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
                 });
                 return sercoApi.entities.Cobro.update(c.id, {
                   monto: cMonto,
@@ -981,6 +1005,7 @@ export default function Cobros() {
             calcular_iva: form.calcular_iva,
             frecuencia_pago: form.frecuencia_pago,
             dias_quincena: form.dias_quincena || 15,
+            dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
             partes_pagadas: checkedParts,
             fechas_partes: form.fechas_partes || {},
             partes_personalizadas: form.partes_personalizadas || undefined,
@@ -996,6 +1021,7 @@ export default function Cobros() {
         calcular_iva: form.calcular_iva,
         frecuencia_pago: form.frecuencia_pago,
         dias_quincena: form.dias_quincena || 15,
+        dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
         monto: form.es_variable ? null : payload.monto,
       });
 
@@ -1225,7 +1251,7 @@ export default function Cobros() {
                     <TableCell>{item.fecha_factura || "—"}</TableCell>
                     <TableCell className="capitalize text-xs text-muted-foreground">
                       {meta?.frecuencia_pago === "quincenal"
-                        ? `Quincenal (${meta?.dias_quincena === 16 ? "16d" : "15d"})`
+                        ? `Quincenal (${meta?.dias_quincena_partes?.q1 ?? meta?.dias_quincena ?? 15}d / ${meta?.dias_quincena_partes?.q2 ?? 15}d)`
                         : meta?.frecuencia_pago || "Mensual"}
                     </TableCell>
                     <TableCell className="text-right font-semibold">
@@ -1346,6 +1372,10 @@ export default function Cobros() {
                       calcular_iva: cfg?.calcular_iva ?? form.calcular_iva,
                       frecuencia_pago: cfg?.frecuencia_pago ?? form.frecuencia_pago,
                       dias_quincena: cfg?.dias_quincena ?? form.dias_quincena ?? 15,
+                      dias_quincena_partes: cfg?.dias_quincena_partes ?? {
+                        q1: cfg?.dias_quincena ?? form.dias_quincena_partes?.q1 ?? 15,
+                        q2: form.dias_quincena_partes?.q2 ?? 15,
+                      },
                     });
                   }}
                 >
@@ -1530,54 +1560,6 @@ export default function Cobros() {
               </div>
             </div>
 
-            {/* OPCIÓN DÍAS DE QUINCENA CUANDO ES QUINCENAL */}
-            {form.frecuencia_pago === "quincenal" && (
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
-                <div>
-                  <Label className="text-sm font-semibold">Días para la Quincena 1</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Elige si la primera quincena abarca 15 o 16 días (la segunda quincena tomará los días restantes del mes).
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 bg-background border rounded-lg p-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={(form.dias_quincena || 15) === 15 ? "default" : "ghost"}
-                    className={cn("h-7 px-3 text-xs font-semibold", (form.dias_quincena || 15) === 15 && "shadow-xs")}
-                    onClick={() => {
-                      if (form.dias_quincena !== 15) {
-                        setForm({
-                          ...form,
-                          dias_quincena: 15,
-                          partes_personalizadas: null,
-                        });
-                      }
-                    }}
-                  >
-                    15 días
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={form.dias_quincena === 16 ? "default" : "ghost"}
-                    className={cn("h-7 px-3 text-xs font-semibold", form.dias_quincena === 16 && "shadow-xs")}
-                    onClick={() => {
-                      if (form.dias_quincena !== 16) {
-                        setForm({
-                          ...form,
-                          dias_quincena: 16,
-                          partes_personalizadas: null,
-                        });
-                      }
-                    }}
-                  >
-                    16 días
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {/* SWITCH OPCIÓN IVA */}
             <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
               <div>
@@ -1600,7 +1582,7 @@ export default function Cobros() {
 
             {/* TOTALES Y PLAN DE PAGOS DESGLOSADO */}
             {(() => {
-              const diasMes = getDiasMesFactura(form.mes || currentMonth);
+              const diasMes = getDiasMesParaFrecuencia(form.mes || currentMonth, form.frecuencia_pago);
               const montoBase = Number(form.monto) || 0;
               const ivaMonto = form.calcular_iva ? Math.round(montoBase * 0.16) : 0;
               const totalMonto = montoBase + ivaMonto;
@@ -1613,6 +1595,7 @@ export default function Cobros() {
                 calcularIva: form.calcular_iva,
                 frecuencia: form.frecuencia_pago,
                 diasQuincena: form.dias_quincena || 15,
+                diasQuincenaPartes: form.dias_quincena_partes,
               });
 
               return (
@@ -1660,13 +1643,37 @@ export default function Cobros() {
                           <div className="space-y-2">
                             {parts.map((part, index) => {
                               const isPaid = (form.partes_pagadas || []).includes(part.id);
-                              const periodo = getPartePeriodo(form.frecuencia_pago, index, form.mes, form.dias_quincena);
+                              const periodo = getPartePeriodo(form.frecuencia_pago, index, form.mes, form.dias_quincena, form.dias_quincena_partes);
                               return (
                                 <div key={part.id} className={cn("rounded bg-background border p-2 space-y-2", isPaid && "bg-emerald-50/60 border-emerald-300 dark:bg-emerald-950/20")}>
                                   <div className="grid grid-cols-[1fr_7rem_2rem_2rem] items-center gap-2">
                                     <div>
                                       <span className="text-xs font-semibold text-slate-800 block">{part.nombre}</span>
                                       {periodo && <span className="text-[10px] text-muted-foreground">{periodo}</span>}
+                                      {form.frecuencia_pago === "quincenal" && !form.partes_personalizadas && (
+                                        <div className="mt-1 flex items-center gap-1.5">
+                                          <span className="text-[10px] text-muted-foreground">Duración</span>
+                                          <Select
+                                            value={String(form.dias_quincena_partes?.[part.id] ?? (part.id === "q1" ? form.dias_quincena : 15))}
+                                            onValueChange={(value) => setForm({
+                                              ...form,
+                                              dias_quincena: part.id === "q1" ? Number(value) : form.dias_quincena,
+                                              dias_quincena_partes: {
+                                                ...(form.dias_quincena_partes || { q1: form.dias_quincena || 15, q2: 15 }),
+                                                [part.id]: Number(value),
+                                              },
+                                            })}
+                                          >
+                                            <SelectTrigger className="h-7 w-[92px] text-[11px] font-semibold">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="15">15 días</SelectItem>
+                                              <SelectItem value="16">16 días</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      )}
                                     </div>
                                     {form.partes_personalizadas ? (
                                       <Input
@@ -1740,7 +1747,7 @@ export default function Cobros() {
               <Select
                 value={form.estado}
                 onValueChange={(v) => {
-                  const diasMes = getDiasMesFactura(form.mes || currentMonth);
+                  const diasMes = getDiasMesParaFrecuencia(form.mes || currentMonth, form.frecuencia_pago);
                   const montoBase = Number(form.monto) || 0;
                   const plan = calcularPlanPagos({
                     montoBase,
@@ -1750,6 +1757,7 @@ export default function Cobros() {
                     calcularIva: form.calcular_iva,
                     frecuencia: form.frecuencia_pago,
                     diasQuincena: form.dias_quincena,
+                    diasQuincenaPartes: form.dias_quincena_partes,
                   });
                   const todayStr = new Date().toISOString().slice(0, 10);
                   let nextParts = form.partes_pagadas || [];
@@ -1862,14 +1870,14 @@ export default function Cobros() {
                     : "Confirmar pago mensual:"}
                 </span>
                 <Badge variant="outline" className="capitalize text-xs font-semibold">
-                  Frecuencia: {paymentMeta?.frecuencia_pago === "quincenal" ? `Quincenal (${paymentMeta?.dias_quincena === 16 ? "16d" : "15d"})` : paymentMeta?.frecuencia_pago || "mensual"}
+                  Frecuencia: {paymentMeta?.frecuencia_pago === "quincenal" ? `Quincenal (${paymentMeta?.dias_quincena_partes?.q1 ?? paymentMeta?.dias_quincena ?? 15}d / ${paymentMeta?.dias_quincena_partes?.q2 ?? 15}d)` : paymentMeta?.frecuencia_pago || "mensual"}
                 </Badge>
               </div>
 
               {/* Lista interactiva de cuotas */}
               <div className="space-y-2.5">
                 {paymentParts.map((part, index) => {
-                  const periodo = getPartePeriodo(paymentMeta?.frecuencia_pago, index, paymentCobro?.mes, paymentMeta?.dias_quincena);
+                  const periodo = getPartePeriodo(paymentMeta?.frecuencia_pago, index, paymentCobro?.mes, paymentMeta?.dias_quincena, paymentMeta?.dias_quincena_partes);
                   return (
                   <div
                     key={part.id}

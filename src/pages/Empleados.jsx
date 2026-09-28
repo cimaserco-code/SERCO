@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { supabase } from "@/lib/supabaseClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Eye } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 import { formatPersonName, formatUserDisplayName } from "@/lib/userNameFormatting";
+import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   resolveEmpleadoNumero,
@@ -200,6 +201,9 @@ export default function Empleados() {
   const [deleteId, setDeleteId] = useState(null);
   const [activeTab, setActiveTab] = useState("activos");
   const [viewEmpleado, setViewEmpleado] = useState(null);
+  const [fichaPreviewOpen, setFichaPreviewOpen] = useState(false);
+  const [fichaPreview, setFichaPreview] = useState(null);
+  const [generatingFicha, setGeneratingFicha] = useState(false);
   const [bajaConfirmId, setBajaConfirmId] = useState(null);
   const [reingresoConfirmId, setReingresoConfirmId] = useState(null);
   const [fechaReingresoInput, setFechaReingresoInput] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1154,6 +1158,45 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     };
   }
 
+  async function handleOpenEmployeeFicha(emp) {
+    if (!emp) return;
+    setViewEmpleado(emp);
+    setFichaPreview(null);
+    setFichaPreviewOpen(true);
+    setGeneratingFicha(true);
+    const isBaja = !!emp.fecha_baja;
+    const sedeObj = sedes.find((sede) => sede.id === (emp.sede_id || defaultSedeId));
+
+    try {
+      const result = await generateFichaTecnicaPDF(
+        emp,
+        {
+          tipo_movimiento: isBaja ? "BAJA" : "ALTA",
+          fecha_movimiento: (isBaja ? emp.fecha_baja : emp.fecha_ingreso) || new Date().toISOString().slice(0, 10),
+          servicio_capacita: emp.servicio_ubicacion || "",
+          dias_capacitacion: [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") || "3 días inducción RH",
+          observaciones: isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : "",
+          sede_nombre: sedeObj?.nombre || "Monterrey",
+        },
+        { returnDoc: true }
+      );
+      setFichaPreview({
+        ...result,
+        title: `Ficha Técnica (${isBaja ? "BAJA" : "ALTA"}) - ${formatUserDisplayName(emp.nombre_completo, user?.role)}`,
+      });
+    } catch (error) {
+      console.error("Error al generar ficha técnica:", error);
+      setFichaPreviewOpen(false);
+      toast({
+        title: "Error al generar ficha técnica",
+        description: "No se pudo generar la ficha del empleado seleccionado.",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingFicha(false);
+    }
+  }
+
   if (!canAccess) {
     return <AccessRestricted />;
   }
@@ -1251,7 +1294,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     <TableRow
                       key={item.id}
                       className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
-                      onClick={() => setViewEmpleado(item)}
+                      onClick={() => handleOpenEmployeeFicha(item)}
                     >
                       <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                         {item.numero_empleado ? (
@@ -1311,7 +1354,11 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()} />
+                        <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Ver datos del empleado" onClick={() => setViewEmpleado(item)}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1367,7 +1414,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       <TableRow
                         key={item.id}
                         className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
-                        onClick={() => setViewEmpleado(item)}
+                        onClick={() => handleOpenEmployeeFicha(item)}
                       >
                         <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                           {item.numero_empleado ? (
@@ -1413,6 +1460,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                           <div className="flex justify-end gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Ver datos del empleado" onClick={() => setViewEmpleado(item)}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
                             {can("empleados", "edit") && (
                               <>
                                 <Button
@@ -3036,6 +3086,59 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
           </DialogContent>
         </Dialog>
+      <Dialog
+        open={fichaPreviewOpen}
+        onOpenChange={(open) => {
+          setFichaPreviewOpen(open);
+          if (!open) {
+            if (fichaPreview?.blobUrl) URL.revokeObjectURL(fichaPreview.blobUrl);
+            setFichaPreview(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[92vh] flex flex-col p-4 sm:p-6">
+          <DialogHeader className="pb-2 border-b border-border">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText className="w-5 h-5 text-primary shrink-0" />
+              <DialogTitle className="text-base sm:text-lg font-bold truncate">
+                {fichaPreview?.title || "Ficha Técnica del Empleado"}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {generatingFicha ? "Generando ficha técnica..." : "Vista previa del empleado seleccionado."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 w-full my-2 bg-muted/30 rounded-lg overflow-hidden border border-border min-h-[400px]">
+            {fichaPreview?.blobUrl ? (
+              <iframe src={fichaPreview.blobUrl} className="w-full h-full border-0" title={fichaPreview.title} />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground text-sm">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                Generando ficha técnica...
+              </div>
+            )}
+          </div>
+          <DialogFooter className="pt-2 border-t border-border flex flex-row items-center justify-between gap-2 w-full">
+            <Button variant="outline" onClick={() => setFichaPreviewOpen(false)}>Cerrar</Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={!fichaPreview?.blobUrl}
+                onClick={() => fichaPreview?.blobUrl && window.open(fichaPreview.blobUrl, "_blank")}
+              >
+                Imprimir
+              </Button>
+              <Button
+                disabled={!fichaPreview?.doc || !fichaPreview?.filename}
+                onClick={() => fichaPreview?.doc?.save(fichaPreview.filename)}
+              >
+                <Download className="w-4 h-4 mr-1.5" />
+                Descargar PDF
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(v) => !v && setDeleteId(null)}
