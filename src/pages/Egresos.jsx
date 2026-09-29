@@ -147,7 +147,10 @@ export default function Egresos() {
     try {
       const [data, s] = await Promise.all([
         sercoApi.entities.Egreso.filter(sedeFilter, "-fecha"),
-        sercoApi.entities.Sede.list(),
+        sercoApi.entities.Sede.list().catch((error) => {
+          console.error("Error al cargar sedes de egresos:", error);
+          return [];
+        }),
       ]);
       setItems((data || [])
         .filter((item) => item.mensual === true || item.mes === currentMonth)
@@ -158,7 +161,19 @@ export default function Egresos() {
       setSedes(s);
     } catch (e) {
       console.error(e);
-      setItems([]);
+      setItems((currentItems) => currentItems
+        .filter((item) => item.mensual === true || item.mes === currentMonth)
+        .map((item) => item.mensual === true
+          ? {
+              ...item,
+              fecha: `${currentMonth}-${String(item.dia_vencimiento || item.fecha?.slice(8, 10) || 1).padStart(2, "0")}`,
+            }
+          : item));
+      toast({
+        title: "Error al cargar egresos",
+        description: e?.message || "No se pudieron cargar los egresos guardados.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -315,24 +330,57 @@ export default function Egresos() {
   }
 
   async function handleSave() {
+    const concepto = form.concepto.trim();
+    const monto = Number(form.monto);
+    if (!concepto || form.monto === "" || !Number.isFinite(monto) || monto < 0 || !form.fecha) {
+      toast({
+        title: "Datos incompletos",
+        description: "Captura un concepto, un monto válido y la fecha del egreso.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const mes = form.fecha ? form.fecha.slice(0, 7) : currentMonth;
       const payload = {
-        ...form, 
-        monto: form.monto === "" ? 0 : Number(form.monto),
+        ...form,
+        concepto,
+        monto,
         mes,
         mensual: Boolean(form.mensual),
         dia_vencimiento: form.mensual ? Number(form.dia_vencimiento || form.fecha?.slice(8, 10) || 1) : null,
         estado: form.estado || "pendiente",
+        sede_id: form.sede_id || defaultSedeId || null,
       };
+      let saved;
       if (editing) {
-        await sercoApi.entities.Egreso.update(editing.id, payload);
+        saved = await sercoApi.entities.Egreso.update(editing.id, payload);
       } else {
-        await sercoApi.entities.Egreso.create(payload);
+        saved = await sercoApi.entities.Egreso.create(payload);
       }
+      if (!saved?.id) throw new Error("Supabase no confirmó el egreso guardado.");
+
       setModalOpen(false);
+      const listItem = {
+        ...saved,
+        fecha: saved.mensual
+          ? `${currentMonth}-${String(saved.dia_vencimiento || saved.fecha?.slice(8, 10) || 1).padStart(2, "0")}`
+          : saved.fecha,
+      };
+      if (listItem.mensual || listItem.mes === currentMonth) {
+        setItems((currentItems) => [listItem, ...currentItems.filter((item) => item.id !== listItem.id)]);
+      }
       await loadEgresos();
+      toast({ title: editing ? "Egreso actualizado" : "Egreso guardado", description: "El registro quedó guardado correctamente." });
+    } catch (e) {
+      console.error("Error al guardar egreso:", e);
+      toast({
+        title: "Error al guardar egreso",
+        description: e?.message || "Supabase no pudo guardar el egreso. Revisa los datos y vuelve a intentarlo.",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
