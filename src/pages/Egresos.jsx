@@ -34,7 +34,7 @@ const emptySaldoForm = {
 };
 const emptyMantenimientoForm = { automovil_id: "", vehiculo: "", tipo_mantenimiento: "", descripcion: "", monto: "", fecha: "", kilometraje: "", sede_id: "", taller: "" };
 const emptyGasolinaForm = { automovil_id: "", vehiculo: "", fecha: "", litros: "", precio_litro: "", monto: "", kilometraje: "", gasolinera: "", sede_id: "" };
-const emptyAutomovilForm = { nombre: "", marca: "", modelo: "", anio: "", placas: "", numero_economico: "", sede_id: "" };
+const emptyAutomovilForm = { nombre: "", marca: "", modelo: "", anio: "", placas: "", numero_economico: "", niv: "", sede_id: "" };
 
 function parseSaldoMetadata(saldo) {
   let compania = saldo.compania || "";
@@ -311,7 +311,7 @@ export default function Egresos() {
   );
   const totalGasolina = filteredGasolinas.reduce((sum, g) => sum + (Number(g.monto) || 0), 0);
   const filteredAutomoviles = automoviles.filter((automovil) =>
-    [automovil.nombre, automovil.marca, automovil.modelo, automovil.placas, automovil.numero_economico]
+    [automovil.nombre, automovil.marca, automovil.modelo, automovil.placas, automovil.numero_economico, automovil.niv]
       .some((value) => (value || "").toLowerCase().includes(automovilSearch.toLowerCase()))
   );
 
@@ -859,8 +859,8 @@ export default function Egresos() {
                   {can("egresos", "create") && <Button onClick={openAutomovilCreate}><Plus className="w-4 h-4 mr-1" /> Agregar Automóvil</Button>}
                 </div>
               </div>
-              <div className="rounded-lg border bg-card overflow-hidden"><Table><TableHeader><TableRow><TableHead>Nombre</TableHead><TableHead>Marca</TableHead><TableHead>Modelo</TableHead><TableHead>Año</TableHead><TableHead>Placas</TableHead><TableHead>Número económico</TableHead>{!defaultSedeId && <TableHead>Sede</TableHead>}</TableRow></TableHeader><TableBody>
-                {automovilLoading ? <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow> : filteredAutomoviles.length === 0 ? <TableRow><TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">No hay automóviles registrados</TableCell></TableRow> : filteredAutomoviles.map((automovil) => <TableRow key={automovil.id} className="cursor-pointer hover:bg-muted/50" onClick={() => can("egresos", "edit") && openAutomovilEdit(automovil)}><TableCell className="font-medium">{automovil.nombre}</TableCell><TableCell>{automovil.marca || "—"}</TableCell><TableCell>{automovil.modelo || "—"}</TableCell><TableCell>{automovil.anio || "—"}</TableCell><TableCell>{automovil.placas || "—"}</TableCell><TableCell>{automovil.numero_economico || "—"}</TableCell>{!defaultSedeId && <TableCell>{sedeNombre(automovil.sede_id)}</TableCell>}</TableRow>)}
+              <div className="rounded-lg border bg-card overflow-hidden"><Table><TableHeader><TableRow><TableHead>Nombre</TableHead><TableHead>Marca</TableHead><TableHead>Modelo</TableHead><TableHead>Año</TableHead><TableHead>Placas</TableHead><TableHead>Número económico</TableHead><TableHead>NIV</TableHead>{!defaultSedeId && <TableHead>Sede</TableHead>}</TableRow></TableHeader><TableBody>
+                {automovilLoading ? <TableRow><TableCell colSpan={!defaultSedeId ? 8 : 7} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow> : filteredAutomoviles.length === 0 ? <TableRow><TableCell colSpan={!defaultSedeId ? 8 : 7} className="text-center text-muted-foreground py-8">No hay automóviles registrados</TableCell></TableRow> : filteredAutomoviles.map((automovil) => <TableRow key={automovil.id} className="cursor-pointer hover:bg-muted/50" onClick={() => can("egresos", "edit") && openAutomovilEdit(automovil)}><TableCell className="font-medium">{automovil.nombre}</TableCell><TableCell>{automovil.marca || "—"}</TableCell><TableCell>{automovil.modelo || "—"}</TableCell><TableCell>{automovil.anio || "—"}</TableCell><TableCell>{automovil.placas || "—"}</TableCell><TableCell>{automovil.numero_economico || "—"}</TableCell><TableCell className="font-mono text-xs">{automovil.niv || "—"}</TableCell>{!defaultSedeId && <TableCell>{sedeNombre(automovil.sede_id)}</TableCell>}</TableRow>)}
               </TableBody></Table></div>
             </TabsContent>
             <TabsContent value="gasolina">
@@ -1147,7 +1147,10 @@ export default function Egresos() {
             <div><Label>Nombre o identificación *</Label><Input value={automovilForm.nombre} onChange={(event) => setAutomovilForm({ ...automovilForm, nombre: event.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4"><div><Label>Marca</Label><Input value={automovilForm.marca} onChange={(event) => setAutomovilForm({ ...automovilForm, marca: event.target.value })} /></div><div><Label>Modelo</Label><Input value={automovilForm.modelo} onChange={(event) => setAutomovilForm({ ...automovilForm, modelo: event.target.value })} /></div></div>
             <div className="grid grid-cols-2 gap-4"><div><Label>Año</Label><Input type="number" value={automovilForm.anio} onChange={(event) => setAutomovilForm({ ...automovilForm, anio: event.target.value })} /></div><div><Label>Placas</Label><Input value={automovilForm.placas} onChange={(event) => setAutomovilForm({ ...automovilForm, placas: event.target.value })} /></div></div>
-            <div><Label>Número económico</Label><Input value={automovilForm.numero_economico} onChange={(event) => setAutomovilForm({ ...automovilForm, numero_economico: event.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Número económico</Label><Input value={automovilForm.numero_economico} onChange={(event) => setAutomovilForm({ ...automovilForm, numero_economico: event.target.value })} placeholder="Ej: ECO-01" /></div>
+              <div><Label>NIV (Número de serie)</Label><Input value={automovilForm.niv} onChange={(event) => setAutomovilForm({ ...automovilForm, niv: event.target.value })} placeholder="Ej: 3N1AB7AP8KL..." /></div>
+            </div>
             {!defaultSedeId && <SedeSelector value={automovilForm.sede_id} onChange={(value) => setAutomovilForm({ ...automovilForm, sede_id: value })} sedes={sedes} />}
           </div>
           <DialogFooter className="flex justify-between"><div>{automovilEditing && can("egresos", "delete") && <Button variant="destructive" onClick={() => { setAutomovilModalOpen(false); setAutomovilDeleteId(automovilEditing.id); }}>Eliminar</Button>}</div><div className="flex gap-2"><Button variant="outline" onClick={() => setAutomovilModalOpen(false)}>Cancelar</Button><Button onClick={handleAutomovilSave} disabled={automovilSaving || !automovilForm.nombre || (!defaultSedeId && !automovilForm.sede_id)}>{automovilSaving ? "Guardando..." : "Guardar"}</Button></div></DialogFooter>

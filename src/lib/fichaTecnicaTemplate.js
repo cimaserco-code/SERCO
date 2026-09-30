@@ -253,8 +253,8 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
   // 2. PUESTO, SERVICIO, TURNO, ZONA
   const cW4 = infoW / 4;
   drawField("PUESTO:", emp.puesto || "GUARDIA", margin + 4, cW4, true);
-  drawField("SERVICIO:", emp.servicio_ubicacion || "OFICINA", margin + 4 + cW4, cW4 + 3);
-  drawField("TURNO:", emp.turno || "MATUTINO", margin + 4 + (cW4 * 2) + 3, cW4 - 3);
+  drawField("SERVICIO:", params.servicio_nombre || emp.servicio_ubicacion || "OFICINA", margin + 4 + cW4, cW4 + 3);
+  drawField("TURNO:", params.turno || emp.turno || "MATUTINO", margin + 4 + (cW4 * 2) + 3, cW4 - 3);
   drawField("ZONA:", emp.zona || params.sede_nombre || "MONTERREY", margin + 4 + (cW4 * 3), cW4);
   rowY += rowH;
 

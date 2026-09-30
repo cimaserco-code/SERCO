@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useClientPortal } from "@/context/ClientPortalContext";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
 import {
@@ -18,7 +18,10 @@ import {
   Eye,
   BookOpen,
   User as UserIcon,
-  Bell
+  Bell,
+  Download,
+  Printer,
+  Loader2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +33,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 
 export default function ClientHome() {
   const {
@@ -43,6 +55,61 @@ export default function ClientHome() {
     dismissNotification,
     datosBancarios,
   } = useClientPortal();
+
+  const [selectedGuardiaFicha, setSelectedGuardiaFicha] = useState(null);
+  const [fichaPdfUrl, setFichaPdfUrl] = useState(null);
+  const [fichaDocToSave, setFichaDocToSave] = useState(null);
+  const [fichaFilename, setFichaFilename] = useState("");
+  const [loadingFichaPdf, setLoadingFichaPdf] = useState(false);
+
+  const handleOpenFicha = async (guardia) => {
+    setSelectedGuardiaFicha(guardia);
+    setLoadingFichaPdf(true);
+    setFichaPdfUrl(null);
+    setFichaDocToSave(null);
+
+    try {
+      const emp = guardia.empleado || {
+        nombre_completo: guardia.nombre,
+        puesto: guardia.puesto,
+        turno: guardia.turno,
+        foto_url: guardia.foto_url,
+        foto_url_runtime: guardia.foto_url_runtime,
+        servicio_ubicacion: selectedServicio?.nombre,
+      };
+
+      const result = await generateFichaTecnicaPDF(
+        emp,
+        {
+          tipo_movimiento: "ALTA",
+          fecha_movimiento: emp.fecha_ingreso || new Date().toISOString().slice(0, 10),
+          sede_nombre: selectedServicio?.sede_nombre || "Monterrey",
+          servicio_nombre: selectedServicio?.nombre,
+          turno: guardia.turno || emp.turno || "Matutino",
+        },
+        { returnDoc: true }
+      );
+
+      setFichaDocToSave(result.doc);
+      setFichaPdfUrl(result.blobUrl);
+      setFichaFilename(result.filename || `Ficha_Tecnica_${(guardia.nombre || "guardia").replace(/\s+/g, "_")}.pdf`);
+    } catch (err) {
+      console.error("Error al generar Ficha Técnica:", err);
+    } finally {
+      setLoadingFichaPdf(false);
+    }
+  };
+
+  const handleCloseFicha = () => {
+    if (fichaPdfUrl) {
+      try {
+        URL.revokeObjectURL(fichaPdfUrl);
+      } catch {}
+    }
+    setFichaPdfUrl(null);
+    setFichaDocToSave(null);
+    setSelectedGuardiaFicha(null);
+  };
 
   const displayName = formatUserDisplayName(user?.full_name || user?.nombre || "Cliente", user?.role);
   const servicioNombre = selectedServicio?.nombre || "Servicio Asignado";
@@ -484,9 +551,13 @@ export default function ClientHome() {
                 {guardias.map((guardia) => (
                   <div
                     key={guardia.id}
-                    className="p-3.5 rounded-xl border border-border bg-card hover:bg-muted/40 transition flex items-center gap-3.5 shadow-2xs"
+                    onClick={() => handleOpenFicha(guardia)}
+                    className="p-3.5 rounded-xl border border-border bg-card hover:bg-muted/40 hover:border-primary/40 hover:shadow-xs transition cursor-pointer flex items-center gap-3.5 shadow-2xs group"
+                    role="button"
+                    tabIndex={0}
+                    title="Click para ver la Ficha Técnica del guardia"
                   >
-                    <Avatar className="w-12 h-12 border border-border shadow-xs shrink-0">
+                    <Avatar className="w-12 h-12 border border-border shadow-xs shrink-0 group-hover:scale-105 transition-transform">
                       <AvatarImage src={guardia.foto_url_runtime || undefined} alt={guardia.nombre} className="object-cover" />
                       <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                         {guardia.nombre
@@ -498,14 +569,20 @@ export default function ClientHome() {
                     </Avatar>
 
                     <div className="flex-1 min-w-0 space-y-1">
-                      <h4 className="text-xs sm:text-sm font-bold text-foreground truncate">
-                        {guardia.nombre}
-                      </h4>
+                      <div className="flex items-center justify-between gap-1">
+                        <h4 className="text-xs sm:text-sm font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                          {guardia.nombre}
+                        </h4>
+                        <FileText className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" title="Ver ficha técnica" />
+                      </div>
                       <p className="text-[11px] text-muted-foreground truncate">
                         {guardia.puesto}
                       </p>
-                      <div>
+                      <div className="flex items-center justify-between gap-1 pt-0.5">
                         {getTurnoBadge(guardia.turno)}
+                        <span className="text-[10px] text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity hidden sm:inline">
+                          Ver ficha &rarr;
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -579,6 +656,87 @@ export default function ClientHome() {
         </Card>
 
       </div>
+
+      {/* ────────────────── MODAL DE FICHA TÉCNICA DEL GUARDIA ────────────────── */}
+      <Dialog open={!!selectedGuardiaFicha} onOpenChange={(open) => !open && handleCloseFicha()}>
+        <DialogContent className="max-w-4xl w-[96vw] h-[90vh] flex flex-col p-4 sm:p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-border shrink-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Avatar className="w-11 h-11 border border-border shadow-xs shrink-0">
+                  <AvatarImage src={selectedGuardiaFicha?.foto_url_runtime || selectedGuardiaFicha?.foto_url || undefined} alt={selectedGuardiaFicha?.nombre} className="object-cover" />
+                  <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
+                    {(selectedGuardiaFicha?.nombre || "G").split(" ").map((n) => n[0]).slice(0, 2).join("")}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <DialogTitle className="text-base sm:text-lg font-bold">
+                    Ficha Técnica: {selectedGuardiaFicha?.nombre}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                    <span>{selectedGuardiaFicha?.puesto || "Guardia de Seguridad"}</span>
+                    <span>•</span>
+                    <span className="capitalize">{selectedGuardiaFicha?.turno}</span>
+                    <span>•</span>
+                    <span>{servicioNombre}</span>
+                  </DialogDescription>
+                </div>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* PDF Preview Container */}
+          <div className="flex-1 w-full my-3 bg-muted/20 rounded-xl overflow-hidden border border-border flex items-center justify-center min-h-0">
+            {loadingFichaPdf ? (
+              <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <span className="font-medium">Generando ficha técnica del guardia...</span>
+              </div>
+            ) : fichaPdfUrl ? (
+              <iframe
+                src={fichaPdfUrl}
+                className="w-full h-full border-0 rounded-lg"
+                title={`Ficha Técnica - ${selectedGuardiaFicha?.nombre}`}
+              />
+            ) : (
+              <div className="text-center p-6 text-muted-foreground text-sm">
+                <p>No se pudo generar la vista previa del documento.</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-3 border-t border-border flex flex-row items-center justify-between gap-2 shrink-0 w-full">
+            <Button variant="outline" size="sm" onClick={handleCloseFicha}>
+              Cerrar
+            </Button>
+            <div className="flex items-center gap-2">
+              {fichaPdfUrl && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(fichaPdfUrl, "_blank")}
+                >
+                  <Printer className="w-4 h-4 mr-1.5" />
+                  Imprimir
+                </Button>
+              )}
+              <Button
+                size="sm"
+                className="bg-primary text-primary-foreground font-semibold"
+                disabled={!fichaDocToSave}
+                onClick={() => {
+                  if (fichaDocToSave && fichaFilename) {
+                    fichaDocToSave.save(fichaFilename);
+                  }
+                }}
+              >
+                <Download className="w-4 h-4 mr-1.5" />
+                Descargar PDF
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

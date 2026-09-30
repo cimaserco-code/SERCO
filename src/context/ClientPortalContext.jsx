@@ -360,7 +360,8 @@ export function ClientPortalProvider({ children }) {
         foto_url: emp?.foto_url || null,
         foto_url_runtime: emp?.foto_url_runtime || null,
         telefono: emp?.telefono || null,
-        estado: emp?.estado || "activo"
+        estado: emp?.estado || "activo",
+        empleado: emp || null
       };
     });
 
