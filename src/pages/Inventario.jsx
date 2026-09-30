@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import {
   Plus,
-  Pencil,
   Trash2,
   Search,
   ClipboardList,
@@ -10,11 +9,11 @@ import {
   X,
   DollarSign,
   Package,
+  PackageCheck,
   ShoppingCart,
   Truck,
   CheckCircle2,
   Clock,
-  Eye,
   AlertCircle
 } from "lucide-react";
 import {
@@ -160,8 +159,9 @@ export default function Inventario() {
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
   const getDisplayCantidad = (item) => {
+    if (!item) return 0;
     if (item.categoria === "Uniforme") {
-      const itemVars = variantes.filter((v) => v.inventario_item_id === item.id);
+      const itemVars = (variantes || []).filter((v) => v && v.inventario_item_id === item.id);
       if (itemVars.length > 0) {
         return itemVars.reduce((sum, v) => sum + (Number(v.cantidad) || 0), 0);
       }
@@ -171,7 +171,8 @@ export default function Inventario() {
 
   // ── Totales Invertidos ──
   const totalInvertidoGlobal = useMemo(() => {
-    return items.reduce((acc, item) => {
+    return (items || []).reduce((acc, item) => {
+      if (!item) return acc;
       const qty = getDisplayCantidad(item);
       const price = Number(item.precio_unitario || item.precio_por_unidad || 0);
       return acc + (qty * price);
@@ -179,15 +180,19 @@ export default function Inventario() {
   }, [items, variantes]);
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) =>
-      (item.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
-      (item.categoria || "").toLowerCase().includes(search.toLowerCase()) ||
-      (item.ubicacion || "").toLowerCase().includes(search.toLowerCase())
-    );
+    return (items || []).filter((item) => {
+      if (!item) return false;
+      return (
+        (item.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
+        (item.categoria || "").toLowerCase().includes(search.toLowerCase()) ||
+        (item.ubicacion || "").toLowerCase().includes(search.toLowerCase())
+      );
+    });
   }, [items, search]);
 
   const tabFiltered = useMemo(() => {
-    return filteredItems.filter((item) => {
+    return (filteredItems || []).filter((item) => {
+      if (!item) return false;
       const cat = (item.categoria || "").toLowerCase();
       if (activeCategoryTab === "Uniforme") return cat.includes("uniforme");
       if (activeCategoryTab === "Papelería") return cat.includes("papeler");
@@ -196,7 +201,8 @@ export default function Inventario() {
   }, [filteredItems, activeCategoryTab]);
 
   const totalInvertidoCategoria = useMemo(() => {
-    return tabFiltered.reduce((acc, item) => {
+    return (tabFiltered || []).reduce((acc, item) => {
+      if (!item) return acc;
       const qty = getDisplayCantidad(item);
       const price = Number(item.precio_unitario || item.precio_por_unidad || 0);
       return acc + (qty * price);
@@ -205,6 +211,7 @@ export default function Inventario() {
 
   // ── Parse Solicitud Articulos helper (backward compatible) ──
   const getSolicitudArticulos = (sol) => {
+    if (!sol) return [];
     if (Array.isArray(sol.articulos) && sol.articulos.length > 0) {
       return sol.articulos;
     }
@@ -239,6 +246,7 @@ export default function Inventario() {
   };
 
   const isCompraSolicitud = (sol) => {
+    if (!sol) return false;
     if (sol.tipo === "compra") return true;
     if (sol.tipo === "pedido") return false;
     if (sol.comentarios && sol.comentarios.includes("__TIPO_COMPRA__")) return true;
@@ -248,7 +256,8 @@ export default function Inventario() {
 
   // ── Filtered Solicitudes (Permissions + Search) ──
   const visibleSolicitudes = useMemo(() => {
-    return solicitudes.filter((sol) => {
+    return (solicitudes || []).filter((sol) => {
+      if (!sol) return false;
       if (userSedeIds?.length > 0 && sol.sede_id && !userSedeIds.includes(sol.sede_id)) {
         return false;
       }
@@ -263,9 +272,9 @@ export default function Inventario() {
 
         const isMine =
           (myId && solId === myId) ||
-          (myEmail && solEmail === myEmail) ||
-          (myName && solName === myName) ||
-          (myEmail && solName.includes(myEmail));
+          (myEmail && solEmail && solEmail === myEmail) ||
+          (myName && solName && solName === myName) ||
+          (myEmail && solName && solName.includes(myEmail));
 
         if (!isMine) return false;
       }
@@ -273,7 +282,7 @@ export default function Inventario() {
       if (solicitudSearch) {
         const q = solicitudSearch.toLowerCase();
         const arts = getSolicitudArticulos(sol);
-        const matchArt = arts.some((a) => (a.nombre || "").toLowerCase().includes(q));
+        const matchArt = arts.some((a) => (a?.nombre || "").toLowerCase().includes(q));
         const matchSol =
           (sol.item_nombre || "").toLowerCase().includes(q) ||
           (sol.solicitante_nombre || "").toLowerCase().includes(q) ||
@@ -288,11 +297,11 @@ export default function Inventario() {
   }, [solicitudes, userSedeIds, canViewAllSolicitudes, user, solicitudSearch]);
 
   const pedidosList = useMemo(() => {
-    return visibleSolicitudes.filter((s) => !isCompraSolicitud(s));
+    return (visibleSolicitudes || []).filter((s) => !isCompraSolicitud(s));
   }, [visibleSolicitudes]);
 
   const comprasList = useMemo(() => {
-    return visibleSolicitudes.filter((s) => isCompraSolicitud(s));
+    return (visibleSolicitudes || []).filter((s) => isCompraSolicitud(s));
   }, [visibleSolicitudes]);
 
   // ── Inventory Item CRUD ──
@@ -376,7 +385,7 @@ export default function Inventario() {
         }
       } catch (err) {
         if (err?.message?.includes("precio_unitario") || err?.message?.includes("PGRST204")) {
-          const { precio_unitario, ...fallbackPayload } = payload;
+          const { precio_unitario: _unused_precio, ...fallbackPayload } = payload;
           if (editing) {
             itemGuardado = await sercoApi.entities.InventarioItem.update(editing.id, fallbackPayload);
           } else {
