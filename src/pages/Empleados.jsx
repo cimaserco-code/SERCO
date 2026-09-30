@@ -1286,14 +1286,15 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedActivos.length === 0 ? (
-                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
                 ) : (
                   sortedActivos.map((item) => (
                     <TableRow
                       key={item.id}
-                      className={getServiceRowColor(item.servicio_ubicacion)}
+                      className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
+                      onClick={() => setViewEmpleado(item)}
                     >
                       <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                         {item.numero_empleado ? (
@@ -1305,13 +1306,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         )}
                       </TableCell>
                       <TableCell className="font-medium flex items-center gap-1.5">
-                        <span
-                          className={can("empleados", "edit") ? "cursor-pointer hover:underline hover:text-primary transition-colors" : ""}
-                          onClick={() => can("empleados", "edit") && openEdit(item)}
-                          title={can("empleados", "edit") ? "Clic para editar empleado" : undefined}
-                        >
-                          {formatUserDisplayName(item.nombre_completo, user?.role)}
-                        </span>
+                        {formatUserDisplayName(item.nombre_completo, user?.role)}
                         {hasPendingInfo(item) && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1357,35 +1352,6 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.actas_administrativas > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                           {item.actas_administrativas || 0}
                         </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Ver datos del empleado" onClick={() => setViewEmpleado(item)}>
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                          {can("empleados", "edit") && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                              onClick={() => openEdit(item)}
-                              title="Editar empleado"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                          {can("empleados", "delete") && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => setDeleteId(item.id)}
-                              title="Eliminar empleado"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1440,7 +1406,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     return (
                       <TableRow
                         key={item.id}
-                        className={getServiceRowColor(item.servicio_ubicacion)}
+                        className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
+                        onClick={() => setViewEmpleado(item)}
                       >
                         <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                           {item.numero_empleado ? (
@@ -1451,15 +1418,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                             "—"
                           )}
                         </TableCell>
-                        <TableCell className="font-medium">
-                          <span
-                            className={can("empleados", "edit") ? "cursor-pointer hover:underline hover:text-primary transition-colors" : ""}
-                            onClick={() => can("empleados", "edit") && openEdit(item)}
-                            title={can("empleados", "edit") ? "Clic para editar empleado" : undefined}
-                          >
-                            {formatUserDisplayName(item.nombre_completo, user?.role)}
-                          </span>
-                        </TableCell>
+                        <TableCell className="font-medium">{formatUserDisplayName(item.nombre_completo, user?.role)}</TableCell>
                         <TableCell>{sedeNombre(item.sede_id)}</TableCell>
                         <TableCell>{item.fecha_ingreso || "—"}</TableCell>
                         <TableCell className="text-destructive font-semibold">{item.fecha_baja || "—"}</TableCell>
@@ -1494,9 +1453,6 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                           <div className="flex justify-end gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Ver datos del empleado" onClick={() => setViewEmpleado(item)}>
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
                             {can("empleados", "edit") && (
                               <>
                                 <Button
