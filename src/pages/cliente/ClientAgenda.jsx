@@ -146,6 +146,13 @@ export default function ClientAgenda() {
           icon: BookOpen,
           label: "Capacitación",
         };
+      case "reporte":
+        return {
+          bg: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300",
+          dot: "bg-rose-500",
+          icon: AlertCircle,
+          label: "Reporte",
+        };
       case "factura_limite":
         return {
           bg: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300",
@@ -231,6 +238,10 @@ export default function ClientAgenda() {
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
             <span className="text-muted-foreground">Capacitaciones</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <span className="text-muted-foreground">Reportes Operativos</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
@@ -382,6 +393,11 @@ export default function ClientAgenda() {
                       Capacitación
                     </Badge>
                   )}
+                  {selectedEvent.tipo === "reporte" && (
+                    <Badge className="bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300">
+                      Reporte de Servicio
+                    </Badge>
+                  )}
                   {selectedEvent.tipo === "factura_limite" && (
                     <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
                       Facturación SERCO
@@ -412,6 +428,14 @@ export default function ClientAgenda() {
                       </span>
                     </div>
                   )}
+                  {selectedEvent.tipo_reporte && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tipo de reporte:</span>
+                      <span className="font-semibold text-rose-600 dark:text-rose-400 capitalize">
+                        {selectedEvent.tipo_reporte}
+                      </span>
+                    </div>
+                  )}
                   {selectedEvent.responsable_nombre && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Responsable SERCO:</span>
@@ -434,17 +458,55 @@ export default function ClientAgenda() {
                   )}
                 </div>
 
-                {/* Additional notes / objectives */}
-                {(selectedEvent.objetivo_visita || selectedEvent.tema_capacitacion || selectedEvent.notas) && (
+                {/* Additional notes / objectives / report description */}
+                {(selectedEvent.objetivo_visita || selectedEvent.tema_capacitacion || selectedEvent.descripcion_reporte || selectedEvent.notas) && (
                   <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border">
                     <span className="text-muted-foreground font-semibold block mb-1">
-                      Descripción y objetivos:
+                      {selectedEvent.tipo === "reporte" ? "Descripción del reporte / incidencia:" : "Descripción y objetivos:"}
                     </span>
-                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                      {selectedEvent.objetivo_visita || selectedEvent.tema_capacitacion || selectedEvent.notas}
+                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                      {selectedEvent.descripcion_reporte || selectedEvent.objetivo_visita || selectedEvent.tema_capacitacion || selectedEvent.notas}
                     </p>
                   </div>
                 )}
+
+                {/* Evidencias fotográficas */}
+                {(() => {
+                  let photos = [];
+                  if (Array.isArray(selectedEvent.fotos_evidencia)) photos = selectedEvent.fotos_evidencia;
+                  else if (typeof selectedEvent.fotos_evidencia === "string" && selectedEvent.fotos_evidencia.trim()) {
+                    try {
+                      const p = JSON.parse(selectedEvent.fotos_evidencia);
+                      if (Array.isArray(p)) photos = p;
+                    } catch {}
+                  }
+                  if (photos.length === 0) return null;
+                  return (
+                    <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border space-y-2">
+                      <span className="text-muted-foreground font-semibold block">
+                        Fotografías de evidencia ({photos.length}):
+                      </span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {photos.map((imgUrl, i) => (
+                          <a
+                            key={i}
+                            href={imgUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block relative rounded-md overflow-hidden border aspect-square hover:opacity-90 transition-opacity bg-slate-100 dark:bg-slate-800"
+                            title="Ver imagen completa"
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Evidencia ${i + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <DialogFooter>

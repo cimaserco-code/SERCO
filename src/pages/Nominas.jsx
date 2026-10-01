@@ -231,6 +231,13 @@ export default function Nominas() {
 
   useEffect(() => {
     loadData();
+
+    const unsubEmp = sercoApi.entities.Empleado?.subscribe?.(() => {
+      loadData();
+    });
+    return () => {
+      unsubEmp?.();
+    };
   }, [sedeFilter, currentMonth, periodType, periodSub]);
 
   async function loadData() {

@@ -290,12 +290,26 @@ export function ClientPortalProvider({ children }) {
 
       setTelefonos(celularesList);
 
-      // 4. Agenda events for this service (only visita_supervision and capacitacion)
-      const servEvents = (agendaData || []).filter((e) => {
+      // 4. Agenda events for this service (visita_supervision, capacitacion, reporte)
+      let combinedAgenda = [...(agendaData || [])];
+      try {
+        const localStored = localStorage.getItem("serco_agenda_local_events");
+        if (localStored) {
+          const parsed = JSON.parse(localStored);
+          if (Array.isArray(parsed)) {
+            const existingIds = new Set(combinedAgenda.map((e) => e.id));
+            parsed.forEach((p) => {
+              if (p?.id && !existingIds.has(p.id)) combinedAgenda.push(p);
+            });
+          }
+        }
+      } catch {}
+
+      const servEvents = combinedAgenda.filter((e) => {
         const matchesService =
           e.servicio_id === selectedServicio.id ||
           (e.servicio_nombre && e.servicio_nombre.toLowerCase() === selectedServicio.nombre.toLowerCase());
-        const matchesType = e.tipo === "visita_supervision" || e.tipo === "capacitacion";
+        const matchesType = e.tipo === "visita_supervision" || e.tipo === "capacitacion" || e.tipo === "reporte";
         return matchesService && matchesType;
       });
       setAgendaEvents(servEvents);

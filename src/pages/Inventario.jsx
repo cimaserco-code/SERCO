@@ -14,7 +14,11 @@ import {
   Truck,
   CheckCircle2,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Palette,
+  LayoutGrid,
+  List,
+  Layers
 } from "lucide-react";
 import {
   Table,
@@ -208,6 +212,220 @@ export default function Inventario() {
       return acc + (qty * price);
     }, 0);
   }, [tabFiltered, variantes]);
+
+  // ── PRENDAS DE UNIFORMES ACOMODADAS POR COLOR (TASK 2) ──
+  const [selectedColorFilter, setSelectedColorFilter] = useState("todos");
+  const [uniformViewMode, setUniformViewMode] = useState("agrupado"); // 'agrupado' | 'lista'
+
+  const getColorStyle = (colorName = "") => {
+    const c = (colorName || "").toLowerCase().trim();
+    if (c.includes("azul") || c.includes("marino") || c.includes("navy")) {
+      return {
+        dot: "bg-blue-900 border-blue-950",
+        badge: "bg-blue-900/10 text-blue-900 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800",
+        cardBorder: "border-blue-200 dark:border-blue-900/60",
+        headerBg: "bg-blue-50/70 dark:bg-blue-950/30",
+        label: "Azul Marino",
+      };
+    }
+    if (c.includes("negro") || c.includes("black")) {
+      return {
+        dot: "bg-slate-900 border-slate-700",
+        badge: "bg-slate-900/10 text-slate-900 border-slate-300 dark:bg-slate-900/80 dark:text-slate-100 dark:border-slate-700",
+        cardBorder: "border-slate-300 dark:border-slate-800",
+        headerBg: "bg-slate-100/70 dark:bg-slate-900/40",
+        label: "Negro",
+      };
+    }
+    if (c.includes("blanco") || c.includes("white")) {
+      return {
+        dot: "bg-white border-2 border-slate-400",
+        badge: "bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700",
+        cardBorder: "border-slate-200 dark:border-slate-800",
+        headerBg: "bg-slate-50 dark:bg-slate-900/20",
+        label: "Blanco",
+      };
+    }
+    if (c.includes("caqui") || c.includes("beige") || c.includes("khaki") || c.includes("arena")) {
+      return {
+        dot: "bg-amber-600 border-amber-700",
+        badge: "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800",
+        cardBorder: "border-amber-200 dark:border-amber-900/60",
+        headerBg: "bg-amber-50/70 dark:bg-amber-950/30",
+        label: "Caqui / Beige",
+      };
+    }
+    if (c.includes("gris") || c.includes("gray") || c.includes("grey") || c.includes("oxford")) {
+      return {
+        dot: "bg-slate-500 border-slate-600",
+        badge: "bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700",
+        cardBorder: "border-slate-200 dark:border-slate-800",
+        headerBg: "bg-slate-100/60 dark:bg-slate-900/30",
+        label: "Gris",
+      };
+    }
+    if (c.includes("verde") || c.includes("olivo") || c.includes("green")) {
+      return {
+        dot: "bg-emerald-700 border-emerald-800",
+        badge: "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
+        cardBorder: "border-emerald-200 dark:border-emerald-900/60",
+        headerBg: "bg-emerald-50/70 dark:bg-emerald-950/30",
+        label: "Verde Olivo",
+      };
+    }
+    if (c.includes("rojo") || c.includes("vino") || c.includes("red") || c.includes("guinda")) {
+      return {
+        dot: "bg-rose-700 border-rose-800",
+        badge: "bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/60 dark:text-rose-200 dark:border-rose-800",
+        cardBorder: "border-rose-200 dark:border-rose-900/60",
+        headerBg: "bg-rose-50/70 dark:bg-rose-950/30",
+        label: "Rojo / Vino",
+      };
+    }
+    return {
+      dot: "bg-primary border-primary/50",
+      badge: "bg-primary/10 text-primary border-primary/20",
+      cardBorder: "border-border",
+      headerBg: "bg-muted/40",
+      label: colorName || "Sin color asignado",
+    };
+  };
+
+  const prendasPorColor = useMemo(() => {
+    if (activeCategoryTab !== "Uniforme") return [];
+
+    const colorGroupsMap = new Map();
+
+    const getOrCreateGroup = (rawColor) => {
+      const trimmed = (rawColor || "").trim();
+      const colorName = trimmed ? trimmed : "Sin color asignado";
+      const key = colorName.toLowerCase();
+
+      if (!colorGroupsMap.has(key)) {
+        colorGroupsMap.set(key, {
+          key,
+          colorName,
+          totalPiezas: 0,
+          totalInvertido: 0,
+          prendas: []
+        });
+      }
+      return colorGroupsMap.get(key);
+    };
+
+    (tabFiltered || []).forEach((item) => {
+      const itemVars = (variantes || []).filter((v) => v && v.inventario_item_id === item.id);
+      const unitPrice = Number(item.precio_unitario || item.precio_por_unidad || 0);
+
+      if (itemVars.length > 0) {
+        const varsByColor = new Map();
+        itemVars.forEach((v) => {
+          const cName = (v.color || "").trim() || "Sin color asignado";
+          const cKey = cName.toLowerCase();
+          if (!varsByColor.has(cKey)) {
+            varsByColor.set(cKey, { colorName: cName, variants: [] });
+          }
+          varsByColor.get(cKey).variants.push(v);
+        });
+
+        varsByColor.forEach(({ colorName, variants }) => {
+          const colorTotalQty = variants.reduce((sum, v) => sum + (Number(v.cantidad) || 0), 0);
+          const colorInvertido = colorTotalQty * unitPrice;
+
+          const group = getOrCreateGroup(colorName);
+          group.totalPiezas += colorTotalQty;
+          group.totalInvertido += colorInvertido;
+
+          const tallasMap = new Map();
+          variants.forEach((v) => {
+            const t = (v.talla || "Única").trim();
+            const qty = Number(v.cantidad) || 0;
+            tallasMap.set(t, (tallasMap.get(t) || 0) + qty);
+          });
+
+          const tallasList = Array.from(tallasMap.entries()).map(([talla, cantidad]) => ({
+            talla,
+            cantidad,
+          }));
+
+          group.prendas.push({
+            item,
+            colorName,
+            tallas: tallasList,
+            totalPiezas: colorTotalQty,
+            precioUnitario: unitPrice,
+            subtotalInvertido: colorInvertido,
+          });
+        });
+      } else {
+        const itemQty = Number(item.cantidad) || 0;
+        const colorInvertido = itemQty * unitPrice;
+        let detectedColor = "Sin color asignado";
+
+        const nLower = (item.nombre || "").toLowerCase();
+        if (nLower.includes("azul") || nLower.includes("marino")) detectedColor = "Azul Marino";
+        else if (nLower.includes("negro")) detectedColor = "Negro";
+        else if (nLower.includes("blanco")) detectedColor = "Blanco";
+        else if (nLower.includes("caqui") || nLower.includes("beige")) detectedColor = "Caqui";
+        else if (nLower.includes("gris") || nLower.includes("oxford")) detectedColor = "Gris";
+        else if (nLower.includes("verde") || nLower.includes("olivo")) detectedColor = "Verde Olivo";
+
+        const group = getOrCreateGroup(detectedColor);
+        group.totalPiezas += itemQty;
+        group.totalInvertido += colorInvertido;
+        group.prendas.push({
+          item,
+          colorName: detectedColor,
+          tallas: [{ talla: "General", cantidad: itemQty }],
+          totalPiezas: itemQty,
+          precioUnitario: unitPrice,
+          subtotalInvertido: colorInvertido,
+        });
+      }
+    });
+
+    const priority = ["azul marino", "negro", "blanco", "caqui", "beige", "gris", "verde", "rojo", "sin color asignado"];
+    const groups = Array.from(colorGroupsMap.values());
+    groups.sort((a, b) => {
+      const idxA = priority.findIndex((p) => a.key.includes(p));
+      const idxB = priority.findIndex((p) => b.key.includes(p));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.colorName.localeCompare(b.colorName);
+    });
+
+    return groups;
+  }, [tabFiltered, variantes, activeCategoryTab]);
+
+  const availableUniformColors = useMemo(() => {
+    return (prendasPorColor || []).map((g) => ({
+      key: g.key,
+      name: g.colorName,
+      totalPiezas: g.totalPiezas,
+      prendasCount: g.prendas.length,
+    }));
+  }, [prendasPorColor]);
+
+  const filteredColorGroups = useMemo(() => {
+    if (selectedColorFilter === "todos") return prendasPorColor;
+    return (prendasPorColor || []).filter((g) => g.key === selectedColorFilter);
+  }, [prendasPorColor, selectedColorFilter]);
+
+  const flatPrendasSorted = useMemo(() => {
+    if (activeCategoryTab !== "Uniforme") return [];
+    const list = [];
+    (prendasPorColor || []).forEach((g) => {
+      g.prendas.forEach((p) => {
+        list.push({ ...p, colorGroupKey: g.key });
+      });
+    });
+    return list.sort((a, b) => {
+      const cComp = (a.colorName || "").localeCompare(b.colorName || "");
+      if (cComp !== 0) return cComp;
+      return (a.item?.nombre || "").localeCompare(b.item?.nombre || "");
+    });
+  }, [prendasPorColor, activeCategoryTab]);
 
   // ── Parse Solicitud Articulos helper (backward compatible) ──
   const getSolicitudArticulos = (sol) => {
@@ -891,8 +1109,271 @@ export default function Inventario() {
           )}
         </div>
 
-        {/* ── CATEGORÍAS (Uniformes, Papelería, Material Extra) ── */}
-        {["Uniforme", "Papelería", "Material extra"].map((tabVal) => (
+        {/* ── CATEGORÍA UNIFORMES: ACOMODADA POR COLOR (TASK 2) ── */}
+        <TabsContent value="Uniforme" className="mt-4 space-y-4">
+          {/* Controls: Color Filter Chips & View Mode Switcher */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-muted/20 p-3 rounded-lg border">
+            {/* Color Filter Pills */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-semibold text-muted-foreground mr-1 flex items-center gap-1">
+                <Palette className="w-3.5 h-3.5" />
+                Color:
+              </span>
+              <Button
+                variant={selectedColorFilter === "todos" ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs px-2.5 rounded-full"
+                onClick={() => setSelectedColorFilter("todos")}
+              >
+                Todos los colores
+                <span className="ml-1.5 text-[11px] opacity-80">
+                  ({prendasPorColor.reduce((sum, g) => sum + g.totalPiezas, 0)})
+                </span>
+              </Button>
+
+              {availableUniformColors.map((col) => {
+                const style = getColorStyle(col.name);
+                const isSelected = selectedColorFilter === col.key;
+                return (
+                  <Button
+                    key={col.key}
+                    variant={isSelected ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs px-2.5 rounded-full gap-1.5"
+                    onClick={() => setSelectedColorFilter(col.key)}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${style.dot}`} />
+                    <span>{col.name}</span>
+                    <span className="text-[11px] opacity-80 font-semibold">({col.totalPiezas})</span>
+                  </Button>
+                );
+              })}
+            </div>
+
+            {/* View Mode Toggle: Agrupado vs Lista */}
+            <div className="flex items-center gap-1.5 shrink-0 self-end md:self-auto">
+              <span className="text-xs text-muted-foreground mr-1 hidden sm:inline">Vista:</span>
+              <Button
+                variant={uniformViewMode === "agrupado" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1"
+                onClick={() => setUniformViewMode("agrupado")}
+                title="Agrupar prendas por color"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Agrupado</span>
+              </Button>
+              <Button
+                variant={uniformViewMode === "lista" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1"
+                onClick={() => setUniformViewMode("lista")}
+                title="Ver lista de prendas ordenada por color"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>Lista</span>
+              </Button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="rounded-lg border bg-card p-12 text-center text-muted-foreground text-sm">
+              Cargando prendas de uniformes...
+            </div>
+          ) : filteredColorGroups.length === 0 ? (
+            <div className="rounded-lg border bg-card p-12 text-center text-muted-foreground text-sm">
+              No hay prendas registradas para este filtro de color.
+            </div>
+          ) : uniformViewMode === "agrupado" ? (
+            /* ══════ VISTA AGRUPADA POR COLOR ══════ */
+            <div className="space-y-4">
+              {filteredColorGroups.map((group) => {
+                const style = getColorStyle(group.colorName);
+                return (
+                  <div
+                    key={group.key}
+                    className={`rounded-xl border bg-card shadow-xs overflow-hidden ${style.cardBorder}`}
+                  >
+                    {/* Color Group Header */}
+                    <div className={`px-4 py-3 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${style.headerBg}`}>
+                      <div className="flex items-center gap-2.5">
+                        <span className={`w-4 h-4 rounded-full shadow-xs ${style.dot}`} />
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                          <span>Prendas en {group.colorName}</span>
+                          <Badge variant="outline" className={`text-[11px] font-semibold ${style.badge}`}>
+                            {group.prendas.length} {group.prendas.length === 1 ? "prenda" : "prendas"}
+                          </Badge>
+                        </h4>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">Piezas en stock: </span>
+                          <span className="font-bold text-foreground">{group.totalPiezas}</span>
+                        </div>
+                        {group.totalInvertido > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Total invertido: </span>
+                            <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                              ${group.totalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Table of Garments in this Color */}
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-xs bg-muted/20">
+                          <TableHead>Prenda</TableHead>
+                          {!defaultSedeId && <TableHead>Sede</TableHead>}
+                          <TableHead>Tallas Disponibles</TableHead>
+                          <TableHead className="text-right">Cantidad ({group.colorName})</TableHead>
+                          <TableHead className="text-right">Precio unitario</TableHead>
+                          <TableHead className="text-right">Total Invertido</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.prendas.map((p, pIdx) => {
+                          const item = p.item;
+                          return (
+                            <TableRow
+                              key={`${group.key}-${item.id}-${pIdx}`}
+                              className="cursor-pointer hover:bg-muted/40 transition-colors text-xs"
+                              onClick={() => can("inventario", "edit") && openEdit(item)}
+                            >
+                              <TableCell className="font-semibold text-foreground py-3">
+                                <div>
+                                  <span>{item.nombre}</span>
+                                  {item.descripcion && (
+                                    <p className="text-[11px] text-muted-foreground font-normal line-clamp-1">
+                                      {item.descripcion}
+                                    </p>
+                                  )}
+                                </div>
+                              </TableCell>
+                              {!defaultSedeId && (
+                                <TableCell className="text-muted-foreground py-3">
+                                  {sedeNombre(item.sede_id)}
+                                </TableCell>
+                              )}
+                              <TableCell className="py-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {p.tallas.length > 0 ? (
+                                    p.tallas.map((t, tIdx) => (
+                                      <span
+                                        key={tIdx}
+                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                      >
+                                        <span className="font-bold mr-1">{t.talla}:</span>
+                                        <span>{t.cantidad}</span>
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-muted-foreground/60 text-[11px]">Única</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-bold text-sm py-3">
+                                {p.totalPiezas}
+                              </TableCell>
+                              <TableCell className="text-right py-3">
+                                {p.precioUnitario > 0 ? (
+                                  `$${p.precioUnitario.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ) : (
+                                  <span className="text-muted-foreground/60">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400 py-3">
+                                {p.subtotalInvertido > 0 ? (
+                                  `$${p.subtotalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ) : (
+                                  <span className="text-muted-foreground/60 font-normal">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* ══════ VISTA LISTA PLANA ORDENADA POR COLOR ══════ */
+            <div className="rounded-lg border bg-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Color</TableHead>
+                    <TableHead>Prenda</TableHead>
+                    {!defaultSedeId && <TableHead>Sede</TableHead>}
+                    <TableHead>Tallas</TableHead>
+                    <TableHead className="text-right">Cantidad</TableHead>
+                    <TableHead className="text-right">Precio por unidad</TableHead>
+                    <TableHead className="text-right">Total Invertido</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {flatPrendasSorted.map((p, idx) => {
+                    const item = p.item;
+                    const style = getColorStyle(p.colorName);
+                    return (
+                      <TableRow
+                        key={`flat-${idx}-${item.id}`}
+                        className="cursor-pointer hover:bg-muted/50 text-xs"
+                        onClick={() => can("inventario", "edit") && openEdit(item)}
+                      >
+                        <TableCell className="font-medium">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border ${style.badge}`}>
+                            <span className={`w-2 h-2 rounded-full ${style.dot}`} />
+                            {p.colorName}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-semibold text-foreground">
+                          {item.nombre}
+                        </TableCell>
+                        {!defaultSedeId && <TableCell>{sedeNombre(item.sede_id)}</TableCell>}
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {p.tallas.map((t, tIdx) => (
+                              <span
+                                key={tIdx}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                              >
+                                <span className="font-bold mr-1">{t.talla}:</span>
+                                <span>{t.cantidad}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-sm">{p.totalPiezas}</TableCell>
+                        <TableCell className="text-right">
+                          {p.precioUnitario > 0 ? (
+                            `$${p.precioUnitario.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400">
+                          {p.subtotalInvertido > 0 ? (
+                            `$${p.subtotalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          ) : (
+                            <span className="text-muted-foreground/60 font-normal">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── CATEGORÍAS (Papelería, Material Extra) ── */}
+        {["Papelería", "Material extra"].map((tabVal) => (
           <TabsContent key={tabVal} value={tabVal} className="mt-4">
             <div className="rounded-lg border bg-card overflow-hidden">
               <Table>

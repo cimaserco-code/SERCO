@@ -130,13 +130,23 @@ export default function Plantilla() {
   }, [loadData, loadAsignaciones, loadEmpleados]);
 
   // Resolver nombre de empleado en tiempo real desde la lista de empleados
-  const resolveEmployeeName = useCallback((assignedName) => {
+  const resolveEmployeeName = useCallback((assignedName, asig) => {
+    if (asig?.empleado_id) {
+      const byId = empleados.find((e) => e.id === asig.empleado_id);
+      if (byId?.nombre_completo) return byId.nombre_completo;
+    }
     if (!assignedName) return "";
     const clean = assignedName.trim().toLowerCase();
     const matched = empleados.find(
       (e) => (e.nombre_completo || "").trim().toLowerCase() === clean
     );
-    return matched?.nombre_completo || assignedName;
+    if (matched?.nombre_completo) return matched.nombre_completo;
+
+    const partial = empleados.find((e) => {
+      const n = (e.nombre_completo || "").trim().toLowerCase();
+      return n.includes(clean) || clean.includes(n);
+    });
+    return partial?.nombre_completo || assignedName;
   }, [empleados]);
 
   function openAdd(servicioId, turnoKey) {
@@ -625,7 +635,7 @@ export default function Plantilla() {
                     const rawServAsignaciones = asignaciones.filter((a) => a.servicio_id === serv.id);
                     const seenInServ = new Set();
                     const servAsignaciones = rawServAsignaciones.filter((a) => {
-                      const resolved = resolveEmployeeName(a.empleado_nombre);
+                      const resolved = resolveEmployeeName(a.empleado_nombre, a);
                       const key = (resolved || a.empleado_nombre || "").trim().toLowerCase();
                       if (!key || seenInServ.has(key)) return false;
 
@@ -775,7 +785,7 @@ export default function Plantilla() {
                                           className="flex items-center justify-between p-2 rounded-md bg-muted/60 text-xs hover:bg-muted transition-colors"
                                         >
                                           <span className="font-medium text-foreground truncate pr-2">
-                                            {resolveEmployeeName(item.empleado_nombre)}
+                                            {resolveEmployeeName(item.empleado_nombre, item)}
                                           </span>
                                           {can("turnos", "delete") && (
                                             <Button

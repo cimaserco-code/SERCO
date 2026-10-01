@@ -105,6 +105,13 @@ export default function Asistencias() {
 
   useEffect(() => {
     loadData();
+
+    const unsubEmp = sercoApi.entities.Empleado?.subscribe?.(() => {
+      loadData();
+    });
+    return () => {
+      unsubEmp?.();
+    };
   }, [sedeFilter, currentMonth]);
 
   // Close active cell popover on Escape

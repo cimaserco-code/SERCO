@@ -1069,13 +1069,26 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       // Sincronización automática con Plantilla (AsignacionTurno)
       const oldEmpName = editing?.nombre_completo?.trim();
       const newEmpName = payload.nombre_completo?.trim();
+      const isNameChanged = Boolean(editing && newEmpName && oldEmpName && newEmpName !== oldEmpName);
 
       if (newEmpName || oldEmpName) {
         const isBaja = Boolean(payload.fecha_baja && (!payload.fecha_reingreso || payload.fecha_baja > payload.fecha_reingreso));
         const matchedServ = servicios.find((s) => s.nombre === payload.servicio_ubicacion);
 
         try {
-          // Buscar asignaciones con todas las variaciones de nombres (nuevo, anterior, mayúsculas, etc.)
+          // Si cambió el nombre del empleado, propagar de inmediato en la base de datos
+          if (isNameChanged && editing?.id) {
+            try {
+              await supabase
+                .from('asignacion_turnos')
+                .update({ empleado_nombre: newEmpName, empleado_id: editing.id })
+                .or(`empleado_id.eq.${editing.id},empleado_nombre.ilike.${oldEmpName}`);
+            } catch (e) {
+              console.warn("Direct supabase asignacion_turnos update warning:", e);
+            }
+          }
+
+          // Buscar asignaciones con todas las variaciones de nombres y por empleado_id
           const candidateNames = Array.from(
             new Set([
               newEmpName,
@@ -1089,6 +1102,10 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           );
 
           let existingAsigs = [];
+          if (editing?.id) {
+            const asigsById = await sercoApi.entities.AsignacionTurno.filter({ empleado_id: editing.id }).catch(() => []);
+            existingAsigs.push(...asigsById);
+          }
           for (const name of candidateNames) {
             const asigs = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: name }).catch(() => []);
             existingAsigs.push(...asigs);
@@ -1115,6 +1132,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               for (const asig of existingAsigs) {
                 await sercoApi.entities.AsignacionTurno.update(asig.id, {
                   empleado_nombre: newEmpName,
+                  empleado_id: editing.id,
                 }).catch(() => {});
               }
             }
@@ -1138,6 +1156,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 sede_id: targetSedeId,
                 turno: targetTurno,
                 empleado_nombre: newEmpName,
+                empleado_id: editing.id,
                 usuario_asignacion: currentUserName,
                 creado_por: currentUserName,
                 hora: horaStr,
@@ -1150,6 +1169,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   sede_id: targetSedeId,
                   turno: targetTurno,
                   empleado_nombre: newEmpName,
+                  empleado_id: editing.id,
                   usuario_asignacion: currentUserName,
                   creado_por: currentUserName,
                   hora: horaStr,
@@ -1161,6 +1181,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     sede_id: targetSedeId,
                     turno: targetTurno,
                     empleado_nombre: newEmpName,
+                    empleado_id: editing.id,
                   }).catch(() => {});
                 });
               });
@@ -1175,6 +1196,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   sede_id: targetSedeId,
                   turno: targetTurno,
                   empleado_nombre: newEmpName,
+                  empleado_id: editing?.id || createdRecord?.id,
                   usuario_asignacion: currentUserName,
                   creado_por: currentUserName,
                   hora: horaStr,
@@ -1187,6 +1209,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   sede_id: targetSedeId,
                   turno: targetTurno,
                   empleado_nombre: newEmpName,
+                  empleado_id: editing?.id || createdRecord?.id,
                 }).catch(() => {});
               }
             }
