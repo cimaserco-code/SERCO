@@ -24,7 +24,15 @@ import {
   List, 
   Grid,
   Building2,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  X,
+  Maximize2,
+  Download,
+  Loader2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,7 +49,7 @@ import { toast } from "@/components/ui/use-toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
 
-// Tipos de Eventos soportados
+// Tipos de Eventos soportados en la Agenda SERCO
 const EVENT_TYPES = {
   entrevista: {
     id: "entrevista",
@@ -67,10 +75,61 @@ const EVENT_TYPES = {
     dotClass: "bg-emerald-500",
     icon: BookOpen,
   },
+  reporte: {
+    id: "reporte",
+    label: "Reporte",
+    color: "amber",
+    badgeClass: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800",
+    dotClass: "bg-amber-500",
+    icon: AlertTriangle,
+  },
 };
 
+/**
+ * Compresión ultra-eficiente de fotografías de evidencia en el cliente antes de guardar.
+ * Mantiene alta nitidez (1200px) pero reduce el peso a ~40-80 KB en WebP/JPEG.
+ */
+async function compressImageFile(file, maxWidth = 1200, maxHeight = 1200, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Error al leer el archivo de imagen"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Error al procesar la imagen"));
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let dataUrl = canvas.toDataURL("image/webp", quality);
+        if (!dataUrl.startsWith("data:image/webp")) {
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+        }
+        resolve(dataUrl);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const emptyEventForm = {
-  tipo: "entrevista", // entrevista | visita_supervision | capacitacion
+  tipo: "entrevista", // entrevista | visita_supervision | capacitacion | reporte
   titulo: "",
   fecha: new Date().toISOString().slice(0, 10),
   hora_inicio: "09:00",
@@ -90,6 +149,11 @@ const emptyEventForm = {
   // Capacitación
   tema_capacitacion: "",
   asistentes_estimados: "",
+  // Reporte
+  tipo_reporte: "Incidencia Operativa",
+  descripcion_reporte: "",
+  // Evidencias fotográficas (Capacitación y Reporte)
+  fotos_evidencia: [],
   // General
   estado: "programada", // programada | completada | cancelada
   notas: "",
@@ -97,15 +161,76 @@ const emptyEventForm = {
 
 export default function Agenda() {
   const { user } = useAuth();
-  const { canView, can, isAdmin } = usePermissions();
+  const { canView, can } = usePermissions();
   const { sedeFilter, defaultSedeId } = useSedeScope();
 
   if (!canView("agenda")) return <AccessRestricted />;
 
-  // Detectar roles con restricciones específicas en Agenda
   const userRole = (user?.role || "").toLowerCase().trim();
-  const isSupervisor = userRole === "supervisor";
-  const isReclutador = userRole === "reclutador";
+
+  /**
+   * Permisos de vista por Rol estrictos solicitados:
+   * - Director de RH y RH: Entrevistas y Capacitaciones.
+   * - Reclutador: Solo Entrevistas.
+   * - Capacitador: Solo Capacitaciones.
+   * - Director de Supervisor y Supervisor: Supervisiones y Reportes.
+   * - Monitoreo / Monitorista: Solo Reportes.
+   * - ADMIN, CEO y Director General: Pueden ver TODAS.
+   */
+  const allowedEventTypes = useMemo(() => {
+    // 1. ADMIN, CEO y Director General: acceso a todas
+    if (
+      userRole === "admin" ||
+      userRole === "administrador" ||
+      userRole === "super administrador" ||
+      userRole === "ceo" ||
+      userRole === "director" ||
+      userRole === "director general" ||
+      userRole === "director_general"
+    ) {
+      return ["entrevista", "visita_supervision", "capacitacion", "reporte"];
+    }
+
+    // 2. Reclutador: solo entrevistas
+    if (userRole.includes("reclutador") || userRole.includes("reclutamiento")) {
+      return ["entrevista"];
+    }
+
+    // 3. Capacitador: solo capacitaciones
+    if (userRole.includes("capacitador") || (userRole.includes("capacitacion") && !userRole.includes("director"))) {
+      return ["capacitacion"];
+    }
+
+    // 4. Director de RH y RH: entrevistas y capacitaciones
+    if (
+      userRole === "rh" ||
+      userRole === "recursos humanos" ||
+      userRole.includes("director de recursos humanos") ||
+      userRole.includes("director de rh") ||
+      userRole.includes("director rh") ||
+      userRole.includes("recursos humanos")
+    ) {
+      return ["entrevista", "capacitacion"];
+    }
+
+    // 5. Director de Supervisiones y Supervisor: supervisiones y reportes
+    if (
+      userRole.includes("supervisor") ||
+      userRole.includes("supervision") ||
+      userRole.includes("supervisión")
+    ) {
+      return ["visita_supervision", "reporte"];
+    }
+
+    // 6. Monitoreo / Monitorista: solo reportes
+    if (userRole.includes("monitoreo") || userRole.includes("monitorista")) {
+      return ["reporte"];
+    }
+
+    // Por defecto para cualquier otro usuario autorizado
+    return ["entrevista", "visita_supervision", "capacitacion", "reporte"];
+  }, [userRole]);
+
   const canCreate = can("agenda", "create");
   const canEdit = can("agenda", "edit");
   const canDelete = can("agenda", "delete");
@@ -118,7 +243,7 @@ export default function Agenda() {
 
   // Vistas y filtros
   const [viewMode, setViewMode] = useState("calendario"); // 'calendario' | 'lista'
-  const [typeFilter, setTypeFilter] = useState("todos"); // 'todos' | 'entrevista' | 'visita_supervision' | 'capacitacion'
+  const [typeFilter, setTypeFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos"); // 'todos' | 'programada' | 'completada' | 'cancelada'
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedServiceFilter, setSelectedServiceFilter] = useState("todos");
@@ -133,8 +258,19 @@ export default function Agenda() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // Manejo de fotografías y lightbox
+  const [compressingPhotos, setCompressingPhotos] = useState(false);
+  const [previewImageModal, setPreviewImageModal] = useState(null);
+
   // Modal de confirmación de eliminación
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+
+  // Ajustar filtro si el tipo seleccionado no está permitido para el usuario
+  useEffect(() => {
+    if (typeFilter !== "todos" && !allowedEventTypes.includes(typeFilter)) {
+      setTypeFilter("todos");
+    }
+  }, [allowedEventTypes, typeFilter]);
 
   // Cargar datos
   useEffect(() => {
@@ -180,7 +316,7 @@ export default function Agenda() {
     }
   }
 
-  // Guardar evento (Supabase con fallback a localStorage)
+  // Guardar evento (Supabase con fallback resiliente)
   async function persistEvent(eventData, isEdit = false, eventId = null) {
     try {
       if (isEdit && eventId) {
@@ -188,12 +324,33 @@ export default function Agenda() {
           .from("agenda")
           .update(eventData)
           .eq("id", eventId);
-        if (error) throw error;
+        if (error) {
+          // Si las columnas nuevas aún no están en la BD remota, reintentar sin ellas para no interrumpir la experiencia
+          if (error.message?.includes("fotos_evidencia") || error.message?.includes("tipo_reporte") || error.message?.includes("descripcion_reporte")) {
+            const fallbackData = { ...eventData };
+            delete fallbackData.fotos_evidencia;
+            delete fallbackData.tipo_reporte;
+            delete fallbackData.descripcion_reporte;
+            await supabase.from("agenda").update(fallbackData).eq("id", eventId);
+          } else {
+            throw error;
+          }
+        }
       } else {
         const { error } = await supabase
           .from("agenda")
           .insert(eventData);
-        if (error) throw error;
+        if (error) {
+          if (error.message?.includes("fotos_evidencia") || error.message?.includes("tipo_reporte") || error.message?.includes("descripcion_reporte")) {
+            const fallbackData = { ...eventData };
+            delete fallbackData.fotos_evidencia;
+            delete fallbackData.tipo_reporte;
+            delete fallbackData.descripcion_reporte;
+            await supabase.from("agenda").insert(fallbackData);
+          } else {
+            throw error;
+          }
+        }
       }
     } catch (err) {
       console.warn("No se pudo guardar en Supabase (usando fallback local):", err?.message);
@@ -237,27 +394,34 @@ export default function Agenda() {
     });
   }
 
-  // Filtrado de Eventos
+  // Filtrado de Eventos respetando rigurosamente los permisos por Rol
   const filteredEvents = useMemo(() => {
     return events
       .filter((ev) => {
-        // Supervisores solo ven visitas de supervisión
-        if (isSupervisor && ev.tipo !== "visita_supervision") return false;
-        // Reclutadores solo ven entrevistas (no supervisión ni capacitación)
-        if (isReclutador && (ev.tipo === "visita_supervision" || ev.tipo === "capacitacion")) return false;
+        // 1. Verificación de permisos por rol: sólo se muestran los tipos permitidos
+        if (!allowedEventTypes.includes(ev.tipo)) return false;
 
+        // 2. Filtro de Sede
         if (sedeFilter?.sede_id && ev.sede_id && ev.sede_id !== sedeFilter.sede_id) {
           return false;
         }
+
+        // 3. Filtro por tipo específico seleccionado
         if (typeFilter !== "todos" && ev.tipo !== typeFilter) {
           return false;
         }
+
+        // 4. Filtro por estado
         if (statusFilter !== "todos" && ev.estado !== statusFilter) {
           return false;
         }
+
+        // 5. Filtro por servicio
         if (selectedServiceFilter !== "todos" && ev.servicio_id !== selectedServiceFilter) {
           return false;
         }
+
+        // 6. Búsqueda por texto libre
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
           const matchTitle = (ev.titulo || "").toLowerCase().includes(q);
@@ -266,7 +430,21 @@ export default function Agenda() {
           const matchResp = (ev.responsable_nombre || "").toLowerCase().includes(q);
           const matchTopic = (ev.tema_capacitacion || "").toLowerCase().includes(q);
           const matchPuesto = (ev.puesto || "").toLowerCase().includes(q);
-          if (!matchTitle && !matchCandidate && !matchService && !matchResp && !matchTopic && !matchPuesto) {
+          const matchReportType = (ev.tipo_reporte || "").toLowerCase().includes(q);
+          const matchReportDesc = (ev.descripcion_reporte || "").toLowerCase().includes(q);
+          const matchNotes = (ev.notas || "").toLowerCase().includes(q);
+
+          if (
+            !matchTitle && 
+            !matchCandidate && 
+            !matchService && 
+            !matchResp && 
+            !matchTopic && 
+            !matchPuesto && 
+            !matchReportType && 
+            !matchReportDesc && 
+            !matchNotes
+          ) {
             return false;
           }
         }
@@ -278,17 +456,18 @@ export default function Agenda() {
         const dateB = `${b.fecha || ""}T${b.hora_inicio || "00:00"}`;
         return dateA.localeCompare(dateB);
       });
-  }, [events, sedeFilter, typeFilter, statusFilter, selectedServiceFilter, searchQuery, isSupervisor]);
+  }, [events, allowedEventTypes, sedeFilter, typeFilter, statusFilter, selectedServiceFilter, searchQuery]);
 
-  // Contadores de resumen
+  // Contadores de resumen dinámicos según los tipos permitidos
   const stats = useMemo(() => {
     const total = filteredEvents.length;
     const entrevistas = filteredEvents.filter((e) => e.tipo === "entrevista").length;
     const visitas = filteredEvents.filter((e) => e.tipo === "visita_supervision").length;
     const capacitaciones = filteredEvents.filter((e) => e.tipo === "capacitacion").length;
+    const reportes = filteredEvents.filter((e) => e.tipo === "reporte").length;
     const completadas = filteredEvents.filter((e) => e.estado === "completada").length;
     const pendientes = filteredEvents.filter((e) => e.estado === "programada").length;
-    return { total, entrevistas, visitas, capacitaciones, completadas, pendientes };
+    return { total, entrevistas, visitas, capacitaciones, reportes, completadas, pendientes };
   }, [filteredEvents]);
 
   // Navegación de mes
@@ -342,18 +521,60 @@ export default function Agenda() {
     return days;
   }, [currentDate]);
 
+  // Manejador de selección de fotos de evidencia
+  const handleEvidencePhotosUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setCompressingPhotos(true);
+    try {
+      const newUrls = [];
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+        const compressed = await compressImageFile(file, 1200, 1200, 0.75);
+        newUrls.push(compressed);
+      }
+      setForm((prev) => ({
+        ...prev,
+        fotos_evidencia: [...(Array.isArray(prev.fotos_evidencia) ? prev.fotos_evidencia : []), ...newUrls],
+      }));
+      toast({
+        title: "Fotografías cargadas",
+        description: `Se agregaron ${newUrls.length} fotografía(s) de evidencia.`,
+      });
+    } catch (err) {
+      console.error("Error al procesar fotos:", err);
+      toast({
+        variant: "destructive",
+        title: "Error al cargar fotos",
+        description: "No se pudieron procesar las fotografías seleccionadas.",
+      });
+    } finally {
+      setCompressingPhotos(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleRemoveEvidencePhoto = (photoIdx) => {
+    setForm((prev) => ({
+      ...prev,
+      fotos_evidencia: (Array.isArray(prev.fotos_evidencia) ? prev.fotos_evidencia : []).filter((_, idx) => idx !== photoIdx),
+    }));
+  };
+
   // Abrir modal para crear
   const openCreate = (defaultDate = null) => {
     setEditingEvent(null);
     setFormError("");
+    const initialType = allowedEventTypes[0] || "entrevista";
+
     setForm({
       ...emptyEventForm,
-      // Supervisores solo pueden crear visitas de supervisión, reclutadores solo entrevistas
-      tipo: isSupervisor ? "visita_supervision" : isReclutador ? "entrevista" : emptyEventForm.tipo,
+      tipo: initialType,
       fecha: defaultDate || new Date().toISOString().slice(0, 10),
       sede_id: defaultSedeId || "",
       responsable_id: user?.id || "",
       responsable_nombre: user?.full_name || "",
+      fotos_evidencia: [],
     });
     setModalOpen(true);
   };
@@ -363,9 +584,22 @@ export default function Agenda() {
     e?.stopPropagation?.();
     setEditingEvent(ev);
     setFormError("");
+
+    let parsedPhotos = [];
+    if (Array.isArray(ev.fotos_evidencia)) {
+      parsedPhotos = ev.fotos_evidencia;
+    } else if (typeof ev.fotos_evidencia === "string" && ev.fotos_evidencia.trim()) {
+      try {
+        parsedPhotos = JSON.parse(ev.fotos_evidencia);
+      } catch {
+        parsedPhotos = [];
+      }
+    }
+
     setForm({
       ...emptyEventForm,
       ...ev,
+      fotos_evidencia: parsedPhotos,
     });
     setModalOpen(true);
   };
@@ -378,6 +612,11 @@ export default function Agenda() {
       return;
     }
 
+    if (!allowedEventTypes.includes(form.tipo)) {
+      setFormError("No tienes permisos para agendar eventos de este tipo.");
+      return;
+    }
+
     let autoTitle = form.titulo?.trim();
     if (!autoTitle) {
       if (form.tipo === "entrevista") {
@@ -386,25 +625,21 @@ export default function Agenda() {
         autoTitle = `Visita a ${form.servicio_nombre || "Servicio"} (${form.turno || "General"})`;
       } else if (form.tipo === "capacitacion") {
         autoTitle = `Capacitación: ${form.tema_capacitacion || "General"} en ${form.servicio_nombre || "Servicio"}`;
+      } else if (form.tipo === "reporte") {
+        autoTitle = `Reporte: ${form.tipo_reporte || "Incidencia"} - ${form.servicio_nombre || "General"}`;
       }
-    }
-
-    if (isSupervisor && form.tipo !== "visita_supervision") {
-      setFormError("Como supervisor solo puedes agendar visitas de supervisión.");
-      return;
-    }
-
-    if (isReclutador && form.tipo !== "entrevista") {
-      setFormError("Como reclutador solo puedes agendar entrevistas.");
-      return;
     }
 
     if (form.tipo === "entrevista" && !form.candidato_nombre?.trim()) {
       setFormError("Por favor ingresa el nombre del candidato.");
       return;
     }
-    if ((form.tipo === "visita_supervision" || form.tipo === "capacitacion") && !form.servicio_id) {
+    if ((form.tipo === "visita_supervision" || form.tipo === "capacitacion" || form.tipo === "reporte") && !form.servicio_id) {
       setFormError("Por favor selecciona el servicio correspondiente.");
+      return;
+    }
+    if (form.tipo === "reporte" && !form.descripcion_reporte?.trim() && !form.notas?.trim()) {
+      setFormError("Por favor describe brevemente los detalles del reporte o incidencia.");
       return;
     }
 
@@ -418,7 +653,7 @@ export default function Agenda() {
         titulo: autoTitle,
         fecha: form.fecha,
         hora_inicio: form.hora_inicio || "09:00",
-        hora_fin: form.tipo === "entrevista" ? null : (form.hora_fin || null),
+        hora_fin: form.tipo === "entrevista" || form.tipo === "reporte" ? null : (form.hora_fin || null),
         sede_id: form.sede_id || defaultSedeId || null,
         servicio_id: form.servicio_id || null,
         servicio_nombre: serv?.nombre || form.servicio_nombre || null,
@@ -431,6 +666,9 @@ export default function Agenda() {
         turno: form.turno || null,
         tema_capacitacion: form.tema_capacitacion || null,
         asistentes_estimados: form.asistentes_estimados || null,
+        tipo_reporte: form.tipo_reporte || null,
+        descripcion_reporte: form.descripcion_reporte || null,
+        fotos_evidencia: Array.isArray(form.fotos_evidencia) ? form.fotos_evidencia : [],
         estado: form.estado || "programada",
         notas: form.notas || null,
         creado_por: user?.full_name || user?.email || "Usuario",
@@ -457,7 +695,9 @@ export default function Agenda() {
     try {
       await persistEvent({ ...ev, estado: nextStatus, updated_at: new Date().toISOString() }, true, ev.id);
       toast({
-        title: nextStatus === "completada" ? "Evento marcado como Realizado" : "Estado actualizado",
+        title: nextStatus === "completada" 
+          ? (ev.tipo === "reporte" ? "Reporte marcado como Atendido / Resuelto" : "Evento marcado como Realizado")
+          : "Estado actualizado",
       });
     } catch (err) {
       console.error(err);
@@ -466,6 +706,20 @@ export default function Agenda() {
 
   const monthName = currentDate.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
   const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Botón principal de creación dinámico
+  const createButtonText = useMemo(() => {
+    if (allowedEventTypes.length === 1) {
+      if (allowedEventTypes[0] === "reporte") return "Levantar Reporte";
+      if (allowedEventTypes[0] === "entrevista") return "Agendar Entrevista";
+      if (allowedEventTypes[0] === "capacitacion") return "Agendar Capacitación";
+      if (allowedEventTypes[0] === "visita_supervision") return "Agendar Supervisión";
+    }
+    if (allowedEventTypes.includes("reporte") && allowedEventTypes.includes("visita_supervision") && allowedEventTypes.length === 2) {
+      return "Agendar Supervisión / Reporte";
+    }
+    return "Agendar Evento";
+  }, [allowedEventTypes]);
 
   return (
     <div className="space-y-6">
@@ -477,7 +731,7 @@ export default function Agenda() {
             Agenda y Calendario Operativo
           </h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Coordinación de entrevistas de RH, visitas de supervisores y capacitaciones a servicios.
+            Coordinación y seguimiento de entrevistas, supervisiones, capacitaciones y reportes operativos.
           </p>
         </div>
 
@@ -507,41 +761,15 @@ export default function Agenda() {
           {canCreate && (
             <Button onClick={() => openCreate()} className="h-9 gap-1.5 text-xs font-semibold shadow-xs">
               <Plus className="w-4 h-4" />
-              {isSupervisor ? "Agendar Supervisión" : "Agendar Evento"}
+              {createButtonText}
             </Button>
           )}
         </div>
       </div>
 
-      {/* TARJETAS DE RESUMEN RÁPIDO */}
-      {isSupervisor ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Card className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setTypeFilter("visita_supervision")}>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
-                <Eye className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xl font-bold text-foreground">{stats.visitas}</div>
-                <p className="text-xs text-muted-foreground font-medium">Visitas de Supervisión</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <CalendarDays className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xl font-bold text-foreground">{stats.total}</div>
-                <p className="text-xs text-muted-foreground font-medium">Total de Visitas Asignadas</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* TARJETAS DE RESUMEN RÁPIDO SEGÚN PERMISOS */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {allowedEventTypes.includes("entrevista") && (
           <Card className="cursor-pointer hover:border-purple-300 transition-colors" onClick={() => setTypeFilter("entrevista")}>
             <CardContent className="p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center shrink-0">
@@ -553,7 +781,9 @@ export default function Agenda() {
               </div>
             </CardContent>
           </Card>
+        )}
 
+        {allowedEventTypes.includes("visita_supervision") && (
           <Card className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setTypeFilter("visita_supervision")}>
             <CardContent className="p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
@@ -565,7 +795,9 @@ export default function Agenda() {
               </div>
             </CardContent>
           </Card>
+        )}
 
+        {allowedEventTypes.includes("capacitacion") && (
           <Card className="cursor-pointer hover:border-emerald-300 transition-colors" onClick={() => setTypeFilter("capacitacion")}>
             <CardContent className="p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shrink-0">
@@ -577,20 +809,34 @@ export default function Agenda() {
               </div>
             </CardContent>
           </Card>
+        )}
 
-          <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
+        {allowedEventTypes.includes("reporte") && (
+          <Card className="cursor-pointer hover:border-amber-300 transition-colors" onClick={() => setTypeFilter("reporte")}>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <CalendarDays className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-xl font-bold text-foreground">{stats.total}</div>
-                <p className="text-xs text-muted-foreground font-medium">Total de Eventos</p>
+                <div className="text-xl font-bold text-foreground">{stats.reportes}</div>
+                <p className="text-xs text-muted-foreground font-medium">Reportes Operativos</p>
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
+        )}
+
+        <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <CalendarDays className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xl font-bold text-foreground">{stats.total}</div>
+              <p className="text-xs text-muted-foreground font-medium">Total de Registros</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* BARRA DE FILTROS Y BÚSQUEDA */}
       <Card>
@@ -600,7 +846,7 @@ export default function Agenda() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar candidato, servicio, supervisor, tema..."
+                placeholder="Buscar candidato, servicio, reporte, tema..."
                 className="pl-9 h-9 text-xs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -608,17 +854,26 @@ export default function Agenda() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Filtro Tipo - oculto para supervisor y reclutador porque tienen tipo exclusivo */}
-              {!isSupervisor && !isReclutador && (
+              {/* Filtro Tipo dinámico: sólo se muestran opciones si el rol tiene más de un tipo permitido */}
+              {allowedEventTypes.length > 1 && (
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
                   <SelectTrigger className="h-9 text-xs w-[170px]">
                     <SelectValue placeholder="Tipo de evento" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos los Tipos</SelectItem>
-                    <SelectItem value="entrevista">🟣 Entrevistas</SelectItem>
-                    <SelectItem value="visita_supervision">🔵 Visitas Supervisión</SelectItem>
-                    <SelectItem value="capacitacion">🟢 Capacitaciones</SelectItem>
+                    {allowedEventTypes.includes("entrevista") && (
+                      <SelectItem value="entrevista">🟣 Entrevistas</SelectItem>
+                    )}
+                    {allowedEventTypes.includes("visita_supervision") && (
+                      <SelectItem value="visita_supervision">🔵 Visitas Supervisión</SelectItem>
+                    )}
+                    {allowedEventTypes.includes("capacitacion") && (
+                      <SelectItem value="capacitacion">🟢 Capacitaciones</SelectItem>
+                    )}
+                    {allowedEventTypes.includes("reporte") && (
+                      <SelectItem value="reporte">🟠 Reportes</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               )}
@@ -643,8 +898,8 @@ export default function Agenda() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos los Estados</SelectItem>
-                  <SelectItem value="programada">Programadas</SelectItem>
-                  <SelectItem value="completada">Completadas</SelectItem>
+                  <SelectItem value="programada">Pendientes / Prog.</SelectItem>
+                  <SelectItem value="completada">Realizadas / Resueltos</SelectItem>
                   <SelectItem value="cancelada">Canceladas</SelectItem>
                 </SelectContent>
               </Select>
@@ -742,6 +997,7 @@ export default function Agenda() {
                     {dayEvents.map((ev) => {
                       const typeConfig = EVENT_TYPES[ev.tipo] || EVENT_TYPES.entrevista;
                       const IconComp = typeConfig.icon;
+                      const hasPhotos = Array.isArray(ev.fotos_evidencia) && ev.fotos_evidencia.length > 0;
 
                       return (
                         <div
@@ -755,6 +1011,7 @@ export default function Agenda() {
                           <IconComp className="w-3 h-3 shrink-0" />
                           <span className="font-semibold shrink-0 text-[10px]">{ev.hora_inicio || ""}</span>
                           <span className="truncate">{ev.titulo}</span>
+                          {hasPhotos && <Camera className="w-2.5 h-2.5 shrink-0 opacity-75 ml-auto" />}
                         </div>
                       );
                     })}
@@ -770,9 +1027,9 @@ export default function Agenda() {
       {viewMode === "lista" && (
         <Card>
           <CardHeader className="pb-3 border-b">
-            <CardTitle className="text-base font-bold">Listado Cronológico de Eventos</CardTitle>
+            <CardTitle className="text-base font-bold">Listado Cronológico de Eventos y Reportes</CardTitle>
             <CardDescription className="text-xs">
-              Mostrando {filteredEvents.length} evento(s) ordenados por fecha y hora
+              Mostrando {filteredEvents.length} registro(s) ordenados por fecha y hora
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4">
@@ -781,11 +1038,11 @@ export default function Agenda() {
             ) : filteredEvents.length === 0 ? (
               <div className="text-center py-12 space-y-2">
                 <CalendarIcon className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-                <p className="text-sm font-semibold text-foreground">No hay eventos en esta selección</p>
-                <p className="text-xs text-muted-foreground">Prueba ajustando los filtros o agenda un nuevo evento.</p>
+                <p className="text-sm font-semibold text-foreground">No hay eventos ni reportes en esta selección</p>
+                <p className="text-xs text-muted-foreground">Prueba ajustando los filtros o registra un nuevo evento.</p>
                 {canCreate && (
                   <Button size="sm" variant="outline" onClick={() => openCreate()} className="mt-2 text-xs">
-                    <Plus className="w-3.5 h-3.5 mr-1" /> {isSupervisor ? "Agendar supervisión" : "Agendar ahora"}
+                    <Plus className="w-3.5 h-3.5 mr-1" /> {createButtonText}
                   </Button>
                 )}
               </div>
@@ -795,6 +1052,11 @@ export default function Agenda() {
                   const typeConfig = EVENT_TYPES[ev.tipo] || EVENT_TYPES.entrevista;
                   const IconComp = typeConfig.icon;
                   const isDone = ev.estado === "completada";
+                  const photos = Array.isArray(ev.fotos_evidencia)
+                    ? ev.fotos_evidencia
+                    : typeof ev.fotos_evidencia === "string" && ev.fotos_evidencia.trim()
+                    ? JSON.parse(ev.fotos_evidencia || "[]")
+                    : [];
 
                   return (
                     <div
@@ -805,7 +1067,9 @@ export default function Agenda() {
                           ? "border-l-purple-500"
                           : ev.tipo === "visita_supervision"
                           ? "border-l-blue-500"
-                          : "border-l-emerald-500"
+                          : ev.tipo === "capacitacion"
+                          ? "border-l-emerald-500"
+                          : "border-l-amber-500"
                       }`}
                     >
                       <div className="space-y-1.5 flex-1 min-w-0">
@@ -827,7 +1091,9 @@ export default function Agenda() {
                                 : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                             }`}
                           >
-                            {ev.estado}
+                            {ev.tipo === "reporte"
+                              ? (ev.estado === "completada" ? "Atendido / Resuelto" : ev.estado === "cancelada" ? "Descartado" : "Abierto / Pendiente")
+                              : ev.estado}
                           </span>
                         </div>
 
@@ -879,12 +1145,65 @@ export default function Agenda() {
                             </>
                           )}
 
+                          {ev.tipo === "reporte" && (
+                            <>
+                              {ev.servicio_nombre && (
+                                <span className="font-medium text-foreground flex items-center gap-1">
+                                  <Building2 className="w-3 h-3 text-amber-600" /> {ev.servicio_nombre}
+                                </span>
+                              )}
+                              {ev.tipo_reporte && (
+                                <span className="font-semibold text-amber-700 dark:text-amber-300">
+                                  Tipo: {ev.tipo_reporte}
+                                </span>
+                              )}
+                              {ev.turno && <span>Turno: <strong className="capitalize">{ev.turno}</strong></span>}
+                            </>
+                          )}
+
                           {ev.responsable_nombre && (
                             <span className="text-muted-foreground border-l pl-2">
                               Responsable: <strong className="text-foreground">{ev.responsable_nombre}</strong>
                             </span>
                           )}
                         </div>
+
+                        {/* Descripción del reporte si existe */}
+                        {ev.tipo === "reporte" && ev.descripcion_reporte && (
+                          <p className="text-xs text-foreground/90 bg-amber-500/10 dark:bg-amber-950/30 p-2 rounded border border-amber-200/50 dark:border-amber-800/40">
+                            {ev.descripcion_reporte}
+                          </p>
+                        )}
+
+                        {/* Tira de fotos de evidencia */}
+                        {photos.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <span className="text-[10px] font-semibold text-muted-foreground flex items-center gap-1 bg-muted px-2 py-0.5 rounded">
+                              <Camera className="w-3 h-3 text-primary" />
+                              {photos.length} evidencia(s)
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {photos.slice(0, 4).map((imgUrl, imgIdx) => (
+                                <div
+                                  key={imgIdx}
+                                  className="w-8 h-8 rounded border overflow-hidden hover:opacity-80 transition-opacity cursor-pointer shadow-2xs shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewImageModal(imgUrl);
+                                  }}
+                                  title="Ver fotografía de evidencia ampliada"
+                                >
+                                  <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                              {photos.length > 4 && (
+                                <span className="text-[10px] text-muted-foreground font-semibold">
+                                  +{photos.length - 4} más
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {ev.notas && (
                           <p className="text-[11px] text-muted-foreground line-clamp-1 italic bg-muted/40 p-1.5 rounded">
@@ -900,11 +1219,12 @@ export default function Agenda() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                              className="h-8 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
                               onClick={(e) => handleToggleStatus(ev, "completada", e)}
-                              title="Marcar como realizada"
+                              title={ev.tipo === "reporte" ? "Marcar como atendido" : "Marcar como realizada"}
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Realizada
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              {ev.tipo === "reporte" ? "Atendido" : "Realizada"}
                             </Button>
                           ) : (
                             <Button
@@ -961,78 +1281,70 @@ export default function Agenda() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-primary" />
-              {editingEvent ? (canEdit ? "Editar Cita / Evento" : "Detalles del Evento") : "Agendar Nuevo Evento"}
+              {editingEvent 
+                ? (canEdit ? (form.tipo === "reporte" ? "Editar Reporte" : "Editar Cita / Evento") : "Detalles del Evento") 
+                : (form.tipo === "reporte" ? "Levantar Nuevo Reporte Operativo" : "Agendar Nuevo Evento")}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Completa los datos del evento según el área operativa correspondiente.
+              Completa los datos del registro según el área operativa correspondiente.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {formError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg flex items-center gap-2">
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg flex items-center gap-2 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{formError}</span>
               </div>
             )}
 
-            {/* Selector de Tipo de Evento */}
+            {/* Selector dinámico de Tipo de Evento según los permisos del usuario */}
             <div>
-              <Label className="text-xs font-semibold">Tipo de Evento *</Label>
-              {isSupervisor ? (
+              <Label className="text-xs font-semibold">Tipo de Registro *</Label>
+              {allowedEventTypes.length === 1 ? (
                 <div className="mt-1.5">
-                  <div className="p-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200">
-                    <Eye className="w-4 h-4 text-blue-600" />
-                    <span>Visita de Supervisión (Operativa)</span>
-                  </div>
-                </div>
-              ) : isReclutador ? (
-                <div className="mt-1.5">
-                  <div className="p-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200">
-                    <User className="w-4 h-4 text-purple-600" />
-                    <span>Entrevista (Reclutamiento / RH)</span>
+                  <div className={`p-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 ${
+                    allowedEventTypes[0] === "reporte"
+                      ? "bg-amber-100 text-amber-900 border-amber-500 shadow-xs dark:bg-amber-950 dark:text-amber-200"
+                      : allowedEventTypes[0] === "entrevista"
+                      ? "bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200"
+                      : allowedEventTypes[0] === "capacitacion"
+                      ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
+                      : "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
+                  }`}>
+                    {React.createElement(EVENT_TYPES[allowedEventTypes[0]]?.icon || AlertTriangle, { className: "w-4 h-4" })}
+                    <span>{EVENT_TYPES[allowedEventTypes[0]]?.label || "Evento"}</span>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2 mt-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, tipo: "entrevista" })}
-                    className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
-                      form.tipo === "entrevista"
-                        ? "bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200"
-                        : "bg-muted/40 hover:bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    <User className="w-4 h-4 text-purple-600" />
-                    <span>Entrevista (RH)</span>
-                  </button>
+                <div className={`grid grid-cols-2 sm:grid-cols-${Math.min(allowedEventTypes.length, 4)} gap-2 mt-1.5`}>
+                  {allowedEventTypes.map((t) => {
+                    const config = EVENT_TYPES[t];
+                    const IconC = config.icon;
+                    const isSelected = form.tipo === t;
 
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, tipo: "visita_supervision" })}
-                    className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
-                      form.tipo === "visita_supervision"
-                        ? "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
-                        : "bg-muted/40 hover:bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    <Eye className="w-4 h-4 text-blue-600" />
-                    <span>Visita Supervisión</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, tipo: "capacitacion" })}
-                    className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
-                      form.tipo === "capacitacion"
-                        ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
-                        : "bg-muted/40 hover:bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    <BookOpen className="w-4 h-4 text-emerald-600" />
-                    <span>Capacitación</span>
-                  </button>
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setForm({ ...form, tipo: t })}
+                        className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col items-center gap-1.5 transition-all ${
+                          isSelected
+                            ? config.id === "entrevista"
+                              ? "bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200"
+                              : config.id === "visita_supervision"
+                              ? "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
+                              : config.id === "capacitacion"
+                              ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
+                              : "bg-amber-100 text-amber-900 border-amber-500 shadow-xs dark:bg-amber-950 dark:text-amber-200"
+                            : "bg-muted/40 hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <IconC className="w-4 h-4" />
+                        <span>{config.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1107,7 +1419,7 @@ export default function Agenda() {
                   <div>
                     <Label className="text-xs">Turno de Visita</Label>
                     <Select
-                      value={form.turno}
+                      value={form.turno || "matutino"}
                       onValueChange={(val) => setForm({ ...form, turno: val })}
                     >
                       <SelectTrigger className="h-8 text-xs mt-1">
@@ -1147,8 +1459,12 @@ export default function Agenda() {
                     <Select
                       value={form.servicio_id}
                       onValueChange={(val) => {
-                        const s = services.find((x) => x.id === val);
-                        setForm({ ...form, servicio_id: val, servicio_nombre: s?.nombre || "" });
+                        if (val === "oficina") {
+                          setForm({ ...form, servicio_id: "oficina", servicio_nombre: "Oficinas Centrales SERCO" });
+                        } else {
+                          const s = services.find((x) => x.id === val);
+                          setForm({ ...form, servicio_id: val, servicio_nombre: s?.nombre || "" });
+                        }
                       }}
                     >
                       <SelectTrigger className="h-8 text-xs mt-1">
@@ -1186,11 +1502,200 @@ export default function Agenda() {
               </div>
             )}
 
-            {/* FECHA Y HORARIOS (Sin hora final para entrevistas) */}
-            {form.tipo === "entrevista" ? (
+            {/* 4. REPORTE OPERATIVO */}
+            {form.tipo === "reporte" && (
+              <div className="p-3.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200/70 space-y-3">
+                <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Datos del Reporte Operativo
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Servicio Afectado / Ubicación *</Label>
+                    <Select
+                      value={form.servicio_id}
+                      onValueChange={(val) => {
+                        if (val === "oficina") {
+                          setForm({ ...form, servicio_id: "oficina", servicio_nombre: "Oficinas Centrales SERCO" });
+                        } else {
+                          const s = services.find((x) => x.id === val);
+                          setForm({ ...form, servicio_id: val, servicio_nombre: s?.nombre || "" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="Selecciona el servicio..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="oficina">🏢 Oficinas Centrales SERCO</SelectItem>
+                        {services.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Tipo de Reporte *</Label>
+                    <Select
+                      value={form.tipo_reporte || "Incidencia Operativa"}
+                      onValueChange={(val) => setForm({ ...form, tipo_reporte: val })}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="Tipo de reporte" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Incidencia Operativa">⚠️ Incidencia Operativa</SelectItem>
+                        <SelectItem value="Novedad en Servicio">📋 Novedad en Servicio</SelectItem>
+                        <SelectItem value="Falta / Falla de Equipo">🛡️ Falta o Falla de Equipo / Uniforme</SelectItem>
+                        <SelectItem value="Inasistencia / Guardia Faltante">👤 Inasistencia de Personal</SelectItem>
+                        <SelectItem value="Queja o Petición de Cliente">🗣️ Queja o Petición de Cliente</SelectItem>
+                        <SelectItem value="Emergencia / Conato">🚨 Emergencia / Conato</SelectItem>
+                        <SelectItem value="Otro">📌 Otro Reporte</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Turno</Label>
+                    <Select
+                      value={form.turno || "matutino"}
+                      onValueChange={(val) => setForm({ ...form, turno: val })}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="Turno" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="matutino">Matutino</SelectItem>
+                        <SelectItem value="vespertino">Vespertino</SelectItem>
+                        <SelectItem value="nocturno">Nocturno</SelectItem>
+                        <SelectItem value="mixto">Mixto / 24 Horas</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Detalle o Descripción de los Hechos *</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder="Describe detalladamente lo acontecido, personas involucradas, daños, medidas tomadas..."
+                      value={form.descripcion_reporte || ""}
+                      onChange={(e) => setForm({ ...form, descripcion_reporte: e.target.value })}
+                      className="text-xs mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECCIÓN DE FOTOGRAFÍAS DE EVIDENCIA (PARA CAPACITACIÓN Y REPORTES) */}
+            {(form.tipo === "capacitacion" || form.tipo === "reporte") && (
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-primary" />
+                    <div>
+                      <h4 className="text-xs font-bold text-foreground">Fotografías de Evidencia</h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        {form.tipo === "capacitacion"
+                          ? "Comprobantes fotográficos de que se llevó a cabo la capacitación."
+                          : "Fotografías de evidencia sobre los hechos del reporte."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(!editingEvent || canEdit) && (
+                    <div>
+                      <input
+                        type="file"
+                        id="evidence-photos-input"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleEvidencePhotosUpload}
+                        disabled={compressingPhotos}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1.5"
+                        onClick={() => document.getElementById("evidence-photos-input")?.click()}
+                        disabled={compressingPhotos}
+                      >
+                        {compressingPhotos ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" /> Procesando...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-3 h-3" /> Subir Fotos
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Galería de miniaturas cargadas */}
+                {Array.isArray(form.fotos_evidencia) && form.fotos_evidencia.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pt-1">
+                    {form.fotos_evidencia.map((photoUrl, idx) => (
+                      <div
+                        key={idx}
+                        className="relative group rounded-lg overflow-hidden border bg-background aspect-square shadow-2xs cursor-pointer"
+                        onClick={() => setPreviewImageModal(photoUrl)}
+                      >
+                        <img
+                          src={photoUrl}
+                          alt={`Evidencia ${idx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                          <Maximize2 className="w-4 h-4 drop-shadow" />
+                        </div>
+                        {(!editingEvent || canEdit) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveEvidencePhoto(idx);
+                            }}
+                            title="Eliminar foto"
+                            className="absolute top-1 right-1 w-5 h-5 bg-red-600/90 hover:bg-red-700 text-white rounded-full flex items-center justify-center opacity-90 group-hover:opacity-100 shadow"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => (!editingEvent || canEdit) && document.getElementById("evidence-photos-input")?.click()}
+                    className={`border-2 border-dashed rounded-lg p-3.5 text-center text-xs transition-colors ${
+                      (!editingEvent || canEdit)
+                        ? "border-muted-foreground/30 hover:border-primary/50 cursor-pointer text-muted-foreground"
+                        : "border-muted-foreground/20 text-muted-foreground/60"
+                    }`}
+                  >
+                    <ImageIcon className="w-6 h-6 mx-auto mb-1 text-muted-foreground/50" />
+                    <span>
+                      {(!editingEvent || canEdit)
+                        ? "Haz clic aquí o pulsa \"Subir Fotos\" para adjuntar fotos de evidencia."
+                        : "No se adjuntaron fotografías de evidencia."}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* FECHA Y HORARIOS */}
+            {form.tipo === "entrevista" || form.tipo === "reporte" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Fecha de la Entrevista *</Label>
+                  <Label className="text-xs">
+                    {form.tipo === "reporte" ? "Fecha del Reporte *" : "Fecha de la Entrevista *"}
+                  </Label>
                   <Input
                     type="date"
                     value={form.fecha}
@@ -1200,7 +1705,9 @@ export default function Agenda() {
                 </div>
 
                 <div>
-                  <Label className="text-xs">Hora de la Cita *</Label>
+                  <Label className="text-xs">
+                    {form.tipo === "reporte" ? "Hora del Suceso *" : "Hora de la Cita *"}
+                  </Label>
                   <Input
                     type="time"
                     value={form.hora_inicio}
@@ -1273,7 +1780,9 @@ export default function Agenda() {
               </div>
 
               <div>
-                <Label className="text-xs">Estado de la Cita</Label>
+                <Label className="text-xs">
+                  {form.tipo === "reporte" ? "Estado del Reporte" : "Estado del Evento"}
+                </Label>
                 <Select
                   value={form.estado}
                   onValueChange={(val) => setForm({ ...form, estado: val })}
@@ -1282,9 +1791,15 @@ export default function Agenda() {
                     <SelectValue placeholder="Estado" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="programada">🟡 Programada</SelectItem>
-                    <SelectItem value="completada">🟢 Realizada / Completada</SelectItem>
-                    <SelectItem value="cancelada">🔴 Cancelada</SelectItem>
+                    <SelectItem value="programada">
+                      {form.tipo === "reporte" ? "🟡 Abierto / Pendiente" : "🟡 Programada"}
+                    </SelectItem>
+                    <SelectItem value="completada">
+                      {form.tipo === "reporte" ? "🟢 Atendido / Resuelto" : "🟢 Realizada / Completada"}
+                    </SelectItem>
+                    <SelectItem value="cancelada">
+                      {form.tipo === "reporte" ? "🔴 Descartado / Cancelado" : "🔴 Cancelada"}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1295,7 +1810,7 @@ export default function Agenda() {
               <Label className="text-xs">Notas u Observaciones Adicionales</Label>
               <Textarea
                 rows={2}
-                placeholder="Detalles importantes, instrucciones de acceso, consignas..."
+                placeholder="Detalles importantes, consignas, instrucciones de seguimiento..."
                 value={form.notas || ""}
                 onChange={(e) => setForm({ ...form, notas: e.target.value })}
                 className="text-xs mt-1"
@@ -1309,10 +1824,56 @@ export default function Agenda() {
             </Button>
             {(!editingEvent || canEdit) && (
               <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 font-semibold">
-                {saving ? "Guardando..." : editingEvent ? "Guardar Cambios" : "Agendar Evento"}
+                {saving 
+                  ? "Guardando..." 
+                  : editingEvent 
+                  ? "Guardar Cambios" 
+                  : (form.tipo === "reporte" ? "Guardar Reporte" : "Agendar Evento")}
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL LIGHTBOX PARA VISUALIZAR FOTOGRAFÍAS EN ALTA RESOLUCIÓN */}
+      <Dialog open={!!previewImageModal} onOpenChange={(open) => !open && setPreviewImageModal(null)}>
+        <DialogContent className="max-w-3xl p-4 bg-black/95 border-neutral-800 text-white flex flex-col items-center">
+          <DialogHeader className="w-full flex flex-row items-center justify-between pb-2 border-b border-neutral-800">
+            <DialogTitle className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
+              <Camera className="w-4 h-4 text-primary" /> Fotografía de Evidencia
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="w-full max-h-[75vh] flex items-center justify-center p-2 overflow-auto">
+            {previewImageModal && (
+              <img
+                src={previewImageModal}
+                alt="Evidencia ampliada"
+                className="max-h-[70vh] max-w-full object-contain rounded-md shadow-2xl"
+              />
+            )}
+          </div>
+
+          <div className="w-full flex items-center justify-between pt-3 border-t border-neutral-800 text-xs text-neutral-400">
+            <span>Comprobante de evidencia fotográfica</span>
+            <div className="flex gap-2">
+              <a
+                href={previewImageModal}
+                download="evidencia-serco.jpg"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" /> Descargar
+              </a>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+                onClick={() => setPreviewImageModal(null)}
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1320,13 +1881,13 @@ export default function Agenda() {
       <ConfirmDialog
         open={!!deleteConfirmId}
         onOpenChange={(open) => !open && setDeleteConfirmId(null)}
-        title="¿Eliminar evento de la agenda?"
+        title="¿Eliminar evento o reporte de la agenda?"
         description="Esta acción eliminará el registro de la agenda. Esta acción no se puede deshacer."
         onConfirm={async () => {
           if (deleteConfirmId) {
             await removeEvent(deleteConfirmId);
             setDeleteConfirmId(null);
-            toast({ title: "Evento eliminado de la agenda" });
+            toast({ title: "Registro eliminado de la agenda" });
           }
         }}
       />
