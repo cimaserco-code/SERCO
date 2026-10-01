@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Trash2, Filter, Check, ChevronsUpDown, X, Users, Building2, MapPin } from "lucide-react";
+import { Plus, Trash2, Filter, Check, ChevronsUpDown, X, Users, Building2, MapPin, Settings2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils";
 const turnosConfig = [
   { key: "matutino", label: "Matutino", color: "bg-amber-100 text-amber-700 border-amber-200" },
   { key: "vespertino", label: "Vespertino", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  { key: "cubre_descansos", label: "Cubre Descansos", color: "bg-purple-100 text-purple-700 border-purple-200" },
+  { key: "cubre_descansos", label: "Cubreturnos", color: "bg-purple-100 text-purple-700 border-purple-200" },
 ];
 
 export default function Plantilla() {
@@ -61,6 +61,12 @@ export default function Plantilla() {
   const [vacanteModalOpen, setVacanteModalOpen] = useState(false);
   const [vacanteForm, setVacanteForm] = useState({ servicio_id: "", puesto: "Guardia de Seguridad", turno: "matutino", cantidad: "1", requisitos: "", estado: "abierta" });
   const [deleteVacanteId, setDeleteVacanteId] = useState(null);
+
+  // Modal para configurar cupos de guardia requeridos por turno
+  const [cuposModalOpen, setCuposModalOpen] = useState(false);
+  const [cuposModalServicio, setCuposModalServicio] = useState(null);
+  const [cuposForm, setCuposForm] = useState({ matutino: 0, vespertino: 0, cubre_descansos: 0 });
+  const [savingCupos, setSavingCupos] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -139,6 +145,66 @@ export default function Plantilla() {
     setSearchTerm("");
   }
 
+  function getGuardiasRequeridos(serv, turnoKey) {
+    if (!serv) return 0;
+    let config = serv.guardias_por_turno;
+    if (typeof config === "string") {
+      try { config = JSON.parse(config); } catch {}
+    }
+    if (!config && serv.turnos_autorizados) {
+      try { config = JSON.parse(serv.turnos_autorizados); } catch {}
+    }
+    if (config && typeof config === "object") {
+      return Math.max(0, parseInt(config[turnoKey]) || 0);
+    }
+    return 0;
+  }
+
+  function handleOpenCupos(serv) {
+    setCuposModalServicio(serv);
+    setCuposForm({
+      matutino: getGuardiasRequeridos(serv, "matutino"),
+      vespertino: getGuardiasRequeridos(serv, "vespertino"),
+      cubre_descansos: getGuardiasRequeridos(serv, "cubre_descansos"),
+    });
+    setCuposModalOpen(true);
+  }
+
+  async function handleSaveCupos() {
+    if (!cuposModalServicio) return;
+    setSavingCupos(true);
+    try {
+      const updatedCupos = {
+        matutino: Math.max(0, parseInt(cuposForm.matutino) || 0),
+        vespertino: Math.max(0, parseInt(cuposForm.vespertino) || 0),
+        cubre_descansos: Math.max(0, parseInt(cuposForm.cubre_descansos) || 0),
+      };
+
+      try {
+        await sercoApi.entities.Servicio.update(cuposModalServicio.id, {
+          guardias_por_turno: updatedCupos,
+        });
+      } catch {
+        await sercoApi.entities.Servicio.update(cuposModalServicio.id, {
+          turnos_autorizados: JSON.stringify(updatedCupos),
+        }).catch(() => {});
+      }
+
+      setServicios((prev) =>
+        prev.map((s) =>
+          s.id === cuposModalServicio.id
+            ? { ...s, guardias_por_turno: updatedCupos }
+            : s
+        )
+      );
+
+      setCuposModalOpen(false);
+      setCuposModalServicio(null);
+    } finally {
+      setSavingCupos(false);
+    }
+  }
+
   async function handleAdd() {
     if (!newEmpleado || !addModalData?.servicioId || !addModalData?.turno) return;
     setSaving(true);
@@ -155,27 +221,55 @@ export default function Plantilla() {
       const isoStr = now.toISOString();
 
       const cleanEmpName = newEmpleado.trim();
+      const isTurnoCubre = addModalData.turno === "cubre_descansos";
 
-      // Optimistic update: Inmediatamente quitar cualquier asignación previa del empleado
-      // del estado local para que desaparezca al instante del servicio anterior
-      setAsignaciones((prev) =>
-        prev.filter((a) => (a.empleado_nombre || "").trim().toLowerCase() !== cleanEmpName.toLowerCase())
-      );
-
-      // Limpiar cualquier asignación previa del empleado en BD para evitar duplicados entre servicios
-      try {
-        const existingInState = asignaciones.filter(
-          (a) => (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase()
+      // Manejo de unicidad y excepción para Cubreturnos:
+      if (isTurnoCubre) {
+        // En cubreturnos: Puede estar en múltiples servicios.
+        // Solo eliminamos asignación previa en ESTE mismo servicio para evitar duplicarlo dentro del mismo cliente.
+        setAsignaciones((prev) =>
+          prev.filter(
+            (a) =>
+              !(
+                (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase() &&
+                a.servicio_id === addModalData.servicioId
+              )
+          )
         );
-        for (const oldAsig of existingInState) {
-          await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+
+        try {
+          const inThisServ = asignaciones.filter(
+            (a) =>
+              (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase() &&
+              a.servicio_id === addModalData.servicioId
+          );
+          for (const oldAsig of inThisServ) {
+            await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+          }
+        } catch (cleanErr) {
+          console.warn("Error al limpiar asignación previa en este servicio:", cleanErr);
         }
-        const existingInDb = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: cleanEmpName }).catch(() => []);
-        for (const oldAsig of existingInDb) {
-          await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+      } else {
+        // En guardias ordinarios (matutino / vespertino):
+        // NO puede existir en 2 servicios a la vez. Quitar de cualquier otro servicio anterior.
+        setAsignaciones((prev) =>
+          prev.filter((a) => (a.empleado_nombre || "").trim().toLowerCase() !== cleanEmpName.toLowerCase())
+        );
+
+        try {
+          const existingInState = asignaciones.filter(
+            (a) => (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase()
+          );
+          for (const oldAsig of existingInState) {
+            await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+          }
+          const existingInDb = await sercoApi.entities.AsignacionTurno.filter({ empleado_nombre: cleanEmpName }).catch(() => []);
+          for (const oldAsig of existingInDb) {
+            await sercoApi.entities.AsignacionTurno.delete(oldAsig.id).catch(() => {});
+          }
+        } catch (cleanErr) {
+          console.warn("Error al limpiar asignaciones anteriores:", cleanErr);
         }
-      } catch (cleanErr) {
-        console.warn("Error al limpiar asignaciones anteriores:", cleanErr);
       }
 
       let createdRecord = null;
@@ -215,7 +309,14 @@ export default function Plantilla() {
 
       if (createdRecord) {
         setAsignaciones((prev) => [
-          ...prev.filter((a) => (a.empleado_nombre || "").trim().toLowerCase() !== cleanEmpName.toLowerCase()),
+          ...prev.filter((a) => {
+            const matchName = (a.empleado_nombre || "").trim().toLowerCase() === cleanEmpName.toLowerCase();
+            if (!matchName) return true;
+            if (isTurnoCubre) {
+              return a.servicio_id !== addModalData.servicioId;
+            }
+            return false;
+          }),
           createdRecord,
         ]);
       }
@@ -223,20 +324,25 @@ export default function Plantilla() {
       // Sincronizar automáticamente con el módulo de Empleados
       const matchedEmp = empleados.find((e) => (e.nombre_completo || "").trim().toLowerCase() === cleanEmpName.toLowerCase());
       if (matchedEmp) {
+        // Si fue asignado a cubreturnos, su servicio queda marcado como "Cubreturnos"
+        const nuevoServicio = isTurnoCubre ? "Cubreturnos" : (serv?.nombre || "");
+        const nuevoTurno = isTurnoCubre ? "cubre_descansos" : addModalData.turno;
+
         try {
           await sercoApi.entities.Empleado.update(matchedEmp.id, {
-            servicio_ubicacion: serv?.nombre || "",
+            servicio_ubicacion: nuevoServicio,
+            turno: nuevoTurno,
           });
         } catch {
           await sercoApi.entities.Empleado.update(matchedEmp.id, {
-            servicio_ubicacion: serv?.nombre || "",
+            servicio_ubicacion: nuevoServicio,
           }).catch(() => {});
         }
 
         setEmpleados((prev) =>
           prev.map((emp) =>
             emp.id === matchedEmp.id
-              ? { ...emp, servicio_ubicacion: serv?.nombre || "", turno: addModalData.turno, usuario_modificacion: currentUserName }
+              ? { ...emp, servicio_ubicacion: nuevoServicio, turno: nuevoTurno, usuario_modificacion: currentUserName }
               : emp
           )
         );
@@ -252,27 +358,46 @@ export default function Plantilla() {
 
   async function handleDelete() {
     const asigToDelete = asignaciones.find((a) => a.id === deleteId);
-    // Remover inmediatamente de la vista
     setAsignaciones((prev) => prev.filter((a) => a.id !== deleteId));
     await sercoApi.entities.AsignacionTurno.delete(deleteId);
 
-    // Si el empleado ya no tiene asignaciones activas en este servicio, actualizar su servicio_ubicacion
     if (asigToDelete?.empleado_nombre) {
+      const cleanName = (asigToDelete.empleado_nombre || "").trim().toLowerCase();
       const remaining = asignaciones.filter(
-        (a) => a.id !== deleteId && (a.empleado_nombre || "").trim().toLowerCase() === (asigToDelete.empleado_nombre || "").trim().toLowerCase()
+        (a) => a.id !== deleteId && (a.empleado_nombre || "").trim().toLowerCase() === cleanName
       );
-      if (remaining.length === 0) {
-        const matchedEmp = empleados.find((e) => (e.nombre_completo || "").trim().toLowerCase() === (asigToDelete.empleado_nombre || "").trim().toLowerCase());
-        if (matchedEmp && matchedEmp.servicio_ubicacion === asigToDelete.servicio_nombre) {
-          try {
-            await sercoApi.entities.Empleado.update(matchedEmp.id, {
-              servicio_ubicacion: "",
-            });
-            setEmpleados((prev) =>
-              prev.map((e) => (e.id === matchedEmp.id ? { ...e, servicio_ubicacion: "" } : e))
-            );
-          } catch {
-            // Ignorar error al limpiar servicio_ubicacion
+      const matchedEmp = empleados.find((e) => (e.nombre_completo || "").trim().toLowerCase() === cleanName);
+
+      if (matchedEmp) {
+        const wasCubre =
+          asigToDelete.turno === "cubre_descansos" ||
+          (matchedEmp.servicio_ubicacion || "").toLowerCase().includes("cubre");
+
+        if (wasCubre) {
+          // Si era cubreturnos y ya no le quedan asignaciones en ningún servicio, limpiar servicio_ubicacion
+          if (remaining.length === 0) {
+            try {
+              await sercoApi.entities.Empleado.update(matchedEmp.id, {
+                servicio_ubicacion: "",
+              });
+              setEmpleados((prev) =>
+                prev.map((e) => (e.id === matchedEmp.id ? { ...e, servicio_ubicacion: "" } : e))
+              );
+            } catch {}
+          }
+        } else {
+          // Era guardia ordinario de un servicio
+          if (remaining.length === 0) {
+            if (matchedEmp.servicio_ubicacion === asigToDelete.servicio_nombre) {
+              try {
+                await sercoApi.entities.Empleado.update(matchedEmp.id, {
+                  servicio_ubicacion: "",
+                });
+                setEmpleados((prev) =>
+                  prev.map((e) => (e.id === matchedEmp.id ? { ...e, servicio_ubicacion: "" } : e))
+                );
+              } catch {}
+            }
           }
         }
       }
@@ -513,8 +638,17 @@ export default function Plantilla() {
                           matchedEmp.fecha_baja && (!matchedEmp.fecha_reingreso || matchedEmp.fecha_baja > matchedEmp.fecha_reingreso)
                         );
                         if (isBaja) return false;
-                        if (matchedEmp.servicio_ubicacion && matchedEmp.servicio_ubicacion.trim().toLowerCase() !== (serv.nombre || "").trim().toLowerCase()) {
-                          return false;
+
+                        const isCubreTurnos =
+                          a.turno === "cubre_descansos" ||
+                          (matchedEmp.servicio_ubicacion || "").toLowerCase().includes("cubre") ||
+                          (matchedEmp.puesto || "").toLowerCase().includes("cubre");
+
+                        // Si NO es cubreturnos, verificar que su servicio coincida
+                        if (!isCubreTurnos) {
+                          if (matchedEmp.servicio_ubicacion && matchedEmp.servicio_ubicacion.trim().toLowerCase() !== (serv.nombre || "").trim().toLowerCase()) {
+                            return false;
+                          }
                         }
                       }
 
@@ -553,25 +687,80 @@ export default function Plantilla() {
                             </div>
                           </div>
 
-                          <Badge variant="secondary" className="self-start sm:self-center font-medium bg-slate-100 dark:bg-slate-800">
-                            <Users className="w-3.5 h-3.5 mr-1" />
-                            {servAsignaciones.length} guardia(s) asignado(s)
-                          </Badge>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="secondary" className="font-medium bg-slate-100 dark:bg-slate-800">
+                              <Users className="w-3.5 h-3.5 mr-1 text-primary" />
+                              {servAsignaciones.length}
+                              {(() => {
+                                const totalReq = getGuardiasRequeridos(serv, "matutino") + getGuardiasRequeridos(serv, "vespertino") + getGuardiasRequeridos(serv, "cubre_descansos");
+                                return totalReq > 0 ? ` / ${totalReq}` : "";
+                              })()} guardia(s) asignado(s)
+                            </Badge>
+
+                            {can("turnos", "create") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenCupos(serv)}
+                                className="h-7 text-xs font-medium border-dashed hover:border-solid gap-1"
+                                title="Configurar cuántos guardias se ocupan en cada turno de este servicio"
+                              >
+                                <Settings2 className="w-3.5 h-3.5 text-primary" />
+                                Configurar Cupos
+                              </Button>
+                            )}
+                          </div>
                         </div>
 
                         {/* 3 Turn Cards Grid */}
                         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                           {turnosConfig.map((turno) => {
                             const items = servAsignaciones.filter((a) => a.turno === turno.key);
+                            const reqCount = getGuardiasRequeridos(serv, turno.key);
+                            const isFull = reqCount > 0 && items.length >= reqCount;
+                            const isIncomplete = reqCount > 0 && items.length > 0 && items.length < reqCount;
+                            const isVacant = reqCount > 0 && items.length === 0;
+
                             return (
-                              <Card key={turno.key} className="border shadow-none bg-background">
+                              <Card
+                                key={turno.key}
+                                className={cn(
+                                  "border shadow-none bg-background transition-colors",
+                                  isVacant && "border-rose-200 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/10"
+                                )}
+                              >
                                 <CardHeader className="p-3.5 pb-2">
-                                  <CardTitle className="flex items-center justify-between text-sm font-semibold">
-                                    <span>{turno.label}</span>
-                                    <Badge variant="secondary" className={turno.color}>
-                                      {items.length}
-                                    </Badge>
-                                  </CardTitle>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="space-y-0.5">
+                                      <span className="text-sm font-semibold text-foreground">{turno.label}</span>
+                                      {reqCount > 0 && (
+                                        <p className="text-[11px] text-muted-foreground">
+                                          Requeridos: <strong className="text-foreground">{reqCount}</strong>
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {reqCount > 0 ? (
+                                      <Badge
+                                        variant="secondary"
+                                        className={cn(
+                                          "text-xs font-medium px-2 py-0.5 border flex items-center gap-1",
+                                          isFull && "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300",
+                                          isIncomplete && "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300",
+                                          isVacant && "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/50 dark:text-rose-300"
+                                        )}
+                                      >
+                                        {isFull && "✓ "}
+                                        {isIncomplete && "⚠ "}
+                                        {isVacant && "✕ "}
+                                        {items.length} / {reqCount}
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="secondary" className={turno.color}>
+                                        {items.length}
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </CardHeader>
                                 <CardContent className="p-3.5 pt-0">
                                   <div className="space-y-1.5 min-h-[90px] max-h-[220px] overflow-y-auto">
@@ -708,6 +897,16 @@ export default function Plantilla() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            {targetTurnoObj?.key === "cubre_descansos" ? (
+              <div className="p-2.5 rounded-md bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-xs text-purple-800 dark:text-purple-300">
+                ℹ <strong>Cubreturnos:</strong> Los guardias en este turno pueden estar asignados a más de un servicio para cubrir descansos. En su ficha de empleado quedará registrado como <strong>"Cubreturnos"</strong>.
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300">
+                ℹ <strong>Guardia de Turno Fijo:</strong> Un empleado solo puede pertenecer a un servicio a la vez. Si ya está en otro servicio, se transferirá automáticamente a este.
+              </div>
+            )}
+
             {empleados.length > 0 ? (
               <div>
                 <Label>Escribe o busca el nombre del empleado</Label>
@@ -746,6 +945,9 @@ export default function Plantilla() {
                     return sorted.map((emp) => {
                       const isSelected = newEmpleado === emp.nombre_completo;
                       const isAssignedToThisServ = targetServicioObj && emp.servicio_ubicacion === targetServicioObj.nombre;
+                      const isCubreEmp = (emp.servicio_ubicacion || "").toLowerCase().includes("cubre") || (emp.puesto || "").toLowerCase().includes("cubre");
+                      const isAnotherServ = emp.servicio_ubicacion && !isAssignedToThisServ && !isCubreEmp;
+
                       return (
                         <div
                           key={emp.id}
@@ -755,19 +957,29 @@ export default function Plantilla() {
                           }`}
                         >
                           <div className="space-y-0.5">
-                                                        <div className="font-medium">{formatUserDisplayName(emp.nombre_completo, user?.role)}</div>
+                            <div className="font-medium">{formatUserDisplayName(emp.nombre_completo, user?.role)}</div>
                             <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
                               {emp.puesto && <span>{emp.puesto}</span>}
-                              {emp.servicio_ubicacion ? (
+                              {isCubreEmp ? (
                                 <Badge
                                   variant="secondary"
-                                  className={`text-[10px] px-1.5 py-0 h-4 font-normal ${
-                                    isAssignedToThisServ
-                                      ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                                      : "bg-slate-100 text-slate-600"
-                                  }`}
+                                  className="text-[10px] px-1.5 py-0 h-4 font-normal bg-purple-100 text-purple-700 border border-purple-200"
+                                >
+                                  Cubreturnos
+                                </Badge>
+                              ) : isAssignedToThisServ ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] px-1.5 py-0 h-4 font-normal bg-emerald-100 text-emerald-700 border border-emerald-300"
                                 >
                                   {emp.servicio_ubicacion}
+                                </Badge>
+                              ) : isAnotherServ ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] px-1.5 py-0 h-4 font-normal bg-amber-100 text-amber-700 border border-amber-300"
+                                >
+                                  En {emp.servicio_ubicacion} {targetTurnoObj?.key !== "cubre_descansos" ? "(se transferirá)" : ""}
                                 </Badge>
                               ) : (
                                 <span className="text-[10px] text-muted-foreground italic">Sin servicio</span>
@@ -789,6 +1001,77 @@ export default function Plantilla() {
             <Button variant="outline" onClick={() => setAddModalData(null)}>Cancelar</Button>
             <Button onClick={handleAdd} disabled={saving || !newEmpleado}>
               {saving ? "Guardando..." : "Asignar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para configurar cupos por turno del servicio */}
+      <Dialog open={cuposModalOpen} onOpenChange={(v) => !v && setCuposModalOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-primary" />
+              Guardias Requeridos por Turno
+            </DialogTitle>
+            <DialogDescription>
+              {cuposModalServicio?.nombre ? `Servicio: ${cuposModalServicio.nombre}` : "Define cuántos guardias se ocupan en cada turno."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="cupo-matutino" className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-amber-700 dark:text-amber-400">Turno Matutino</span>
+                <span className="text-xs text-muted-foreground">Guardias necesarios</span>
+              </Label>
+              <Input
+                id="cupo-matutino"
+                type="number"
+                min="0"
+                placeholder="Ej. 2"
+                value={cuposForm.matutino}
+                onChange={(e) => setCuposForm({ ...cuposForm, matutino: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cupo-vespertino" className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-blue-700 dark:text-blue-400">Turno Vespertino</span>
+                <span className="text-xs text-muted-foreground">Guardias necesarios</span>
+              </Label>
+              <Input
+                id="cupo-vespertino"
+                type="number"
+                min="0"
+                placeholder="Ej. 2"
+                value={cuposForm.vespertino}
+                onChange={(e) => setCuposForm({ ...cuposForm, vespertino: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cupo-cubre" className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-purple-700 dark:text-purple-400">Cubreturnos</span>
+                <span className="text-xs text-muted-foreground">Guardias necesarios</span>
+              </Label>
+              <Input
+                id="cupo-cubre"
+                type="number"
+                min="0"
+                placeholder="Ej. 1"
+                value={cuposForm.cubre_descansos}
+                onChange={(e) => setCuposForm({ ...cuposForm, cubre_descansos: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCuposModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveCupos} disabled={savingCupos}>
+              {savingCupos ? "Guardando..." : "Guardar Cupos"}
             </Button>
           </DialogFooter>
         </DialogContent>

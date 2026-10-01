@@ -1075,8 +1075,25 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           }
           existingAsigs = Array.from(uniqueAsigsMap.values());
 
-          if (isBaja || !matchedServ) {
-            // Si es baja o no es un servicio registrado en Plantilla, limpiar todas las asignaciones existentes
+          const isCubreturnosVal = (payload.servicio_ubicacion || "").toLowerCase().includes("cubre");
+
+          if (isBaja) {
+            // Si es baja, limpiar todas las asignaciones existentes
+            for (const asig of existingAsigs) {
+              await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
+            }
+          } else if (isCubreturnosVal) {
+            // Es cubreturnos: sus asignaciones de turno se gestionan en Plantilla y no deben eliminarse al guardar el perfil.
+            // Si cambió su nombre, sincronizar el nuevo nombre en todas sus asignaciones activas
+            if (newEmpName && oldEmpName && newEmpName !== oldEmpName) {
+              for (const asig of existingAsigs) {
+                await sercoApi.entities.AsignacionTurno.update(asig.id, {
+                  empleado_nombre: newEmpName,
+                }).catch(() => {});
+              }
+            }
+          } else if (!matchedServ) {
+            // Si no tiene servicio y no es cubreturnos, limpiar todas las asignaciones existentes
             for (const asig of existingAsigs) {
               await sercoApi.entities.AsignacionTurno.delete(asig.id).catch(() => {});
             }
@@ -2407,9 +2424,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                           </CommandItem>
 
                           <CommandItem
-                            value="cubredescansos"
+                            value="cubreturnos cubredescansos"
                             onSelect={() => {
-                              setForm({ ...form, servicio_ubicacion: "Cubredescansos" });
+                              setForm({ ...form, servicio_ubicacion: "Cubreturnos" });
                               setServiceComboboxOpen(false);
                             }}
                             className="cursor-pointer font-medium"
@@ -2417,12 +2434,12 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                             <Check
                               className={cn(
                                 "mr-2 h-4 w-4 text-primary",
-                                form.servicio_ubicacion === "Cubredescansos"
+                                form.servicio_ubicacion === "Cubreturnos" || form.servicio_ubicacion === "Cubredescansos"
                                   ? "opacity-100"
                                   : "opacity-0"
                               )}
                             />
-                            Cubredescansos
+                            Cubreturnos
                           </CommandItem>
 
                           <CommandItem
