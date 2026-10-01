@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { supabase } from "@/lib/supabaseClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Eye, Shirt, Calendar, Building2, Phone, Mail, MapPin, CreditCard, Briefcase, UserCheck, ShieldCheck, User } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -127,6 +127,62 @@ export async function compressImage(file, maxWidth = 350, maxHeight = 350, quali
   });
 }
 
+/**
+ * Parsea el campo uniformes soportando formato estructurado JSON y texto plano anterior.
+ */
+export function parseUniformes(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [{
+        id: "legacy_0",
+        articulo: trimmed,
+        talla: "—",
+        cantidad: 1,
+        fecha_entrega: "Registro anterior",
+        es_legacy: true
+      }];
+    }
+  }
+  return [];
+}
+
+/**
+ * Formatea uniformes a un resumen de texto legible para exportaciones CSV/Excel.
+ */
+export function formatUniformesSummary(raw) {
+  const list = parseUniformes(raw);
+  if (!list || list.length === 0) return "Sin uniformes";
+  return list
+    .map((u) => `${u.cantidad || 1}x ${u.articulo}${u.talla && u.talla !== "—" ? ` (${u.talla})` : ""}${u.fecha_entrega ? ` [${u.fecha_entrega}]` : ""}`)
+    .join("; ");
+}
+
+export const DEFAULT_UNIFORME_CATALOG = [
+  "Camisola táctica manga larga",
+  "Camisola táctica manga corta",
+  "Playera tipo polo SERCO",
+  "Pantalón táctico / operativo",
+  "Botas tácticas",
+  "Calzado de seguridad",
+  "Gorra SERCO / Kepí",
+  "Chamarra operativa / Rompevientos",
+  "Chaleco táctico / reflejante",
+  "Fornitura táctica completa",
+  "Cinturón táctico policial",
+  "Cordón de mando con silbato",
+  "Lámpara táctica recargable",
+  "Bastón PR-24 / Tonfa",
+  "Gas pimienta con funda",
+  "Porta credencial / gafete",
+];
+
 const emptyForm = {
   numero_empleado: "",
   nombres: "",
@@ -232,6 +288,131 @@ export default function Empleados() {
   const [compressingPhoto, setCompressingPhoto] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Inventario y Uniformes estructurados con fecha
+  const [inventarioItems, setInventarioItems] = useState([]);
+  const [inventarioVariantes, setInventarioVariantes] = useState([]);
+  const [uniformesList, setUniformesList] = useState([]);
+  const [newUniformeItem, setNewUniformeItem] = useState("");
+  const [newUniformeTalla, setNewUniformeTalla] = useState("Unitalla");
+  const [newUniformeCantidad, setNewUniformeCantidad] = useState(1);
+  const [newUniformeFecha, setNewUniformeFecha] = useState(() => new Date().toISOString().slice(0, 10));
+
+  // Estado para visualización en cascada de información de empleado
+  const [cascadaOpen, setCascadaOpen] = useState({
+    general: true,
+    laboral: true,
+    uniformes: true,
+    personal: true,
+    documentacion: false,
+    domicilio: false,
+    emergencia: false,
+    referencias: false,
+  });
+
+  const toggleCascada = (sec) => {
+    setCascadaOpen((prev) => ({ ...prev, [sec]: !prev[sec] }));
+  };
+
+  const expandAllCascada = () => {
+    setCascadaOpen({
+      general: true,
+      laboral: true,
+      uniformes: true,
+      personal: true,
+      documentacion: true,
+      domicilio: true,
+      emergencia: true,
+      referencias: true,
+    });
+  };
+
+  const collapseAllCascada = () => {
+    setCascadaOpen({
+      general: false,
+      laboral: false,
+      uniformes: false,
+      personal: false,
+      documentacion: false,
+      domicilio: false,
+      emergencia: false,
+      referencias: false,
+    });
+  };
+
+  // Artículos de uniformes disponibles (inventario + catálogo SERCO)
+  const availableUniformeArticulos = useMemo(() => {
+    const fromInv = (inventarioItems || [])
+      .filter(
+        (i) =>
+          i.categoria === "Uniforme" ||
+          /uniforme|camisola|pantal[oó]n|bota|chamarra|gorra|chaleco|fornitura/i.test(i.nombre || "")
+      )
+      .map((i) => i.nombre);
+
+    return Array.from(new Set([...fromInv, ...DEFAULT_UNIFORME_CATALOG]));
+  }, [inventarioItems]);
+
+  // Tallas disponibles según el uniforme seleccionado
+  const availableTallasForSelected = useMemo(() => {
+    if (!newUniformeItem) return ["Unitalla", "CH", "M", "G", "XL", "XXL"];
+
+    const matched = (inventarioItems || []).find(
+      (i) => i.nombre?.toLowerCase() === newUniformeItem.toLowerCase()
+    );
+    if (matched) {
+      const vars = (inventarioVariantes || []).filter((v) => v.item_id === matched.id);
+      if (vars.length > 0) {
+        const distinct = Array.from(new Set(vars.map((v) => v.talla).filter(Boolean)));
+        if (distinct.length > 0) return distinct;
+      }
+    }
+
+    if (/bota|calzado|zapato/i.test(newUniformeItem)) {
+      return ["24", "24.5", "25", "25.5", "26", "26.5", "27", "27.5", "28", "28.5", "29", "29.5", "30"];
+    }
+
+    if (/pantal[oó]n/i.test(newUniformeItem)) {
+      return ["28", "30", "32", "34", "36", "38", "40", "42"];
+    }
+
+    return ["Unitalla", "CH (Chica)", "M (Mediana)", "G (Grande)", "XL (Extra Grande)", "XXL"];
+  }, [newUniformeItem, inventarioItems, inventarioVariantes]);
+
+  const handleAddUniforme = () => {
+    if (!newUniformeItem.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Selecciona una prenda",
+        description: "Por favor selecciona una prenda de uniforme del catálogo.",
+      });
+      return;
+    }
+    const newItem = {
+      id: `uni_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      articulo: newUniformeItem.trim(),
+      talla: newUniformeTalla || "Unitalla",
+      cantidad: Math.max(1, parseInt(newUniformeCantidad, 10) || 1),
+      fecha_entrega: newUniformeFecha || new Date().toISOString().slice(0, 10),
+      estado: "Entregado"
+    };
+    const updated = [...uniformesList, newItem];
+    setUniformesList(updated);
+    setForm((prev) => ({ ...prev, uniformes: JSON.stringify(updated) }));
+    setNewUniformeItem("");
+    setNewUniformeTalla("Unitalla");
+    setNewUniformeCantidad(1);
+    toast({
+      title: "Prenda asignada",
+      description: `${newItem.cantidad}x ${newItem.articulo} (${newItem.talla}) con fecha ${newItem.fecha_entrega}.`,
+    });
+  };
+
+  const handleRemoveUniforme = (idToRemove) => {
+    const updated = uniformesList.filter((u) => u.id !== idToRemove);
+    setUniformesList(updated);
+    setForm((prev) => ({ ...prev, uniformes: updated.length > 0 ? JSON.stringify(updated) : "" }));
+  };
+
   const handlePhotoSelected = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -262,10 +443,12 @@ export default function Empleados() {
   async function load() {
     setLoading(true);
     try {
-      const [allEmps, s, sv] = await Promise.all([
+      const [allEmps, s, sv, invItems, invVars] = await Promise.all([
         sercoApi.entities.Empleado.list("-created_date").catch(() => []),
-        sercoApi.entities.Sede.list(),
-        sercoApi.entities.Servicio.filter(sedeFilter),
+        sercoApi.entities.Sede.list().catch(() => []),
+        sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
+        sercoApi.entities.InventarioItem.list().catch(() => []),
+        sercoApi.entities.InventarioVariante.list().catch(() => []),
       ]);
       // Sincronizar y asignar números reales positivos a todos los empleados de la empresa (van de 1 en 1)
       const syncedAll = syncAndAssignEmpleadoNumeros(allEmps || []);
@@ -277,8 +460,10 @@ export default function Empleados() {
         : syncedAll;
 
       setItems(filteredBySede);
-      setSedes(s);
-      setServicios(sv);
+      setSedes(s || []);
+      setServicios(sv || []);
+      setInventarioItems(invItems || []);
+      setInventarioVariantes(invVars || []);
     } finally {
       setLoading(false);
     }
@@ -482,7 +667,7 @@ export default function Empleados() {
         emp.fecha_montaje || "",
         emp.hospedaje ? "Sí" : "No",
         emp.seguro ? "Sí" : "No",
-        emp.uniformes || "Sin uniformes",
+        formatUniformesSummary(emp.uniformes),
         emp.actas_administrativas || 0,
         emp.fecha_baja || "",
         emp.motivo_baja || "",
@@ -514,6 +699,11 @@ export default function Empleados() {
     setPhotoPreview("");
     setPhotoBlob(null);
     setPhotoChanged(false);
+    setUniformesList([]);
+    setNewUniformeItem("");
+    setNewUniformeTalla("Unitalla");
+    setNewUniformeCantidad(1);
+    setNewUniformeFecha(new Date().toISOString().slice(0, 10));
     const pool = allEmployees.length > 0 ? allEmployees : items;
     const autoNum = getNextEmpleadoNumero(pool);
     setForm({ 
@@ -533,6 +723,12 @@ export default function Empleados() {
     const parsed = parseExistingNombre(item);
     const pool = allEmployees.length > 0 ? allEmployees : items;
     const empNum = resolveEmpleadoNumero(item) || getNextEmpleadoNumero(pool, item.id);
+    const parsedUnis = parseUniformes(item.uniformes);
+    setUniformesList(parsedUnis);
+    setNewUniformeItem("");
+    setNewUniformeTalla("Unitalla");
+    setNewUniformeCantidad(1);
+    setNewUniformeFecha(new Date().toISOString().slice(0, 10));
     setForm({ 
       ...emptyForm, 
       ...item, 
@@ -772,7 +968,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         fecha_baja: form.fecha_baja || null,
         motivo_baja: form.motivo_baja || null,
         fecha_reingreso: form.fecha_reingreso || null,
-        uniformes: form.uniformes || null,
+        uniformes: uniformesList.length > 0 ? JSON.stringify(uniformesList) : null,
         infonavit: form.infonavit || null,
         medio_reclutamiento: form.medio_reclutamiento || null,
         dia_capacitacion: form.dia_capacitacion || null,
@@ -2498,18 +2694,153 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 </div>
               )}
 
-              <div className="sm:col-span-2">
-                <Label>Uniformes Asignados</Label>
-                <Textarea
-                  
-                  value={form.uniformes}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      uniformes: e.target.value,
-                    })
-                  }
-                />
+              {/* UNIFORMES ASIGNADOS CON REGISTRO DE FECHA */}
+              <div className="sm:col-span-2 p-4 rounded-xl border bg-muted/20 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
+                      <Shirt className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-foreground">
+                        Uniformes y Equipo de Trabajo
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        Selecciona prendas del inventario con registro de fecha de entrega
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 w-fit">
+                    {uniformesList.length} prenda(s) asignada(s)
+                  </Badge>
+                </div>
+
+                {/* Formulario para agregar prenda */}
+                <div className="p-3 bg-background rounded-lg border shadow-2xs space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                    {/* Prenda / Artículo */}
+                    <div className="sm:col-span-4">
+                      <Label className="text-[11px] font-semibold">Prenda / Artículo de Inventario *</Label>
+                      <Select
+                        value={newUniformeItem}
+                        onValueChange={(val) => setNewUniformeItem(val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs mt-1">
+                          <SelectValue placeholder="Seleccionar prenda..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-56">
+                          {availableUniformeArticulos.map((art, idx) => (
+                            <SelectItem key={idx} value={art}>
+                              {art}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Talla / Medida */}
+                    <div className="sm:col-span-3">
+                      <Label className="text-[11px] font-semibold">Talla / Medida</Label>
+                      <Select
+                        value={newUniformeTalla}
+                        onValueChange={setNewUniformeTalla}
+                      >
+                        <SelectTrigger className="h-8 text-xs mt-1">
+                          <SelectValue placeholder="Talla" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-56">
+                          {availableTallasForSelected.map((t, idx) => (
+                            <SelectItem key={idx} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Cantidad */}
+                    <div className="sm:col-span-2">
+                      <Label className="text-[11px] font-semibold">Cantidad</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={newUniformeCantidad}
+                        onChange={(e) => setNewUniformeCantidad(e.target.value)}
+                        className="h-8 text-xs mt-1"
+                      />
+                    </div>
+
+                    {/* Fecha de Entrega */}
+                    <div className="sm:col-span-3">
+                      <Label className="text-[11px] font-semibold">Fecha de Entrega *</Label>
+                      <Input
+                        type="date"
+                        value={newUniformeFecha}
+                        onChange={(e) => setNewUniformeFecha(e.target.value)}
+                        className="h-8 text-xs mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddUniforme}
+                      className="h-8 text-xs gap-1.5 font-semibold bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Asignar Prenda
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Listado de uniformes actualmente asignados */}
+                {uniformesList.length > 0 ? (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {uniformesList.map((uni) => (
+                      <div
+                        key={uni.id}
+                        className="p-2.5 rounded-lg border bg-background flex items-center justify-between gap-3 text-xs shadow-2xs hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0">
+                            <Shirt className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-foreground truncate">{uni.articulo}</p>
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                              <span className="bg-muted px-1.5 py-0.5 rounded font-medium text-foreground">
+                                Talla: {uni.talla || "—"}
+                              </span>
+                              <span className="font-semibold text-primary">
+                                {uni.cantidad} pza(s)
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3 text-muted-foreground" />
+                                Entrega: {uni.fecha_entrega || "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => handleRemoveUniforme(uni.id)}
+                          title="Eliminar prenda"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic text-center py-2">
+                    No hay uniformes asignados todavía. Selecciona una prenda y fecha arriba para agregarla.
+                  </p>
+                )}
               </div>
 
             </div>
@@ -2548,469 +2879,652 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           open={!!viewEmpleado}
           onOpenChange={(v) => !v && setViewEmpleado(null)}
         >
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 space-y-4">
+            {/* ENCABEZADO TIPO PERFIL / HERO */}
+            <div className="p-4 sm:p-5 rounded-2xl border bg-card/90 shadow-2xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="relative shrink-0">
+                    {viewEmpleado?.foto_url ? (
+                      <img
+                        src={viewEmpleado.foto_url}
+                        alt={viewEmpleado.nombre_completo}
+                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-primary/20 shadow-md bg-background"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col items-center justify-center text-primary shadow-xs">
+                        <User className="w-8 h-8" />
+                      </div>
+                    )}
+                  </div>
 
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <span>{formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role)}</span>
-                {viewEmpleado?.numero_empleado && (
-                  <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border text-sm">
-                    #{viewEmpleado.numero_empleado}
-                  </Badge>
-                )}
-                {isAdmin && (
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg sm:text-xl font-heading font-bold text-foreground truncate">
+                        {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role)}
+                      </h2>
+                      {viewEmpleado?.numero_empleado && (
+                        <Badge variant="outline" className="font-mono font-bold bg-muted/80 text-foreground border-border text-xs px-2 py-0.5">
+                          #{viewEmpleado.numero_empleado}
+                        </Badge>
+                      )}
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-xs text-primary hover:bg-primary/10"
+                          onClick={() => openEditNumero(viewEmpleado)}
+                          title="Editar número de empleado"
+                        >
+                          <Pencil className="w-3 h-3 mr-1" /> Editar No.
+                        </Button>
+                      )}
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-muted-foreground font-medium flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5 text-primary shrink-0" />
+                      {viewEmpleado?.puesto || "Personal Operativo"} · <Building2 className="w-3.5 h-3.5 text-primary shrink-0 ml-1" /> {sedeNombre(viewEmpleado?.sede_id)}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {/* Estado Activo / Baja */}
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                          !viewEmpleado?.fecha_baja || (viewEmpleado?.fecha_reingreso && viewEmpleado?.fecha_reingreso >= viewEmpleado?.fecha_baja)
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                        }`}
+                      >
+                        {!viewEmpleado?.fecha_baja || (viewEmpleado?.fecha_reingreso && viewEmpleado?.fecha_reingreso >= viewEmpleado?.fecha_baja) ? "● Activo" : "● Baja"}
+                      </span>
+
+                      {viewEmpleado?.servicio_ubicacion && (
+                        <span className="text-[11px] font-medium bg-muted px-2 py-0.5 rounded-full text-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-muted-foreground" />
+                          {viewEmpleado.servicio_ubicacion}
+                        </span>
+                      )}
+
+                      <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                        ⏱️ {calcularDiasEnEmpresa(viewEmpleado?.fecha_ingreso, viewEmpleado?.fecha_baja, viewEmpleado?.fecha_reingreso)}
+                      </span>
+
+                      <span
+                        className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                          viewEmpleado?.seguro
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                        }`}
+                      >
+                        IMSS: {viewEmpleado?.seguro ? "Afiliado" : "Pendiente"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {can("empleados", "edit") && (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-6 px-2 text-[11px] text-primary border-primary/30 hover:bg-primary/10"
-                    onClick={() => openEditNumero(viewEmpleado)}
-                    title="Editar número de empleado"
+                    className="h-8 text-xs font-semibold gap-1.5 self-end sm:self-center shrink-0"
+                    onClick={() => {
+                      const emp = viewEmpleado;
+                      setViewEmpleado(null);
+                      openEdit(emp);
+                    }}
                   >
-                    <Pencil className="w-3 h-3 mr-1" /> Editar No.
+                    <Pencil className="w-3.5 h-3.5" /> Editar Empleado
                   </Button>
                 )}
-              </DialogTitle>
-
-              <DialogDescription>
-                Información del empleado
-              </DialogDescription>
-            </DialogHeader>
-                <div className="space-y-6 py-2">
-
-    {/* Información General */}
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Información General
-      </h3>
-
-      <div className="grid grid-cols-2 gap-4 mt-3">
-
-        <div>
-          <Label>No. Empleado</Label>
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm font-bold text-primary font-mono">
-              {viewEmpleado?.numero_empleado ? `#${viewEmpleado.numero_empleado}` : "—"}
-            </p>
-            {isAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-1.5 text-xs text-primary hover:bg-primary/10"
-                onClick={() => openEditNumero(viewEmpleado)}
-                title="Editar número de empleado"
-              >
-                <Pencil className="w-3 h-3 mr-1" /> Editar
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <Label>Nombre</Label>
-          <p className="text-sm text-muted-foreground">
-            {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role) || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Puesto</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.puesto || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Servicio</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.servicio_ubicacion || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Sede</Label>
-          <p className="text-sm text-muted-foreground">
-            {sedeNombre(viewEmpleado?.sede_id)}
-          </p>
-        </div>
-
-        <div>
-          <Label>Fecha de ingreso</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.fecha_ingreso || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Días en la Empresa</Label>
-          <p className="text-sm text-muted-foreground font-semibold text-primary">
-            {calcularDiasEnEmpresa(viewEmpleado?.fecha_ingreso, viewEmpleado?.fecha_baja, viewEmpleado?.fecha_reingreso)}
-          </p>
-        </div>
-
-        {viewEmpleado?.fecha_reingreso && (
-          <div>
-            <Label>Fecha de reingreso</Label>
-            <p className="text-sm text-muted-foreground">
-              {viewEmpleado.fecha_reingreso}
-            </p>
-          </div>
-        )}
-
-        {(viewEmpleado?.historial_bajas || viewEmpleado?.fecha_baja) && (
-          <div>
-            <Label>{viewEmpleado.historial_bajas?.includes(",") ? "Historial de Bajas" : "Fecha de Baja"}</Label>
-            <p className="text-sm text-muted-foreground font-semibold text-rose-600">
-              {viewEmpleado.historial_bajas || viewEmpleado.fecha_baja}
-            </p>
-          </div>
-        )}
-
-        {sedes.find((s) => s.id === viewEmpleado?.sede_id)?.nombre?.toLowerCase() === "monterrey" && (
-          <div>
-            <Label>Hospedaje</Label>
-            <p className="text-sm text-muted-foreground font-semibold">
-              {viewEmpleado?.hospedaje ? "Sí" : "No"}
-            </p>
-          </div>
-        )}
-
-        <div>
-          <Label>Seguro (IMSS)</Label>
-          <p className={`text-sm font-semibold ${viewEmpleado?.seguro ? "text-emerald-600" : "text-red-500"}`}>
-            {viewEmpleado?.seguro ? "Sí" : "No"}
-          </p>
-        </div>
-
-        {(viewEmpleado?.fecha_baja || viewEmpleado?.motivo_baja) && (
-          <div className="col-span-2 p-3 rounded-lg border bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900 mt-2">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <Label className="text-xs font-semibold text-rose-800 dark:text-rose-300">Motivo de la Baja</Label>
-              {can("empleados", "edit") && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-6 text-xs px-2 text-rose-700 border-rose-300 hover:bg-rose-100 dark:text-rose-300 dark:border-rose-800 dark:hover:bg-rose-900/40"
-                  onClick={() => openEditMotivo(viewEmpleado)}
-                >
-                  <Pencil className="w-3 h-3 mr-1" /> Editar motivo
-                </Button>
-              )}
+              </div>
             </div>
-            <p className="text-sm text-rose-950 dark:text-rose-100 font-medium">
-              {viewEmpleado.motivo_baja || <span className="italic text-muted-foreground text-xs">Sin motivo especificado</span>}
-            </p>
-          </div>
-        )}
 
-      </div>
-    </div>
+            {/* BARRA DE CONTROL PARA LA VISTA EN CASCADA */}
+            <div className="flex items-center justify-between pb-1 border-b">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-primary" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Información en Cascada
+                </h3>
+              </div>
 
-    {/* Información Laboral */}
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+                  onClick={expandAllCascada}
+                >
+                  Expandir todo
+                </Button>
+                <span className="text-muted-foreground/40 text-xs">|</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+                  onClick={collapseAllCascada}
+                >
+                  Colapsar todo
+                </Button>
+              </div>
+            </div>
 
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Información Laboral
-      </h3>
+            {/* SECCIONES EN CASCADA */}
+            <div className="space-y-3">
+              {/* 1. INFORMACIÓN GENERAL */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("general")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">1. Información General</h4>
+                      <p className="text-[11px] text-muted-foreground">Datos básicos, puesto, sede y antigüedad</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] hidden sm:inline-flex">
+                      {viewEmpleado?.puesto || "General"}
+                    </Badge>
+                    {cascadaOpen.general ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.general && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">No. Empleado</Label>
+                      <p className="text-xs sm:text-sm font-bold text-primary font-mono mt-0.5">
+                        {viewEmpleado?.numero_empleado ? `#${viewEmpleado.numero_empleado}` : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Nombre Completo</Label>
+                      <p className="text-xs sm:text-sm font-semibold text-foreground mt-0.5">
+                        {formatUserDisplayName(viewEmpleado?.nombre_completo, user?.role) || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Puesto</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.puesto || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Servicio Asignado</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.servicio_ubicacion || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Sede Operativa</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{sedeNombre(viewEmpleado?.sede_id)}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Fecha de Ingreso</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.fecha_ingreso || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Días en la Empresa</Label>
+                      <p className="text-xs sm:text-sm font-bold text-primary mt-0.5">
+                        {calcularDiasEnEmpresa(viewEmpleado?.fecha_ingreso, viewEmpleado?.fecha_baja, viewEmpleado?.fecha_reingreso)}
+                      </p>
+                    </div>
+                    {viewEmpleado?.fecha_reingreso && (
+                      <div>
+                        <Label className="text-[11px] text-muted-foreground">Fecha de Reingreso</Label>
+                        <p className="text-xs sm:text-sm font-semibold text-emerald-600 mt-0.5">{viewEmpleado.fecha_reingreso}</p>
+                      </div>
+                    )}
+                    {(viewEmpleado?.historial_bajas || viewEmpleado?.fecha_baja) && (
+                      <div>
+                        <Label className="text-[11px] text-muted-foreground">
+                          {viewEmpleado.historial_bajas?.includes(",") ? "Historial de Bajas" : "Fecha de Baja"}
+                        </Label>
+                        <p className="text-xs sm:text-sm font-semibold text-rose-600 mt-0.5">
+                          {viewEmpleado.historial_bajas || viewEmpleado.fecha_baja}
+                        </p>
+                      </div>
+                    )}
+                    {sedes.find((s) => s.id === viewEmpleado?.sede_id)?.nombre?.toLowerCase() === "monterrey" && (
+                      <div>
+                        <Label className="text-[11px] text-muted-foreground">Hospedaje</Label>
+                        <p className="text-xs sm:text-sm font-semibold mt-0.5">{viewEmpleado?.hospedaje ? "Sí" : "No"}</p>
+                      </div>
+                    )}
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Seguro IMSS</Label>
+                      <p className={`text-xs sm:text-sm font-bold mt-0.5 ${viewEmpleado?.seguro ? "text-emerald-600" : "text-amber-600"}`}>
+                        {viewEmpleado?.seguro ? "Sí (Afiliado)" : "No"}
+                      </p>
+                    </div>
 
-      <div className="grid grid-cols-2 gap-4 mt-3">
+                    {(viewEmpleado?.fecha_baja || viewEmpleado?.motivo_baja) && (
+                      <div className="col-span-full p-3 rounded-lg border bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900 mt-1">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <Label className="text-xs font-bold text-rose-800 dark:text-rose-300">Motivo de la Baja</Label>
+                          {can("empleados", "edit") && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-xs px-2 text-rose-700 border-rose-300 hover:bg-rose-100 dark:text-rose-300 dark:border-rose-800"
+                              onClick={() => openEditMotivo(viewEmpleado)}
+                            >
+                              <Pencil className="w-3 h-3 mr-1" /> Editar motivo
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-xs sm:text-sm text-rose-950 dark:text-rose-100 font-medium">
+                          {viewEmpleado.motivo_baja || <span className="italic text-muted-foreground text-xs">Sin motivo especificado</span>}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Sueldo</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.sueldo ?? "—"}
-          </p>
-        </div>
+              {/* 2. INFORMACIÓN LABORAL */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("laboral")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shrink-0">
+                      <Briefcase className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">2. Información Laboral</h4>
+                      <p className="text-[11px] text-muted-foreground">Sueldo, capacitaciones y fechas operativas</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cascadaOpen.laboral ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.laboral && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Sueldo</Label>
+                      <p className="text-xs sm:text-sm font-semibold text-foreground mt-0.5">
+                        {viewEmpleado?.sueldo ? `$${viewEmpleado.sueldo}` : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Actas Administrativas</Label>
+                      <p className="text-xs sm:text-sm font-semibold text-foreground mt-0.5">
+                        {viewEmpleado?.actas_administrativas ?? 0}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Medio de Reclutamiento</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.medio_reclutamiento || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Día de Capacitación 1</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.dia_capacitacion || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Día de Capacitación 2</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.dia_capacitacion_2 || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Fecha de Montaje</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.fecha_montaje || "—"}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Actas administrativas</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.actas_administrativas}
-          </p>
-        </div>
+              {/* 3. UNIFORMES Y EQUIPO ASIGNADO CON REGISTRO DE FECHA */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all border-l-4 border-l-blue-500">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("uniformes")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
+                      <Shirt className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">3. Uniformes y Equipo Asignado</h4>
+                      <p className="text-[11px] text-muted-foreground">Prendas entregadas del inventario con registro de fecha</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                      {parseUniformes(viewEmpleado?.uniformes).length} prenda(s)
+                    </Badge>
+                    {cascadaOpen.uniformes ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.uniformes && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 space-y-3">
+                    {(() => {
+                      const uList = parseUniformes(viewEmpleado?.uniformes);
+                      if (uList.length === 0) {
+                        return (
+                          <div className="text-center py-4 space-y-2">
+                            <Shirt className="w-8 h-8 mx-auto text-muted-foreground/40" />
+                            <p className="text-xs text-muted-foreground italic">
+                              No hay uniformes asignados en el registro de este empleado.
+                            </p>
+                            {can("empleados", "edit") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  const emp = viewEmpleado;
+                                  setViewEmpleado(null);
+                                  openEdit(emp);
+                                }}
+                              >
+                                <Plus className="w-3 h-3 mr-1" /> Asignar uniformes
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                            {uList.map((u, i) => (
+                              <div key={i} className="p-3 rounded-lg border bg-card flex flex-col justify-between gap-2 shadow-2xs">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                                    <Shirt className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    {u.articulo}
+                                  </span>
+                                  <Badge variant="outline" className="text-[10px] shrink-0 font-semibold bg-muted">
+                                    {u.cantidad} pza(s)
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1.5 border-t">
+                                  <span className="flex items-center gap-1 font-medium">
+                                    <Calendar className="w-3 h-3 text-muted-foreground" />
+                                    {u.fecha_entrega || "—"}
+                                  </span>
+                                  <span className="font-medium text-foreground bg-muted/80 px-1.5 py-0.5 rounded text-[10px]">
+                                    Talla: {u.talla || "—"}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Uniformes</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.uniformes || "—"}
-          </p>
-        </div>
+              {/* 4. INFORMACIÓN PERSONAL */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("personal")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center shrink-0">
+                      <UserCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">4. Información Personal</h4>
+                      <p className="text-[11px] text-muted-foreground">Datos personales, contacto y demográficos</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cascadaOpen.personal ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.personal && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Sexo</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.sexo || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Fecha de Nacimiento</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.fecha_nacimiento || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Edad</Label>
+                      <p className="text-xs sm:text-sm font-semibold text-foreground mt-0.5">
+                        {calcularEdad(viewEmpleado?.fecha_nacimiento)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Estado Civil</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.estado_civil || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Nivel de Estudios</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.nivel_estudios || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Teléfono</Label>
+                      {viewEmpleado?.telefono ? (
+                        <a href={`tel:${viewEmpleado.telefono}`} className="text-xs sm:text-sm font-semibold text-primary hover:underline flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3" /> {viewEmpleado.telefono}
+                        </a>
+                      ) : (
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">—</p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Email</Label>
+                      {viewEmpleado?.email ? (
+                        <a href={`mailto:${viewEmpleado.email}`} className="text-xs sm:text-sm text-primary hover:underline flex items-center gap-1 mt-0.5 truncate">
+                          <Mail className="w-3 h-3 shrink-0" /> {viewEmpleado.email}
+                        </a>
+                      ) : (
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">—</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Medio de Reclutamiento</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.medio_reclutamiento || "—"}
-          </p>
-        </div>
+              {/* 5. DOCUMENTACIÓN Y DATOS FISCALES */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("documentacion")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center shrink-0">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">5. Documentación y Datos Fiscales</h4>
+                      <p className="text-[11px] text-muted-foreground">CURP, RFC, NSS, banco y beneficiario</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cascadaOpen.documentacion ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.documentacion && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">CURP</Label>
+                      <p className="text-xs sm:text-sm font-mono font-semibold text-foreground mt-0.5">{viewEmpleado?.curp || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">RFC</Label>
+                      <p className="text-xs sm:text-sm font-mono font-semibold text-foreground mt-0.5">{viewEmpleado?.rfc || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">NSS (IMSS)</Label>
+                      <p className="text-xs sm:text-sm font-mono font-semibold text-foreground mt-0.5">{viewEmpleado?.nss || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Infonavit</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.infonavit || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Banco</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.banco || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">CLABE Bancaria</Label>
+                      <p className="text-xs sm:text-sm font-mono text-foreground mt-0.5">{viewEmpleado?.clabe_bancaria || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Cartilla Militar</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.carta_militar || "No"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Beneficiario</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.beneficiario || "—"}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Día de Capacitación 1</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.dia_capacitacion || "—"}
-          </p>
-        </div>
+              {/* 6. DOMICILIO */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("domicilio")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center shrink-0">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">6. Domicilio</h4>
+                      <p className="text-[11px] text-muted-foreground">Dirección residencial y zona geográfica</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cascadaOpen.domicilio ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.domicilio && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Calle</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.calle || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Número</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.numero || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Colonia</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.colonia || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Código Postal</Label>
+                      <p className="text-xs sm:text-sm font-mono text-foreground mt-0.5">{viewEmpleado?.codigo_postal || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Ciudad</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.ciudad || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Zona</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.zona || "—"}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Día de Capacitación 2</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.dia_capacitacion_2 || "—"}
-          </p>
-        </div>
+              {/* 7. CONTACTO DE EMERGENCIA */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("emergencia")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center shrink-0">
+                      <Phone className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">7. Contacto de Emergencia</h4>
+                      <p className="text-[11px] text-muted-foreground">Persona a notificar en situaciones de urgencia</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cascadaOpen.emergencia ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.emergencia && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Nombre de Contacto</Label>
+                      <p className="text-xs sm:text-sm font-semibold text-foreground mt-0.5">{viewEmpleado?.contacto_emergencia || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Teléfono de Emergencia</Label>
+                      {viewEmpleado?.telefono_emergencia ? (
+                        <a href={`tel:${viewEmpleado.telefono_emergencia}`} className="text-xs sm:text-sm font-bold text-red-600 hover:underline flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3" /> {viewEmpleado.telefono_emergencia}
+                        </a>
+                      ) : (
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">—</p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Parentesco</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.parentesco || "—"}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        <div>
-          <Label>Fecha de Montaje</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.fecha_montaje || "—"}
-          </p>
-        </div>
-
-      </div>
-    </div>
-
-    {/* Información Personal */}
-
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Información Personal
-      </h3>
-
-      <div className="grid grid-cols-2 gap-4 mt-3">
-
-        <div>
-          <Label>Sexo</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.sexo || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Fecha de nacimiento</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.fecha_nacimiento || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Edad</Label>
-          <p className="text-sm text-muted-foreground">
-            {calcularEdad(viewEmpleado?.fecha_nacimiento)}
-          </p>
-        </div>
-
-        <div>
-          <Label>Estado civil</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.estado_civil || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Nivel de estudios</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.nivel_estudios || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Teléfono</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.telefono || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Email</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.email || "—"}
-          </p>
-        </div>
-
-      </div>
-    </div>
-
-    {/* Documentación */}
-
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Documentación
-      </h3>
-
-      <div className="grid grid-cols-3 gap-4 mt-3">
-
-        <div>
-          <Label>CURP</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.curp || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>RFC</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.rfc || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>NSS</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.nss || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Infonavit</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.infonavit || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Banco</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.banco || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>CLABE Bancaria</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.clabe_bancaria || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Cartilla Militar</Label>
-          <p className="text-sm text-muted-foreground font-medium">
-            {viewEmpleado?.carta_militar || "No"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Beneficiario</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.beneficiario || "—"}
-          </p>
-        </div>
-
-      </div>
-    </div>
-
-    {/* Domicilio */}
-
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Domicilio
-      </h3>
-
-      <div className="grid grid-cols-2 gap-4 mt-3">
-
-        <div>
-          <Label>Calle</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.calle || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Número</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.numero || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Colonia</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.colonia || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Código Postal</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.codigo_postal || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Ciudad</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.ciudad || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Zona</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.zona || "—"}
-          </p>
-        </div>
-
-      </div>
-    </div>
-
-    {/* Contacto de Emergencia */}
-
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Contacto de Emergencia
-      </h3>
-
-      <div className="grid grid-cols-2 gap-4 mt-3">
-
-        <div>
-          <Label>Nombre</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.contacto_emergencia || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Teléfono</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.telefono_emergencia || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Parentesco</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.parentesco || "—"}
-          </p>
-        </div>
-
-      </div>
-    </div>
-
-    {/* Referencias */}
-
-    <div>
-      <h3 className="font-semibold text-base border-b pb-2">
-        Referencias
-      </h3>
-
-      <div className="grid grid-cols-2 gap-4 mt-3">
-
-        <div>
-          <Label>Referencia</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.referencia || "—"}
-          </p>
-        </div>
-
-        <div>
-          <Label>Teléfono de Contacto</Label>
-          <p className="text-sm text-muted-foreground">
-            {viewEmpleado?.referencia_telefono || "—"}
-          </p>
-        </div>
-
-      </div>
-    </div>
-
-  </div>
+              {/* 8. REFERENCIAS */}
+              <div className="rounded-xl border bg-card overflow-hidden shadow-2xs transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleCascada("referencias")}
+                  className="w-full p-3.5 bg-muted/30 hover:bg-muted/60 transition-colors flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">8. Referencias</h4>
+                      <p className="text-[11px] text-muted-foreground">Referencias laborales o personales registradas</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cascadaOpen.referencias ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                {cascadaOpen.referencias && (
+                  <div className="p-4 border-t border-border/60 bg-background/50 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Referencia</Label>
+                      <p className="text-xs sm:text-sm font-semibold text-foreground mt-0.5">{viewEmpleado?.referencia || "—"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Teléfono de Referencia</Label>
+                      {viewEmpleado?.referencia_telefono ? (
+                        <a href={`tel:${viewEmpleado.referencia_telefono}`} className="text-xs sm:text-sm font-semibold text-primary hover:underline flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3" /> {viewEmpleado.referencia_telefono}
+                        </a>
+                      ) : (
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">—</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
             
-            <DialogFooter>
+            <DialogFooter className="gap-2 pt-2 border-t">
               {!viewEmpleado?.fecha_baja || (viewEmpleado?.fecha_reingreso && viewEmpleado?.fecha_reingreso >= viewEmpleado?.fecha_baja) ? (
                 (can("empleados", "edit") || user?.role?.toLowerCase() === "supervisor") && (
                   <Button
@@ -3046,8 +3560,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 <Button
                   variant="destructive"
                   onClick={() => {
+                    const id = viewEmpleado.id;
                     setViewEmpleado(null);
-                    setDeleteId(viewEmpleado.id);
+                    setDeleteId(id);
                   }}
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
@@ -3059,8 +3574,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    const emp = viewEmpleado;
                     setViewEmpleado(null);
-                    openEdit(viewEmpleado);
+                    openEdit(emp);
                   }}
                 >
                   <Pencil className="w-4 h-4 mr-2" />
@@ -3071,9 +3587,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               <Button onClick={() => setViewEmpleado(null)}>
                 Cerrar
               </Button>
-
             </DialogFooter>
-
           </DialogContent>
         </Dialog>
       <Dialog
