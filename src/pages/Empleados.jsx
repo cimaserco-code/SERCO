@@ -128,6 +128,21 @@ export async function compressImage(file, maxWidth = 350, maxHeight = 350, quali
 }
 
 /**
+ * Retorna la fecha local en formato YYYY-MM-DD en la zona horaria de México (UTC-6)
+ * para evitar desfases de día después de las 6:00 PM al usar toISOString().
+ */
+export function getLocalDateString(date = new Date()) {
+  try {
+    return date.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  } catch {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+}
+
+/**
  * Parsea el campo uniformes soportando formato estructurado JSON y texto plano anterior.
  */
 export function parseUniformes(raw) {
@@ -262,7 +277,7 @@ export default function Empleados() {
   const [generatingFicha, setGeneratingFicha] = useState(false);
   const [bajaConfirmId, setBajaConfirmId] = useState(null);
   const [reingresoConfirmId, setReingresoConfirmId] = useState(null);
-  const [fechaReingresoInput, setFechaReingresoInput] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fechaReingresoInput, setFechaReingresoInput] = useState(() => getLocalDateString());
   const [motivoBajaInput, setMotivoBajaInput] = useState("");
   const [editMotivoEmpleado, setEditMotivoEmpleado] = useState(null);
   const [editMotivoText, setEditMotivoText] = useState("");
@@ -295,7 +310,7 @@ export default function Empleados() {
   const [newUniformeItem, setNewUniformeItem] = useState("");
   const [newUniformeTalla, setNewUniformeTalla] = useState("Unitalla");
   const [newUniformeCantidad, setNewUniformeCantidad] = useState(1);
-  const [newUniformeFecha, setNewUniformeFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newUniformeFecha, setNewUniformeFecha] = useState(() => getLocalDateString());
 
   // Estado para visualización en cascada de información de empleado
   const [cascadaOpen, setCascadaOpen] = useState({
@@ -703,7 +718,7 @@ export default function Empleados() {
     setNewUniformeItem("");
     setNewUniformeTalla("Unitalla");
     setNewUniformeCantidad(1);
-    setNewUniformeFecha(new Date().toISOString().slice(0, 10));
+    setNewUniformeFecha(getLocalDateString());
     const pool = allEmployees.length > 0 ? allEmployees : items;
     const autoNum = getNextEmpleadoNumero(pool);
     setForm({ 
@@ -728,7 +743,7 @@ export default function Empleados() {
     setNewUniformeItem("");
     setNewUniformeTalla("Unitalla");
     setNewUniformeCantidad(1);
-    setNewUniformeFecha(new Date().toISOString().slice(0, 10));
+    setNewUniformeFecha(getLocalDateString());
     setForm({ 
       ...emptyForm, 
       ...item, 
@@ -974,7 +989,18 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         dia_capacitacion: form.dia_capacitacion || null,
         dia_capacitacion_2: form.dia_capacitacion_2 || null,
         fecha_montaje: form.fecha_montaje || null,
-        historial_bajas: form.historial_bajas || null,
+        historial_bajas: (() => {
+          let h = form.historial_bajas || null;
+          if (form.fecha_baja) {
+            if (!h) return form.fecha_baja;
+            const parts = h.split(",").map(p => p.trim()).filter(Boolean);
+            if (!parts.includes(form.fecha_baja)) {
+              parts[parts.length - 1] = form.fecha_baja;
+              return parts.join(", ");
+            }
+          }
+          return h;
+        })(),
         hospedaje: form.hospedaje ? true : false,
         seguro: form.seguro ? true : false,
         foto_url: finalFotoUrl
@@ -1212,11 +1238,14 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
   async function handleConfirmBaja() {
     try {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = getLocalDateString();
       const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
       const emp = items.find((e) => e.id === bajaConfirmId);
-      const prevHistorial = emp?.historial_bajas ? emp.historial_bajas + ", " : "";
-      const newHistorial = prevHistorial + todayStr;
+      const prevList = emp?.historial_bajas ? emp.historial_bajas.split(",").map(s => s.trim()).filter(Boolean) : [];
+      if (!prevList.includes(todayStr)) {
+        prevList.push(todayStr);
+      }
+      const newHistorial = prevList.join(", ");
 
       if (emp?.nombre_completo) {
         try {
@@ -1327,7 +1356,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
   async function handleConfirmReingreso() {
     try {
-      const selectedDate = fechaReingresoInput || new Date().toISOString().slice(0, 10);
+      const selectedDate = fechaReingresoInput || getLocalDateString();
       const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
       try {
         await sercoApi.entities.Empleado.update(reingresoConfirmId, {
@@ -1633,8 +1662,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         </TableCell>
                         <TableCell className="font-medium">{formatUserDisplayName(item.nombre_completo, user?.role)}</TableCell>
                         <TableCell>{sedeNombre(item.sede_id)}</TableCell>
-                        <TableCell>{item.fecha_ingreso || "—"}</TableCell>
-                        <TableCell className="text-destructive font-semibold">{item.fecha_baja || "—"}</TableCell>
+                        <TableCell>{item.fecha_ingreso ? item.fecha_ingreso.slice(0, 10) : "—"}</TableCell>
+                        <TableCell className="text-destructive font-semibold">{item.fecha_baja ? item.fecha_baja.slice(0, 10) : "—"}</TableCell>
                         <TableCell className="max-w-[220px]" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-between gap-1.5 group">
                             <span className="truncate text-xs text-muted-foreground" title={item.motivo_baja || "Sin motivo especificado"}>
@@ -1683,7 +1712,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                                   className="h-7 text-xs px-2 text-emerald-600 border-emerald-300 hover:bg-emerald-50"
                                   onClick={() => {
                                     setReingresoConfirmId(item.id);
-                                    setFechaReingresoInput(new Date().toISOString().slice(0, 10));
+                                    setFechaReingresoInput(getLocalDateString());
                                   }}
                                   title="Registrar reingreso con fecha"
                                 >
@@ -3095,13 +3124,19 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         <p className="text-xs sm:text-sm font-semibold text-emerald-600 mt-0.5">{viewEmpleado.fecha_reingreso}</p>
                       </div>
                     )}
-                    {(viewEmpleado?.historial_bajas || viewEmpleado?.fecha_baja) && (
+                    {viewEmpleado?.fecha_baja && (
                       <div>
-                        <Label className="text-[11px] text-muted-foreground">
-                          {viewEmpleado.historial_bajas?.includes(",") ? "Historial de Bajas" : "Fecha de Baja"}
-                        </Label>
+                        <Label className="text-[11px] text-muted-foreground">Fecha de Baja</Label>
                         <p className="text-xs sm:text-sm font-semibold text-rose-600 mt-0.5">
-                          {viewEmpleado.historial_bajas || viewEmpleado.fecha_baja}
+                          {viewEmpleado.fecha_baja.slice(0, 10)}
+                        </p>
+                      </div>
+                    )}
+                    {viewEmpleado?.historial_bajas && viewEmpleado.historial_bajas.includes(",") && (
+                      <div>
+                        <Label className="text-[11px] text-muted-foreground">Historial de Bajas Anteriores</Label>
+                        <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-0.5">
+                          {viewEmpleado.historial_bajas}
                         </p>
                       </div>
                     )}
@@ -3690,7 +3725,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         onOpenChange={(v) => {
           if (!v) {
             setReingresoConfirmId(null);
-            setFechaReingresoInput(new Date().toISOString().slice(0, 10));
+            setFechaReingresoInput(getLocalDateString());
           }
         }}
         title="¿Confirmar reingreso del empleado?"
