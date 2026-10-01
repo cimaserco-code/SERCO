@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { supabase } from "@/lib/supabaseClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Eye, Shirt, Calendar, Building2, Phone, Mail, MapPin, CreditCard, Briefcase, UserCheck, ShieldCheck, User } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Shirt, Calendar, Building2, Phone, Mail, MapPin, CreditCard, Briefcase, UserCheck, User } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -1354,7 +1354,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     };
   }
 
-  async function handleOpenEmployeeFicha(emp) {
+  async function _handleOpenEmployeeFicha(emp) {
     if (!emp) return;
     setViewEmpleado(emp);
     setFichaPreview(null);
