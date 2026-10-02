@@ -473,12 +473,15 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
   const ciudadTrabajador = emp.ciudad || "Xalapa";
   const estadoTrabajador = emp.estado || (ciudadTrabajador.toLowerCase().includes("xalapa") ? "Veracruz" : "Veracruz");
 
-  // Fechas del periodo de prueba
-  const fechaInicioRaw = params.fecha_inicio_prueba || emp.fecha_ingreso || new Date().toISOString().split("T")[0];
+  const isIndeterminado = params.tipo_contrato_otras === "indeterminado" || params.tipo_contrato === "indeterminado";
+
+  // Fechas del contrato
+  const fechaInicioRaw = params.fecha_inicio_prueba || params.fecha_inicio || emp.fecha_ingreso || new Date().toISOString().split("T")[0];
   let fechaInicioTexto = "_________ de ________";
   let fechaFinTexto = "________ de __________";
   let anioTexto = "________";
   let fechaFirmaTexto = "______ de ____________ del año 2026";
+  let fechaInicioTextoCompleto = "___________________________________";
 
   if (fechaInicioRaw) {
     const parts = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(fechaInicioRaw);
@@ -494,6 +497,7 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
       fechaFinTexto = `${endDate.getDate()} de ${mesesNombres[endDate.getMonth()] || "febrero"}`;
       anioTexto = String(endDate.getFullYear());
       fechaFirmaTexto = `${dStart} de ${mesesNombres[mStart] || "enero"} del año ${yStart}`;
+      fechaInicioTextoCompleto = `${dStart} de ${mesesNombres[mStart] || "enero"} del año ${yStart}`;
     }
   }
 
@@ -505,8 +509,27 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
   const contactoEmergenciaParentesco = emp.parentesco_emergencia || emp.parentesco || "______________";
   const contactoEmergenciaTelefono = emp.telefono_emergencia || "__________________";
 
+  const tituloContrato = isIndeterminado
+    ? `CONTRATO POR TIEMPO INDETERMINADO, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`
+    : `CONTRATO POR PERIODO DE PRUEBA, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`;
+
+  const clausulasPrimera = isIndeterminado
+    ? [
+        `CLÁUSULAS`,
+        `PRIMERA. - OBJETO. El presente contrato se celebra bajo la modalidad de tiempo indeterminado, el cual inicia el día ${fechaInicioTextoCompleto} de conformidad con lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo.`,
+      ]
+    : [
+        `CLÁUSULAS`,
+        `PRIMERA. - OBJETO. El presente contrato se celebra bajo la modalidad de periodo de prueba, de conformidad con lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo, con la finalidad de verificar que “El Trabajador” cuenta con los conocimientos, habilidades, aptitudes y experiencia necesarias para desempeñar el puesto de GUARDIA DE SEGURIDAD dentro de la estructura operativa de “El Patrón”.`,
+        `Durante dicho periodo, “El Trabajador” prestará sus servicios personales subordinados en los términos establecidos en el presente contrato, gozando de todas las prestaciones y condiciones de trabajo correspondientes al puesto, conforme a lo previsto en la Ley Federal del Trabajo.`,
+        `Al concluir el periodo de prueba, y previa evaluación del desempeño, en caso de que “El Trabajador” no acredite satisfacer los requisitos o aptitudes necesarias para el puesto, “El Patrón” podrá dar por terminada la relación de trabajo sin responsabilidad, en términos de lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo.`,
+        `PRIMERA BIS. - PERIODO DE PRUEBA. El periodo de prueba tendrá una duración de 30 (treinta) días, mismo que empezará a contar a partir del ${fechaInicioTexto} al ${fechaFinTexto} del año ${anioTexto}.`,
+        `Durante dicho periodo, “El Patrón” evaluará el desempeño, conocimientos, habilidades y aptitudes de “El Trabajador” para el puesto de Guardia de Seguridad, a fin de determinar si reúne los requisitos necesarios para el adecuado desarrollo de las funciones encomendadas.`,
+        `En caso de que “El Trabajador” no acredite las aptitudes o conocimientos requeridos para el puesto, “El Patrón” podrá dar por terminada la relación laboral sin responsabilidad, de conformidad con lo dispuesto en el artículo 39-A de la Ley Federal del Trabajo.`,
+      ];
+
   const paragraphs = [
-    `CONTRATO POR PERIODO DE PRUEBA, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`,
+    tituloContrato,
     `DECLARACIONES:`,
     `I. Declara “El Patrón”:`,
     `Ser una persona moral legalmente constituida conforme a las leyes mexicanas, acreditando constitución a través del instrumento notarial con número 24,017 (veinticuatro mil diecisiete), de fecha doce de abril del año dos mil veintiuno, otorgada ante la fe del Licenciado Rafael De La Huerta Manjarrez, Titular de la Notaría Pública número Dieciséis de la Décima Primera Demarcación Notarial, con residencia en la Ciudad de Xalapa, Veracruz.`,
@@ -523,13 +546,7 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
     `“Las Partes” declaran que conocen sus obligaciones y prohibiciones:Por lo que respecta a “El Patrón”: los artículos 132 y 133 de la Ley Federal del Trabajo.`,
     `Por lo que se refiere a “El Trabajador”: los artículos 134 y 135, así como demás relativos aplicables de dicho ordenamiento legal.`,
     `Se reconocen la personalidad con la que comparecen y se sujetan a lo dispuesto en la Ley Federal del Trabajo, en lo sucesivo “La Ley”; y finalmente, al referirse al presente escrito se le denominará como “El Contrato”, acordando las partes sujetarse al tenor de las siguientes:`,
-    `CLÁUSULAS`,
-    `PRIMERA. - OBJETO. El presente contrato se celebra bajo la modalidad de periodo de prueba, de conformidad con lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo, con la finalidad de verificar que “El Trabajador” cuenta con los conocimientos, habilidades, aptitudes y experiencia necesarias para desempeñar el puesto de GUARDIA DE SEGURIDAD dentro de la estructura operativa de “El Patrón”.`,
-    `Durante dicho periodo, “El Trabajador” prestará sus servicios personales subordinados en los términos establecidos en el presente contrato, gozando de todas las prestaciones y condiciones de trabajo correspondientes al puesto, conforme a lo previsto en la Ley Federal del Trabajo.`,
-    `Al concluir el periodo de prueba, y previa evaluación del desempeño, en caso de que “El Trabajador” no acredite satisfacer los requisitos o aptitudes necesarias para el puesto, “El Patrón” podrá dar por terminada la relación de trabajo sin responsabilidad, en términos de lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo.`,
-    `PRIMERA BIS. - PERIODO DE PRUEBA. El periodo de prueba tendrá una duración de 30 (treinta) días, mismo que empezará a contar a partir del ${fechaInicioTexto} al ${fechaFinTexto} del año ${anioTexto}.`,
-    `Durante dicho periodo, “El Patrón” evaluará el desempeño, conocimientos, habilidades y aptitudes de “El Trabajador” para el puesto de Guardia de Seguridad, a fin de determinar si reúne los requisitos necesarios para el adecuado desarrollo de las funciones encomendadas.`,
-    `En caso de que “El Trabajador” no acredite las aptitudes o conocimientos requeridos para el puesto, “El Patrón” podrá dar por terminada la relación laboral sin responsabilidad, de conformidad con lo dispuesto en el artículo 39-A de la Ley Federal del Trabajo.`,
+    ...clausulasPrimera,
     `SEGUNDA. - FUNCIONES, RESPONSABILIDADES Y OBLIGACIONES DEL PUESTO. – “El Trabajador” se obliga a desempeñar el puesto de Guardia de Seguridad, siendo responsable de la vigilancia, protección y custodia de las instalaciones, bienes y personas que le sean asignadas, actuando en todo momento con diligencia, lealtad y apego a la normatividad aplicable.`,
     `En el desempeño de sus funciones, deberá controlar accesos, realizar rondines periódicos, operar equipos y sistemas de seguridad, llevar registros en bitácoras, reportar de forma inmediata cualquier incidente o anomalía, y ejecutar los protocolos de emergencia correspondientes.`,
     `“El Trabajador” se compromete a cumplir con las políticas internas de la empresa, así como con las disposiciones legales y reglamentarias vigentes en materia de seguridad privada, protección civil y demás aplicables en los Estados Unidos Mexicanos.`,
@@ -605,7 +622,9 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
     addPageDecorations(i, pageCount);
   }
 
-  const filename = `Contrato_Prueba_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`;
+  const filename = isIndeterminado
+    ? `Contrato_Indeterminado_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`
+    : `Contrato_Prueba_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`;
 
   if (options.returnDoc) {
     const blobUrl = doc.output("bloburl");
@@ -624,9 +643,9 @@ export async function generateContractPDF(emp, params = {}, sedes = [], options 
   const sedeObj = (sedes || []).find((s) => s.id === sedeId);
   const isMty = (sedeObj?.nombre || "").toLowerCase().includes("monterrey");
 
-  const tipo = params.tipo_contrato || (isMty ? "monterrey" : "otras_sedes");
+  const sedeTipo = params.sede_tipo || (params.tipo_contrato === "monterrey" ? "monterrey" : isMty ? "monterrey" : "otras_sedes");
 
-  if (tipo === "monterrey") {
+  if (sedeTipo === "monterrey") {
     return generateContractMonterreyPDF(emp, params, sedes, options);
   }
   return generateContractOtrasSedesPDF(emp, params, sedes, options);

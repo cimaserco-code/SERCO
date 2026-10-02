@@ -53,7 +53,8 @@ import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 import { cn } from "@/lib/utils";
 
 const defaultContractForm = {
-  tipo_contrato: "otras_sedes",
+  sede_tipo: "otras_sedes",
+  tipo_contrato_otras: "prueba",
   bono_mensual: "2000",
   salario_quincenal: "",
   fecha_inicio_prueba: new Date().toISOString().split("T")[0],
@@ -75,8 +76,13 @@ const defaultFichaForm = {
 export default function Documentos() {
   const { user } = useAuth();
   const { sedeFilter, defaultSedeId } = useSedeScope();
-  const { canView } = usePermissions();
+  const { canView, isAdmin } = usePermissions();
   const { toast } = useToast();
+
+  const isSuperOrAdmin = Boolean(
+    isAdmin ||
+    ["admin", "administrador", "ceo", "director general"].includes((user?.role || "").toLowerCase().trim())
+  );
 
   const [empleados, setEmpleados] = useState([]);
   const [sedes, setSedes] = useState([]);
@@ -144,8 +150,10 @@ export default function Documentos() {
     const sueldoNum = Number(emp.sueldo) || 0;
     const defaultQuincenal = sueldoNum > 0 ? String(Math.round(sueldoNum / 2)) : "";
 
-    setContractForm({
-      tipo_contrato: isMty ? "monterrey" : "otras_sedes",
+    setContractForm((prev) => ({
+      ...prev,
+      sede_tipo: isMty ? "monterrey" : "otras_sedes",
+      tipo_contrato_otras: prev.tipo_contrato_otras || "prueba",
       bono_mensual: "2000",
       salario_quincenal: defaultQuincenal,
       fecha_inicio_prueba: emp.fecha_ingreso || new Date().toISOString().split("T")[0],
@@ -154,7 +162,7 @@ export default function Documentos() {
       parentesco: emp.parentesco_beneficiario || emp.parentesco || "",
       porcentaje: "100",
       duracion_meses: "3",
-    });
+    }));
     setEmpComboboxOpen(false);
   }
 
@@ -178,7 +186,12 @@ export default function Documentos() {
       setCurrentDocToSave(result.doc);
       setPreviewPdfUrl(result.blobUrl);
       setDownloadFilename(result.filename);
-      setPreviewTitle(`Contrato Laboral - ${formatNombreNatural(emp)}`);
+      const tipoLabel = contractForm.sede_tipo === "monterrey"
+        ? "Sede Monterrey"
+        : contractForm.tipo_contrato_otras === "indeterminado"
+          ? "Tiempo Indeterminado"
+          : "Periodo de Prueba";
+      setPreviewTitle(`Contrato Laboral (${tipoLabel}) - ${formatNombreNatural(emp)}`);
       setPreviewModalOpen(true);
     } catch (e) {
       console.error(e);
@@ -394,57 +407,110 @@ export default function Documentos() {
               </Popover>
             </div>
 
-            {/* Selector de plantilla de contrato */}
-            <div>
-              <Label className="mb-1.5 block">Modelo de Contrato</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={contractForm.tipo_contrato === "otras_sedes" ? "default" : "outline"}
-                  className={cn(
-                    "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
-                    contractForm.tipo_contrato === "otras_sedes"
-                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                      : "hover:bg-accent"
-                  )}
-                  onClick={() => setContractForm({ ...contractForm, tipo_contrato: "otras_sedes" })}
-                >
-                  <span className="font-semibold text-xs flex items-center gap-1.5">
-                    Otras Sedes
-                    <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal bg-white/20 text-inherit border-0">
-                      Veracruz / Xalapa
-                    </Badge>
-                  </span>
-                  <span className="text-[11px] opacity-80 font-normal">
-                    Periodo de prueba 30 días · Pago quincenal (03 y 18)
-                  </span>
-                </Button>
-
-                <Button
-                  type="button"
-                  variant={contractForm.tipo_contrato === "monterrey" ? "default" : "outline"}
-                  className={cn(
-                    "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
-                    contractForm.tipo_contrato === "monterrey"
-                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                      : "hover:bg-accent"
-                  )}
-                  onClick={() => setContractForm({ ...contractForm, tipo_contrato: "monterrey" })}
-                >
-                  <span className="font-semibold text-xs flex items-center gap-1.5">
-                    Sede Monterrey
-                    <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal bg-white/20 text-inherit border-0">
-                      NL
-                    </Badge>
-                  </span>
-                  <span className="text-[11px] opacity-80 font-normal">
-                    Tiempo determinado · Pago semanal (Viernes)
-                  </span>
-                </Button>
+            {/* Si es Admin, permitir alternar de sede */}
+            {isSuperOrAdmin ? (
+              <div className="p-2.5 rounded-lg border border-dashed border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                    Sede del Contrato (Exclusivo Administrador)
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-300">
+                    Admin
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={contractForm.sede_tipo === "otras_sedes" ? "default" : "outline"}
+                    className={cn(
+                      "h-8 text-xs font-medium",
+                      contractForm.sede_tipo === "otras_sedes" && "bg-indigo-600 hover:bg-indigo-700 text-white"
+                    )}
+                    onClick={() => setContractForm({ ...contractForm, sede_tipo: "otras_sedes" })}
+                  >
+                    Otras Sedes (Xalapa / Veracruz)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={contractForm.sede_tipo === "monterrey" ? "default" : "outline"}
+                    className={cn(
+                      "h-8 text-xs font-medium",
+                      contractForm.sede_tipo === "monterrey" && "bg-indigo-600 hover:bg-indigo-700 text-white"
+                    )}
+                    onClick={() => setContractForm({ ...contractForm, sede_tipo: "monterrey" })}
+                  >
+                    Sede Monterrey (NL)
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : (
+              selectedEmpleadoObj && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground px-1 py-0.5">
+                  <span>
+                    Sede: <strong className="text-foreground">{sedes.find((s) => s.id === (selectedEmpleadoObj.sede_id || defaultSedeId))?.nombre || "Otras Sedes"}</strong>
+                  </span>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {contractForm.sede_tipo === "monterrey" ? "Plantilla Monterrey" : "Plantilla Otras Sedes"}
+                  </Badge>
+                </div>
+              )
+            )}
 
-            {contractForm.tipo_contrato === "otras_sedes" ? (
+            {/* Si es Otras Sedes, mostrar botones de tipo de contrato (Periodo de Prueba vs Tiempo Indeterminado) */}
+            {contractForm.sede_tipo === "otras_sedes" && (
+              <div>
+                <Label className="mb-1.5 block">Tipo de Contrato</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={contractForm.tipo_contrato_otras === "prueba" ? "default" : "outline"}
+                    className={cn(
+                      "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
+                      contractForm.tipo_contrato_otras === "prueba"
+                        ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                        : "hover:bg-accent"
+                    )}
+                    onClick={() => setContractForm({ ...contractForm, tipo_contrato_otras: "prueba" })}
+                  >
+                    <span className="font-semibold text-xs flex items-center gap-1.5">
+                      Periodo de Prueba
+                      <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal bg-white/20 text-inherit border-0">
+                        30 días
+                      </Badge>
+                    </span>
+                    <span className="text-[11px] opacity-80 font-normal">
+                      Art. 39-A LFT · Cláusula de prueba
+                    </span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant={contractForm.tipo_contrato_otras === "indeterminado" ? "default" : "outline"}
+                    className={cn(
+                      "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
+                      contractForm.tipo_contrato_otras === "indeterminado"
+                        ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                        : "hover:bg-accent"
+                    )}
+                    onClick={() => setContractForm({ ...contractForm, tipo_contrato_otras: "indeterminado" })}
+                  >
+                    <span className="font-semibold text-xs flex items-center gap-1.5">
+                      Tiempo Indeterminado
+                      <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal bg-white/20 text-inherit border-0">
+                        Planta
+                      </Badge>
+                    </span>
+                    <span className="text-[11px] opacity-80 font-normal">
+                      Art. 39-A LFT · Sin periodo de prueba
+                    </span>
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {contractForm.sede_tipo === "otras_sedes" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-muted/40 rounded-lg border border-border/60">
                 <div>
                   <Label>Salario Quincenal Neto ($)</Label>
@@ -459,14 +525,20 @@ export default function Documentos() {
                   </span>
                 </div>
                 <div>
-                  <Label>Fecha Inicio Periodo de Prueba</Label>
+                  <Label>
+                    {contractForm.tipo_contrato_otras === "indeterminado"
+                      ? "Fecha de Inicio de Labores"
+                      : "Fecha Inicio Periodo de Prueba"}
+                  </Label>
                   <Input
                     type="date"
                     value={contractForm.fecha_inicio_prueba}
                     onChange={(e) => setContractForm({ ...contractForm, fecha_inicio_prueba: e.target.value })}
                   />
                   <span className="text-[11px] text-muted-foreground mt-1 block">
-                    Duración: 30 días naturales (Art. 39-A LFT)
+                    {contractForm.tipo_contrato_otras === "indeterminado"
+                      ? "Modalidad de tiempo indeterminado"
+                      : "Duración: 30 días naturales (Art. 39-A LFT)"}
                   </span>
                 </div>
               </div>
