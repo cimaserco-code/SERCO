@@ -71,7 +71,7 @@ const emptyForm = {
 export default function Inventario() {
   const { user } = useAuth();
   const { sedeFilter, defaultSedeId, userSedeIds } = useSedeScope();
-  const { canView, can } = usePermissions();
+  const { canView, can, isAdmin } = usePermissions();
   const { toast } = useToast();
 
   const [items, setItems] = useState([]);
@@ -115,25 +115,38 @@ export default function Inventario() {
   const [inputCantidad, setInputCantidad] = useState("1");
   const [inputPrecioUnitario, setInputPrecioUnitario] = useState("");
 
-  // User Role checks
+  // User Role checks: visibilidad de montos financieros exclusiva para finanzas, admin y ceo
   const userRole = (user?.role || "").toLowerCase().trim();
-  const canEditPrecio = [
-    "admin",
-    "administrador",
-    "super administrador",
-    "finanzas"
-  ].includes(userRole);
+  const canViewMonto = Boolean(
+    isAdmin ||
+    [
+      "admin",
+      "administrador",
+      "super administrador",
+      "superadmin",
+      "finanzas",
+      "ceo",
+      "director general",
+      "director_general",
+      "director"
+    ].includes(userRole)
+  );
 
-  const canViewAllSolicitudes = [
-    "admin",
-    "administrador",
-    "super administrador",
-    "finanzas",
-    "ceo",
-    "director general",
-    "director_general",
-    "director"
-  ].includes(userRole);
+  const canEditPrecio = canViewMonto;
+
+  const canViewAllSolicitudes = Boolean(
+    isAdmin ||
+    [
+      "admin",
+      "administrador",
+      "super administrador",
+      "finanzas",
+      "ceo",
+      "director general",
+      "director_general",
+      "director"
+    ].includes(userRole)
+  );
 
   useEffect(() => {
     load();
@@ -1033,50 +1046,52 @@ export default function Inventario() {
         </div>
       </div>
 
-      {/* ── CARD: TOTAL INVERTIDO (TASK 1) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card className="bg-card shadow-sm border">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Total Invertido (General)
-              </p>
-              <h3 className="text-2xl font-bold tracking-tight mt-1 text-foreground">
-                ${totalInvertidoGlobal.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                <span className="text-xs font-normal text-muted-foreground ml-1">MXN</span>
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Valor total de todos los artículos en stock
-              </p>
-            </div>
-            <div className="h-11 w-11 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-              <DollarSign className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {activeCategoryTab !== "Solicitudes" && (
+      {/* ── CARD: TOTAL INVERTIDO (TASK 1: Solo visible para finanzas, admin y ceo) ── */}
+      {canViewMonto && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="bg-card shadow-sm border">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Invertido en {activeCategoryTab}
+                  Total Invertido (General)
                 </p>
-                <h3 className="text-2xl font-bold tracking-tight mt-1 text-primary">
-                  ${totalInvertidoCategoria.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <h3 className="text-2xl font-bold tracking-tight mt-1 text-foreground">
+                  ${totalInvertidoGlobal.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   <span className="text-xs font-normal text-muted-foreground ml-1">MXN</span>
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {tabFiltered.length} tipo(s) de artículo en esta categoría
+                  Valor total de todos los artículos en stock
                 </p>
               </div>
-              <div className="h-11 w-11 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <Package className="w-5 h-5" />
+              <div className="h-11 w-11 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <DollarSign className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
-        )}
-      </div>
+
+          {activeCategoryTab !== "Solicitudes" && (
+            <Card className="bg-card shadow-sm border">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Invertido en {activeCategoryTab}
+                  </p>
+                  <h3 className="text-2xl font-bold tracking-tight mt-1 text-primary">
+                    ${totalInvertidoCategoria.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="text-xs font-normal text-muted-foreground ml-1">MXN</span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {tabFiltered.length} tipo(s) de artículo en esta categoría
+                  </p>
+                </div>
+                <div className="h-11 w-11 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Package className="w-5 h-5" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* ── TABS PRINCIPALES ── */}
       <Tabs value={activeCategoryTab} onValueChange={setActiveCategoryTab} className="w-full">
@@ -1210,7 +1225,7 @@ export default function Inventario() {
                           <span className="text-muted-foreground">Piezas en stock: </span>
                           <span className="font-bold text-foreground">{group.totalPiezas}</span>
                         </div>
-                        {group.totalInvertido > 0 && (
+                        {canViewMonto && group.totalInvertido > 0 && (
                           <div>
                             <span className="text-muted-foreground">Total invertido: </span>
                             <span className="font-bold text-emerald-700 dark:text-emerald-400">
@@ -1229,8 +1244,12 @@ export default function Inventario() {
                           {!defaultSedeId && <TableHead>Sede</TableHead>}
                           <TableHead>Tallas Disponibles</TableHead>
                           <TableHead className="text-right">Cantidad ({group.colorName})</TableHead>
-                          <TableHead className="text-right">Precio unitario</TableHead>
-                          <TableHead className="text-right">Total Invertido</TableHead>
+                          {canViewMonto && (
+                            <>
+                              <TableHead className="text-right">Precio unitario</TableHead>
+                              <TableHead className="text-right">Total Invertido</TableHead>
+                            </>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1277,20 +1296,24 @@ export default function Inventario() {
                               <TableCell className="text-right font-bold text-sm py-3">
                                 {p.totalPiezas}
                               </TableCell>
-                              <TableCell className="text-right py-3">
-                                {p.precioUnitario > 0 ? (
-                                  `$${p.precioUnitario.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                ) : (
-                                  <span className="text-muted-foreground/60">—</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400 py-3">
-                                {p.subtotalInvertido > 0 ? (
-                                  `$${p.subtotalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                ) : (
-                                  <span className="text-muted-foreground/60 font-normal">—</span>
-                                )}
-                              </TableCell>
+                              {canViewMonto && (
+                                <>
+                                  <TableCell className="text-right py-3">
+                                    {p.precioUnitario > 0 ? (
+                                      `$${p.precioUnitario.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    ) : (
+                                      <span className="text-muted-foreground/60">—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400 py-3">
+                                    {p.subtotalInvertido > 0 ? (
+                                      `$${p.subtotalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    ) : (
+                                      <span className="text-muted-foreground/60 font-normal">—</span>
+                                    )}
+                                  </TableCell>
+                                </>
+                              )}
                             </TableRow>
                           );
                         })}
@@ -1311,8 +1334,12 @@ export default function Inventario() {
                     {!defaultSedeId && <TableHead>Sede</TableHead>}
                     <TableHead>Tallas</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead className="text-right">Precio por unidad</TableHead>
-                    <TableHead className="text-right">Total Invertido</TableHead>
+                    {canViewMonto && (
+                      <>
+                        <TableHead className="text-right">Precio por unidad</TableHead>
+                        <TableHead className="text-right">Total Invertido</TableHead>
+                      </>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1349,20 +1376,24 @@ export default function Inventario() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-bold text-sm">{p.totalPiezas}</TableCell>
-                        <TableCell className="text-right">
-                          {p.precioUnitario > 0 ? (
-                            `$${p.precioUnitario.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          ) : (
-                            <span className="text-muted-foreground/60">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400">
-                          {p.subtotalInvertido > 0 ? (
-                            `$${p.subtotalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          ) : (
-                            <span className="text-muted-foreground/60 font-normal">—</span>
-                          )}
-                        </TableCell>
+                        {canViewMonto && (
+                          <>
+                            <TableCell className="text-right">
+                              {p.precioUnitario > 0 ? (
+                                `$${p.precioUnitario.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ) : (
+                                <span className="text-muted-foreground/60">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-emerald-700 dark:text-emerald-400">
+                              {p.subtotalInvertido > 0 ? (
+                                `$${p.subtotalInvertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ) : (
+                                <span className="text-muted-foreground/60 font-normal">—</span>
+                              )}
+                            </TableCell>
+                          </>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -1382,20 +1413,24 @@ export default function Inventario() {
                     <TableHead>Nombre</TableHead>
                     {!defaultSedeId && <TableHead>Sede</TableHead>}
                     <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead className="text-right">Precio por unidad</TableHead>
-                    <TableHead className="text-right">Total Invertido</TableHead>
+                    {canViewMonto && (
+                      <>
+                        <TableHead className="text-right">Precio por unidad</TableHead>
+                        <TableHead className="text-right">Total Invertido</TableHead>
+                      </>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={!defaultSedeId ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={(!defaultSedeId ? 3 : 2) + (canViewMonto ? 2 : 0)} className="text-center text-muted-foreground py-8">
                         Cargando inventario...
                       </TableCell>
                     </TableRow>
                   ) : tabFiltered.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={!defaultSedeId ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={(!defaultSedeId ? 3 : 2) + (canViewMonto ? 2 : 0)} className="text-center text-muted-foreground py-8">
                         No hay artículos en esta categoría
                       </TableCell>
                     </TableRow>
@@ -1413,20 +1448,24 @@ export default function Inventario() {
                           <TableCell className="font-medium">{item.nombre}</TableCell>
                           {!defaultSedeId && <TableCell>{sedeNombre(item.sede_id)}</TableCell>}
                           <TableCell className="text-right font-semibold">{qty}</TableCell>
-                          <TableCell className="text-right">
-                            {price > 0 ? (
-                              `$${price.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            ) : (
-                              <span className="text-muted-foreground/60">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold text-emerald-700">
-                            {invertido > 0 ? (
-                              `$${invertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            ) : (
-                              <span className="text-muted-foreground/60 font-normal">—</span>
-                            )}
-                          </TableCell>
+                          {canViewMonto && (
+                            <>
+                              <TableCell className="text-right">
+                                {price > 0 ? (
+                                  `$${price.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ) : (
+                                  <span className="text-muted-foreground/60">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold text-emerald-700">
+                                {invertido > 0 ? (
+                                  `$${invertido.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ) : (
+                                  <span className="text-muted-foreground/60 font-normal">—</span>
+                                )}
+                              </TableCell>
+                            </>
+                          )}
                         </TableRow>
                       );
                     })
@@ -1589,7 +1628,7 @@ export default function Inventario() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Artículos a Comprar</TableHead>
-                    <TableHead className="text-right">Total Estimado</TableHead>
+                    {canViewMonto && <TableHead className="text-right">Total Estimado</TableHead>}
                     <TableHead>Servicio</TableHead>
                     {!defaultSedeId && <TableHead>Sede</TableHead>}
                     <TableHead>Solicitado por</TableHead>
@@ -1600,13 +1639,13 @@ export default function Inventario() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={(!defaultSedeId ? 6 : 5) + (canViewMonto ? 1 : 0)} className="text-center text-muted-foreground py-8">
                         Cargando solicitudes de compra...
                       </TableCell>
                     </TableRow>
                   ) : comprasList.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={!defaultSedeId ? 7 : 6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={(!defaultSedeId ? 6 : 5) + (canViewMonto ? 1 : 0)} className="text-center text-muted-foreground py-8">
                         No hay solicitudes de compra registradas
                       </TableCell>
                     </TableRow>
@@ -1629,13 +1668,15 @@ export default function Inventario() {
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-foreground">
-                            {sol.costo != null && Number(sol.costo) > 0 ? (
-                              `$${Number(sol.costo).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            ) : (
-                              <span className="text-muted-foreground font-normal">Por cotizar</span>
-                            )}
-                          </TableCell>
+                          {canViewMonto && (
+                            <TableCell className="text-right font-semibold text-foreground">
+                              {sol.costo != null && Number(sol.costo) > 0 ? (
+                                `$${Number(sol.costo).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ) : (
+                                <span className="text-muted-foreground font-normal">Por cotizar</span>
+                              )}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Badge variant="outline" className="font-normal text-xs">
                               {sol.servicio_nombre || "Oficina / General"}
@@ -1768,7 +1809,7 @@ export default function Inventario() {
                       <TableRow className="bg-muted/40 text-xs">
                         <TableHead>Artículo</TableHead>
                         <TableHead className="text-right">Cantidad</TableHead>
-                        {isCompraSolicitud(selectedSolicitud) && (
+                        {isCompraSolicitud(selectedSolicitud) && canViewMonto && (
                           <>
                             <TableHead className="text-right">Precio Unitario</TableHead>
                             <TableHead className="text-right">Subtotal</TableHead>
@@ -1785,7 +1826,7 @@ export default function Inventario() {
                           <TableCell className="text-right font-semibold text-xs">
                             {art.cantidad}
                           </TableCell>
-                          {isCompraSolicitud(selectedSolicitud) && (
+                          {isCompraSolicitud(selectedSolicitud) && canViewMonto && (
                             <>
                               <TableCell className="text-right text-xs">
                                 {art.precio_unitario != null && Number(art.precio_unitario) > 0
@@ -1806,7 +1847,7 @@ export default function Inventario() {
                 </div>
               </div>
 
-              {isCompraSolicitud(selectedSolicitud) && selectedSolicitud.costo != null && Number(selectedSolicitud.costo) > 0 && (
+              {isCompraSolicitud(selectedSolicitud) && canViewMonto && selectedSolicitud.costo != null && Number(selectedSolicitud.costo) > 0 && (
                 <div className="flex justify-end pr-2 text-sm font-bold text-foreground">
                   Total Estimado de Compra: ${Number(selectedSolicitud.costo).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN
                 </div>
@@ -2011,7 +2052,7 @@ export default function Inventario() {
                                 <Badge variant={stock > 0 ? "outline" : "secondary"} className="text-[10px]">
                                   Stock: {stock}
                                 </Badge>
-                                {isCompra && (item.precio_unitario || item.precio_por_unidad) && (
+                                {isCompra && canViewMonto && (item.precio_unitario || item.precio_por_unidad) && (
                                   <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
                                     ${Number(item.precio_unitario || item.precio_por_unidad).toFixed(2)} c/u
                                   </p>
@@ -2114,8 +2155,8 @@ export default function Inventario() {
                 );
               })()}
 
-              {/* Cantidad y Precio (en compras) */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+              {/* Cantidad y Precio (en compras, solo visible para finanzas, admin y ceo) */}
+              <div className={`grid ${isCompra && canViewMonto ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-3 pt-1`}>
                 <div>
                   <Label className="text-xs">Cantidad *</Label>
                   <Input
@@ -2126,8 +2167,8 @@ export default function Inventario() {
                   />
                 </div>
 
-                {/* En Compra: Mostrar / editar precio por unidad */}
-                {isCompra && (
+                {/* En Compra: Mostrar / editar precio por unidad (solo finanzas, admin y ceo) */}
+                {isCompra && canViewMonto && (
                   <div>
                     <Label className="text-xs">Precio unitario estimado ($)</Label>
                     <Input
@@ -2141,7 +2182,7 @@ export default function Inventario() {
                   </div>
                 )}
 
-                <div className="flex items-end col-span-2 sm:col-span-1">
+                <div className={`flex items-end ${isCompra && canViewMonto ? "col-span-2 sm:col-span-1" : "col-span-1"}`}>
                   <Button
                     type="button"
                     variant="secondary"
@@ -2171,7 +2212,7 @@ export default function Inventario() {
                       <TableRow className="bg-muted/40 text-xs">
                         <TableHead>Artículo</TableHead>
                         <TableHead className="text-right">Cantidad</TableHead>
-                        {isCompra && (
+                        {isCompra && canViewMonto && (
                           <>
                             <TableHead className="text-right">Precio c/u</TableHead>
                             <TableHead className="text-right">Subtotal</TableHead>
@@ -2189,7 +2230,7 @@ export default function Inventario() {
                           <TableCell className="text-right font-semibold text-xs">
                             {art.cantidad}
                           </TableCell>
-                          {isCompra && (
+                          {isCompra && canViewMonto && (
                             <>
                               <TableCell className="text-right text-xs">
                                 ${Number(art.precio_unitario || 0).toFixed(2)}
@@ -2217,7 +2258,7 @@ export default function Inventario() {
                 </div>
               )}
 
-              {isCompra && articulosList.length > 0 && (
+              {isCompra && canViewMonto && articulosList.length > 0 && (
                 <div className="flex justify-end p-2 text-sm font-bold text-foreground">
                   Total Estimado de Compra: ${articulosList.reduce((sum, a) => sum + (Number(a.subtotal) || 0), 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN
                 </div>
@@ -2313,26 +2354,22 @@ export default function Inventario() {
               )}
             </div>
 
-            {/* PRECIO POR UNIDAD (TASK 1: Editable solo por finanzas y admin) */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <Label>Precio por unidad ($ MXN)</Label>
-                {!canEditPrecio && (
-                  <span className="text-[11px] text-muted-foreground font-medium">
-                    (Editable solo por Finanzas y Admin)
-                  </span>
-                )}
+            {/* PRECIO POR UNIDAD (Solo visible para finanzas, admin y ceo) */}
+            {canViewMonto && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <Label>Precio por unidad ($ MXN)</Label>
+                </div>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.precio_unitario}
+                  onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })}
+                  placeholder="0.00"
+                />
               </div>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.precio_unitario}
-                onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })}
-                placeholder="0.00"
-                disabled={!canEditPrecio}
-              />
-            </div>
+            )}
 
             {form.categoria !== "Uniforme" && (
               <div>
