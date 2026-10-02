@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck, Palmtree, Search, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck, Palmtree, Search, Download, QrCode } from "lucide-react";
+import QRCode from "qrcode";
+import { generateQRAttendanceCardsSheet } from "@/lib/qrAsistenciaTemplate";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -38,6 +40,7 @@ export default function Asistencias() {
   const { sedeFilter, activeSedeId, availableSedes } = useSedeScope();
   const [employees, setEmployees] = useState([]);
   const [sedes, setSedes] = useState([]);
+  const [servicios, setServicios] = useState([]);
   const [asistencias, setAsistencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,6 +50,12 @@ export default function Asistencias() {
     return `${today.getFullYear()}-${mm}`;
   });
   const [selectedEmpSummary, setSelectedEmpSummary] = useState(null);
+
+  // Estados para Generador de QR
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [selectedQrServiceId, setSelectedQrServiceId] = useState("all");
+  const [qrDownloading, setQrDownloading] = useState(false);
+  const [previewQrDataUrl, setPreviewQrDataUrl] = useState(null);
 
   // Modo marcado rápido (Pincel): cuando está activo, hacer clic en una casilla aplica directamente este estado
   const [selectedStampState, setSelectedStampState] = useState(null); // null (modo menú por celda) | key de estadosConfig | "limpiar"
@@ -109,8 +118,16 @@ export default function Asistencias() {
     const unsubEmp = sercoApi.entities.Empleado?.subscribe?.(() => {
       loadData();
     });
+    const unsubAsist = sercoApi.entities.Asistencia?.subscribe?.(() => {
+      loadData();
+    });
+    const unsubServ = sercoApi.entities.Servicio?.subscribe?.(() => {
+      loadData();
+    });
     return () => {
       unsubEmp?.();
+      unsubAsist?.();
+      unsubServ?.();
     };
   }, [sedeFilter, currentMonth]);
 
@@ -142,20 +159,157 @@ export default function Asistencias() {
         }
       };
 
-      const [emps, asists, seds] = await Promise.all([
+      const [emps, asists, seds, servs] = await Promise.all([
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
         sercoApi.entities.Asistencia.filter(filterObj).catch(() => []),
-        sercoApi.entities.Sede.list().catch(() => [])
+        sercoApi.entities.Sede.list().catch(() => []),
+        sercoApi.entities.Servicio.filter(sedeFilter).catch(() => [])
       ]);
       setEmployees(emps || []);
-      setAsistencias(asists || []);
       setSedes(seds || []);
+      setServicios(servs || []);
+
+      let currentAsists = asists || [];
+
+      // Procesamiento automático de Faltas para el día de hoy si ya venció la hora límite del turno
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const todayMonthStr = `${yyyy}-${mm}`;
+      const todayDateStr = `${yyyy}-${mm}-${dd}`;
+
+      if (currentMonth === todayMonthStr) {
+        const hours = today.getHours();
+        const minutes = today.getMinutes();
+        const totalMinutes = hours * 60 + minutes;
+        const morningLimit = 7 * 60 + 15; // 07:15 AM
+        const eveningLimit = 19 * 60 + 15; // 19:15 PM
+
+        const asistsMapQuick = new Map();
+        currentAsists.forEach((a) => {
+          if (a.empleado_id && a.fecha) {
+            asistsMapQuick.set(`${a.empleado_id}_${a.fecha}`, a);
+          }
+        });
+
+        const faltasToUpsert = [];
+
+        (emps || []).forEach((emp) => {
+          if (getAttendanceCellState(emp, todayDateStr) !== "active") return;
+
+          const key = `${emp.id}_${todayDateStr}`;
+          const existing = asistsMapQuick.get(key);
+
+          // Si ya existe registro hoy (asistió, retraso, vacaciones, descanso, falta, etc.), no tocar
+          if (existing?.estado) return;
+
+          const turno = (emp.turno || "").toLowerCase();
+          let shouldMarkFalta = false;
+
+          if (turno.includes("matutino")) {
+            if (totalMinutes > morningLimit) shouldMarkFalta = true;
+          } else if (turno.includes("vespertino")) {
+            if (totalMinutes > eveningLimit) shouldMarkFalta = true;
+          } else {
+            // Cubredescansos / otro: según hora más cercana
+            if (hours < 13 && totalMinutes > morningLimit) {
+              shouldMarkFalta = true;
+            } else if (hours >= 13 && totalMinutes > eveningLimit) {
+              shouldMarkFalta = true;
+            }
+          }
+
+          if (shouldMarkFalta) {
+            faltasToUpsert.push({
+              empleado_id: emp.id,
+              fecha: todayDateStr,
+              estado: "falta",
+              sede_id: emp.sede_id || null,
+            });
+          }
+        });
+
+        if (faltasToUpsert.length > 0) {
+          try {
+            for (const f of faltasToUpsert) {
+              await sercoApi.entities.Asistencia.upsert(f, "empleado_id,fecha").catch(() => {});
+            }
+          } catch (upsertErr) {
+            console.warn("Error al registrar faltas automáticas:", upsertErr);
+          }
+
+          const newFaltasWithIds = faltasToUpsert.map((f, idx) => ({
+            id: `auto-falta-${Date.now()}-${idx}`,
+            ...f,
+          }));
+          currentAsists = [...currentAsists, ...newFaltasWithIds];
+        }
+      }
+
+      setAsistencias(currentAsists);
     } catch (e) {
       console.error("Error al cargar datos de asistencias:", e);
     } finally {
       setLoading(false);
     }
   }
+
+  // Previsualización interactiva de QR en el modal
+  useEffect(() => {
+    if (!qrModalOpen) return;
+    const servToPreview = selectedQrServiceId === "all" ? servicios[0] : servicios.find((s) => s.id === selectedQrServiceId);
+    if (!servToPreview) {
+      setPreviewQrDataUrl(null);
+      return;
+    }
+    const qrUrl = `${window.location.origin}/registro-asistencia?servicio_id=${encodeURIComponent(servToPreview.id)}&servicio_nombre=${encodeURIComponent(servToPreview.nombre)}`;
+    QRCode.toDataURL(qrUrl, { margin: 1, width: 250, color: { dark: "#0f172a", light: "#ffffff" } })
+      .then((url) => setPreviewQrDataUrl(url))
+      .catch(() => setPreviewQrDataUrl(null));
+  }, [qrModalOpen, selectedQrServiceId, servicios]);
+
+  // Descarga del PDF de tarjetas QR en tamaño carta (4 por hoja)
+  const handleDownloadQrCards = async () => {
+    try {
+      setQrDownloading(true);
+      let targetServices = [];
+      if (selectedQrServiceId === "all") {
+        targetServices = servicios.length > 0 ? servicios : [{ id: "gral", nombre: "Servicio General SERCO" }];
+      } else {
+        const found = servicios.find((s) => s.id === selectedQrServiceId);
+        if (found) {
+          targetServices = [found];
+        }
+      }
+
+      const servicesWithSedes = targetServices.map((s) => ({
+        ...s,
+        sede_nombre: sedeNombre(s.sede_id),
+      }));
+
+      const doc = await generateQRAttendanceCardsSheet(servicesWithSedes, window.location.origin);
+      const filename = selectedQrServiceId === "all"
+        ? `tarjetas_asistencia_qr_todos_${new Date().toISOString().slice(0, 10)}.pdf`
+        : `tarjetas_asistencia_qr_${(targetServices[0]?.nombre || "servicio").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+
+      doc.save(filename);
+      toast({
+        title: "PDF Generado con Éxito",
+        description: "Se ha descargado la hoja carta con 4 tarjetas de asistencia listas para recortar.",
+      });
+      setQrModalOpen(false);
+    } catch (err) {
+      console.error("Error al generar tarjetas QR:", err);
+      toast({
+        title: "Error al generar PDF",
+        description: err.message || "Ocurrió un error inesperado al generar las tarjetas QR.",
+        variant: "destructive",
+      });
+    } finally {
+      setQrDownloading(false);
+    }
+  };
 
   const [yearStr, monthStr] = currentMonth.split("-");
   const year = parseInt(yearStr);
@@ -535,7 +689,24 @@ export default function Asistencias() {
       const dayCells = daysArray.map((day) => {
         const dateStr = `${currentMonth}-${String(day).padStart(2, "0")}`;
         const record = asistenciasMap.get(`${emp.id}_${dateStr}`);
-        const estado = record?.estado || "";
+        let estado = record?.estado || "";
+
+        if (!estado && isToday(day)) {
+          const now = new Date();
+          const totalM = now.getHours() * 60 + now.getMinutes();
+          const morningLim = 7 * 60 + 15;
+          const eveningLim = 19 * 60 + 15;
+          const t = (emp.turno || "").toLowerCase();
+          if (t.includes("matutino") && totalM > morningLim) {
+            estado = "falta";
+          } else if (t.includes("vespertino") && totalM > eveningLim) {
+            estado = "falta";
+          } else if (!t.includes("matutino") && !t.includes("vespertino")) {
+            if (now.getHours() < 13 && totalM > morningLim) estado = "falta";
+            if (now.getHours() >= 13 && totalM > eveningLim) estado = "falta";
+          }
+        }
+
         if (estado === "asistió") countA++;
         else if (estado === "retraso") countR++;
         else if (estado === "falta") countF++;
@@ -619,6 +790,18 @@ export default function Asistencias() {
             className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950 font-medium text-xs sm:text-sm h-9 shadow-sm"
           >
             <Download className="w-4 h-4 mr-1.5 text-emerald-600" /> Exportar Excel
+          </Button>
+
+          {/* Generar QR Button */}
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedQrServiceId("all");
+              setQrModalOpen(true);
+            }}
+            className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 font-medium text-xs sm:text-sm h-9 shadow-sm"
+          >
+            <QrCode className="w-4 h-4 mr-1.5 text-indigo-600" /> Generar QR
           </Button>
 
           <div className="relative w-full sm:w-64">
@@ -804,7 +987,7 @@ export default function Asistencias() {
                         {daysArray.map((day) => {
                           const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                           const asig = asistenciasMap.get(`${emp.id}_${dateStr}`);
-                          const currentVal = asig?.festivo ? "festivo" : (asig?.estado || null);
+                          let currentVal = asig?.festivo ? "festivo" : (asig?.estado || null);
                           const todayFlag = isToday(day);
                           const cellState = getAttendanceCellState(emp, dateStr);
 
@@ -816,6 +999,23 @@ export default function Asistencias() {
                                 )}
                               </TableCell>
                             );
+                          }
+
+                          // Si no tiene registro hoy pero ya venció la hora del turno, mostrar Falta automáticamente
+                          if (!currentVal && todayFlag) {
+                            const now = new Date();
+                            const totalM = now.getHours() * 60 + now.getMinutes();
+                            const morningLim = 7 * 60 + 15;
+                            const eveningLim = 19 * 60 + 15;
+                            const t = (emp.turno || "").toLowerCase();
+                            if (t.includes("matutino") && totalM > morningLim) {
+                              currentVal = "falta";
+                            } else if (t.includes("vespertino") && totalM > eveningLim) {
+                              currentVal = "falta";
+                            } else if (!t.includes("matutino") && !t.includes("vespertino")) {
+                              if (now.getHours() < 13 && totalM > morningLim) currentVal = "falta";
+                              if (now.getHours() >= 13 && totalM > eveningLim) currentVal = "falta";
+                            }
                           }
 
                           const cfg = currentVal ? estadosConfig[currentVal] : null;
@@ -1097,6 +1297,108 @@ export default function Asistencias() {
               className="bg-teal-600 hover:bg-teal-700 text-white"
             >
               {vacacionesSaving ? "Guardando..." : "Programar Vacaciones"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Generador de Códigos QR */}
+      <Dialog open={qrModalOpen} onOpenChange={setQrModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <QrCode className="w-5 h-5 text-indigo-600" />
+              Generar Códigos QR de Asistencia
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Genera una hoja tamaño carta con 4 tarjetas para recortar (2x2), con logotipo de SERCO, nombre del servicio y código QR para registro móvil.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Seleccionar Servicio:</Label>
+              <select
+                value={selectedQrServiceId}
+                onChange={(e) => setSelectedQrServiceId(e.target.value)}
+                className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">-- Todos los servicios de esta sede ({servicios.length}) --</option>
+                {servicios.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre} {s.sede_id ? `(${sedeNombre(s.sede_id)})` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                {selectedQrServiceId === "all"
+                  ? "Se generarán hojas carta con 4 servicios diferentes por página."
+                  : "Se generará 1 hoja carta con 4 tarjetas idénticas del servicio para recortar y colocar en caseta."}
+              </p>
+            </div>
+
+            {/* Vista Previa de la Tarjeta */}
+            <div className="border rounded-xl p-3 bg-slate-50 dark:bg-slate-900/50 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+                <span>Vista Previa de Tarjeta (1/4 Carta):</span>
+                <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-200">
+                  Formato Recortable
+                </Badge>
+              </div>
+
+              <div className="bg-white dark:bg-slate-950 border rounded-lg p-3 shadow-sm max-w-[260px] mx-auto text-center space-y-2">
+                <div className="bg-slate-900 text-white rounded p-2 flex items-center justify-center gap-2">
+                  <img src="/gafete/logo_serco.png" alt="SERCO" className="h-6 w-6 object-contain" onError={(e) => { e.currentTarget.src = "/favicon.png"; }} />
+                  <div className="text-left">
+                    <div className="text-[10px] font-bold leading-tight">SERCO SEGURIDAD</div>
+                    <div className="text-[8px] text-amber-400 font-semibold leading-tight">ASISTENCIA OPERATIVA</div>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 dark:border-slate-800 rounded p-1.5 bg-slate-50 dark:bg-slate-900">
+                  <span className="text-[8px] text-muted-foreground uppercase font-bold block">Puesto / Servicio:</span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase line-clamp-2">
+                    {selectedQrServiceId === "all"
+                      ? servicios[0]?.nombre || "SERVICIOS SERCO"
+                      : servicios.find((s) => s.id === selectedQrServiceId)?.nombre || "SERVICIO SERCO"}
+                  </span>
+                </div>
+
+                <div className="bg-sky-100 text-sky-800 text-[10px] font-bold py-0.5 rounded">
+                  REGISTRO DE ASISTENCIA
+                </div>
+
+                <div className="w-28 h-28 mx-auto bg-white border rounded flex items-center justify-center p-1">
+                  {previewQrDataUrl ? (
+                    <img src={previewQrDataUrl} alt="QR Preview" className="w-full h-full object-contain" />
+                  ) : (
+                    <QrCode className="w-16 h-16 text-slate-300" />
+                  )}
+                </div>
+
+                <div className="text-[8px] text-slate-500 font-medium leading-tight">
+                  Escanea con la cámara de tu celular al iniciar turno
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setQrModalOpen(false)}>
+              Cerrar
+            </Button>
+            <Button
+              onClick={handleDownloadQrCards}
+              disabled={qrDownloading || servicios.length === 0}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs sm:text-sm"
+            >
+              {qrDownloading ? (
+                <>Generando PDF...</>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-1.5" /> Descargar Hoja Carta (4 Tarjetas)
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

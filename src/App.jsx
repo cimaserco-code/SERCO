@@ -31,6 +31,7 @@ import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
+import RegistroAsistenciaQR from '@/pages/RegistroAsistenciaQR';
 import VersionBadge from "@/components/VersionBadge";
 import ClientLayout from '@/components/cliente/ClientLayout';
 import ClientHome from '@/pages/cliente/ClientHome';
@@ -69,6 +70,7 @@ const AuthenticatedApp = () => {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/registro-asistencia" element={<RegistroAsistenciaQR />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             {/* Interfaz de Cliente (Portal de Clientes con 3 módulos: Inicio, Agenda, Atención) */}
             <Route path="/cliente" element={<ClientLayout />}>
