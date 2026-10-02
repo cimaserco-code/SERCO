@@ -304,7 +304,8 @@ export default function Documentos() {
     const isMty = (empSede?.nombre || "").toLowerCase().includes("monterrey");
     setGafeteForm((prev) => ({
       ...prev,
-      sede_tipo: isMty ? "monterrey" : "otras_sedes",
+      // Auto-sugerir la sede del empleado si está definida, pero permitiendo cambiar libremente
+      sede_tipo: emp.sede_id ? (isMty ? "monterrey" : "otras_sedes") : prev.sede_tipo,
       foto_url: emp.foto_url || "",
       vigencia: prev.vigencia || "31/12/2026",
     }));
@@ -953,56 +954,54 @@ export default function Documentos() {
               </Popover>
             </div>
 
-            {/* Sede del Gafete (Exclusivo Administrador para alternar) */}
-            {isSuperOrAdmin ? (
-              <div className="p-2.5 rounded-lg border border-dashed border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-                    Sede de la Plantilla (Exclusivo Administrador)
-                  </Label>
-                  <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-300">
-                    Admin
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={gafeteForm.sede_tipo === "otras_sedes" ? "default" : "outline"}
-                    className={cn(
-                      "h-8 text-xs font-medium",
-                      gafeteForm.sede_tipo === "otras_sedes" && "bg-amber-600 hover:bg-amber-700 text-white"
-                    )}
-                    onClick={() => setGafeteForm({ ...gafeteForm, sede_tipo: "otras_sedes" })}
-                  >
-                    Otras Sedes (Veracruz / Xalapa)
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={gafeteForm.sede_tipo === "monterrey" ? "default" : "outline"}
-                    className={cn(
-                      "h-8 text-xs font-medium",
-                      gafeteForm.sede_tipo === "monterrey" && "bg-amber-600 hover:bg-amber-700 text-white"
-                    )}
-                    onClick={() => setGafeteForm({ ...gafeteForm, sede_tipo: "monterrey" })}
-                  >
-                    Sede Monterrey (NL)
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              selectedGafeteEmpObj && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground px-1 py-0.5">
-                  <span>
-                    Sede: <strong className="text-foreground">{sedes.find((s) => s.id === (selectedGafeteEmpObj.sede_id || defaultSedeId))?.nombre || "Otras Sedes"}</strong>
+            {/* Selección de Plantilla de Sede */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">
+                  Plantilla / Sede del Gafete *
+                </Label>
+                {selectedGafeteEmpObj && (
+                  <span className="text-[11px] text-muted-foreground">
+                    Sede asignada: <strong className="text-foreground">{sedes.find((s) => s.id === (selectedGafeteEmpObj.sede_id || defaultSedeId))?.nombre || "Otras Sedes"}</strong>
                   </span>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {gafeteForm.sede_tipo === "monterrey" ? "Plantilla Monterrey" : "Plantilla Otras Sedes"}
-                  </Badge>
-                </div>
-              )
-            )}
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={gafeteForm.sede_tipo === "otras_sedes" ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-2.5 px-3 flex flex-col items-start text-left gap-0.5 border-2 transition-all",
+                    gafeteForm.sede_tipo === "otras_sedes"
+                      ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-600 shadow-sm"
+                      : "border-border hover:bg-accent"
+                  )}
+                  onClick={() => setGafeteForm({ ...gafeteForm, sede_tipo: "otras_sedes" })}
+                >
+                  <span className="font-bold text-xs">Otras Sedes (Veracruz / Xalapa)</span>
+                  <span className="text-[10px] opacity-85 leading-tight font-normal">
+                    Reverso Xalapa · Sarahí Peña Galaviz · Permiso Veracruz
+                  </span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant={gafeteForm.sede_tipo === "monterrey" ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-2.5 px-3 flex flex-col items-start text-left gap-0.5 border-2 transition-all",
+                    gafeteForm.sede_tipo === "monterrey"
+                      ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-600 shadow-sm"
+                      : "border-border hover:bg-accent"
+                  )}
+                  onClick={() => setGafeteForm({ ...gafeteForm, sede_tipo: "monterrey" })}
+                >
+                  <span className="font-bold text-xs">Sede Monterrey (NL)</span>
+                  <span className="text-[10px] opacity-85 leading-tight font-normal">
+                    Reverso Monterrey · Dr. Coss · C. De Arcangelis
+                  </span>
+                </Button>
+              </div>
+            </div>
 
             {/* Formato / Tamaño de Salida */}
             <div>
