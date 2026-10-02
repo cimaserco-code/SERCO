@@ -134,16 +134,19 @@ export default function RegistroAsistenciaQR() {
           const [asigRes, empRes] = await Promise.all([
             supabase
               .from("asignacion_turnos")
-              .select("id, empleado_nombre, turno, servicio_id")
+              .select("id, empleado_id, empleado_nombre, turno, servicio_id, sede_id")
               .eq("servicio_id", servicioIdParam),
             supabase
               .from("empleados")
-              .select("id, nombre_completo, turno, servicio_ubicacion, sede_id, estado")
+              .select("id, nombre_completo, servicio_ubicacion, sede_id, fecha_baja, fecha_reingreso")
               .or(`servicio_ubicacion.eq.${servData?.nombre || servicioNombreParam}`),
           ]);
 
           const asigs = asigRes.data || [];
-          const emps = empRes.data || [];
+          const emps = (empRes.data || []).filter((e) => {
+            const today = new Date().toISOString().slice(0, 10);
+            return !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja) || e.fecha_baja > today;
+          });
 
           // Unificar nombres únicos
           const map = new Map();
@@ -151,13 +154,13 @@ export default function RegistroAsistenciaQR() {
             const cleanName = (a.empleado_nombre || "").trim();
             if (cleanName && !map.has(cleanName.toLowerCase())) {
               const matchedEmp = emps.find(
-                (e) => (e.nombre_completo || "").trim().toLowerCase() === cleanName.toLowerCase()
+                (e) => (e.nombre_completo || "").trim().toLowerCase() === cleanName.toLowerCase() || e.id === a.empleado_id
               );
               map.set(cleanName.toLowerCase(), {
-                empleado_id: matchedEmp?.id || a.id,
-                nombre_completo: cleanName,
-                turno: a.turno || matchedEmp?.turno || "matutino",
-                sede_id: matchedEmp?.sede_id || servData?.sede_id || null,
+                empleado_id: matchedEmp?.id || a.empleado_id || a.id,
+                nombre_completo: matchedEmp?.nombre_completo || cleanName,
+                turno: a.turno || "matutino",
+                sede_id: matchedEmp?.sede_id || a.sede_id || servData?.sede_id || null,
               });
             }
           });
@@ -168,7 +171,7 @@ export default function RegistroAsistenciaQR() {
               map.set(cleanName.toLowerCase(), {
                 empleado_id: e.id,
                 nombre_completo: cleanName,
-                turno: e.turno || "matutino",
+                turno: "matutino",
                 sede_id: e.sede_id || servData?.sede_id || null,
               });
             }

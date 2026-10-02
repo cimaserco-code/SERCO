@@ -159,13 +159,26 @@ export default function Asistencias() {
         }
       };
 
-      const [emps, asists, seds, servs] = await Promise.all([
+      const [emps, asists, seds, servs, asigs] = await Promise.all([
         sercoApi.entities.Empleado.filter(sedeFilter).catch(() => []),
         sercoApi.entities.Asistencia.filter(filterObj).catch(() => []),
         sercoApi.entities.Sede.list().catch(() => []),
-        sercoApi.entities.Servicio.filter(sedeFilter).catch(() => [])
+        sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
+        sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => [])
       ]);
-      setEmployees(emps || []);
+
+      const turnoByEmp = new Map();
+      (asigs || []).forEach((a) => {
+        if (a.empleado_id) turnoByEmp.set(a.empleado_id, a.turno);
+        if (a.empleado_nombre) turnoByEmp.set(a.empleado_nombre.trim().toLowerCase(), a.turno);
+      });
+
+      const enrichedEmps = (emps || []).map((e) => ({
+        ...e,
+        turno: turnoByEmp.get(e.id) || turnoByEmp.get((e.nombre_completo || "").trim().toLowerCase()) || "matutino",
+      }));
+
+      setEmployees(enrichedEmps);
       setSedes(seds || []);
       setServicios(servs || []);
 

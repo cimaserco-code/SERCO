@@ -20,17 +20,20 @@ AS $$
   SELECT DISTINCT
     e.id AS empleado_id,
     e.nombre_completo,
-    COALESCE(at.turno, e.turno, 'matutino') AS turno,
+    COALESCE(at.turno, 'matutino') AS turno,
     e.puesto,
     e.sede_id
   FROM public.empleados e
   LEFT JOIN public.asignacion_turnos at 
-    ON LOWER(TRIM(at.empleado_nombre)) = LOWER(TRIM(e.nombre_completo)) 
+    ON (at.empleado_id = e.id OR LOWER(TRIM(at.empleado_nombre)) = LOWER(TRIM(e.nombre_completo)))
    AND at.servicio_id = p_servicio_id
   WHERE (at.servicio_id = p_servicio_id 
      OR e.servicio_ubicacion = (SELECT nombre FROM public.servicios WHERE id = p_servicio_id))
-    AND (e.estado IS NULL OR e.estado = 'activo' OR e.estado = 'Activo')
-    AND (e.fecha_baja IS NULL OR e.fecha_baja > CURRENT_DATE)
+    AND (
+      e.fecha_baja IS NULL 
+      OR (e.fecha_reingreso IS NOT NULL AND e.fecha_reingreso >= e.fecha_baja) 
+      OR e.fecha_baja > CURRENT_DATE
+    )
   ORDER BY e.nombre_completo;
 $$;
 
