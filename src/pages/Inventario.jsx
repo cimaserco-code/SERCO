@@ -95,6 +95,7 @@ export default function Inventario() {
   const [solicitudesTab, setSolicitudesTab] = useState("pedidos");
   const [solicitudSearch, setSolicitudSearch] = useState("");
   const [selectedSolicitud, setSelectedSolicitud] = useState(null);
+  const [purchasePriceEdits, setPurchasePriceEdits] = useState(/** @type {Record<string, string | number>} */ ({}));
 
   // New Solicitar Modal States
   const [solicitarModalOpen, setSolicitarModalOpen] = useState(false);
@@ -125,6 +126,9 @@ export default function Inventario() {
       "super administrador",
       "superadmin",
       "finanzas",
+      "dueño",
+      "dueno",
+      "owner",
       "ceo",
       "director general",
       "director_general",
@@ -132,7 +136,23 @@ export default function Inventario() {
     ].includes(userRole)
   );
 
-  const canEditPrecio = canViewMonto;
+  const canEditPurchasePrice = userRole === "finanzas";
+  const canApproveCompra = Boolean(
+    isAdmin ||
+    [
+      "admin",
+      "administrador",
+      "super administrador",
+      "superadmin",
+      "dueño",
+      "dueno",
+      "owner",
+      "ceo",
+      "director general",
+      "director_general",
+      "director"
+    ].includes(userRole)
+  );
 
   const canViewAllSolicitudes = Boolean(
     isAdmin ||
@@ -140,6 +160,9 @@ export default function Inventario() {
       "admin",
       "administrador",
       "super administrador",
+      "dueño",
+      "dueno",
+      "owner",
       "finanzas",
       "ceo",
       "director general",
@@ -450,7 +473,7 @@ export default function Inventario() {
     if (sol.comentarios && sol.comentarios.includes("__META_ARTICULOS__:")) {
       try {
         const parts = sol.comentarios.split("__META_ARTICULOS__:");
-        const parsed = JSON.parse(parts[1].trim());
+        const parsed = JSON.parse(parts[1].replace(/\s*__TIPO_COMPRA__.*/, "").trim());
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch {
         // ignore
@@ -474,6 +497,48 @@ export default function Inventario() {
       return comentarios.split("__META_ARTICULOS__:")[0].trim();
     }
     return comentarios;
+  };
+
+  /** @param {Array<Record<string, any>> | null | undefined} articulos */
+  const getCompraTotal = (articulos) => {
+    if (!articulos?.length) return null;
+    let total = 0;
+    for (const articulo of articulos) {
+      const precio = articulo?.precio_unitario;
+      if (precio === null || precio === undefined || precio === "" || !Number.isFinite(Number(precio))) {
+        return null;
+      }
+      total += (Number(articulo.cantidad) || 0) * Number(precio);
+    }
+    return total;
+  };
+
+  /** @param {Record<string, any> | null | undefined} sol */
+  const getSolicitudCompraTotal = (sol) => {
+    const calculatedTotal = getCompraTotal(getSolicitudArticulos(sol));
+    if (calculatedTotal != null) return calculatedTotal;
+    const historicalTotal = Number(sol?.costo);
+    return historicalTotal > 0 ? historicalTotal : null;
+  };
+
+  /** @param {Record<string, any> | null | undefined} sol */
+  const solicitudEsPropia = (sol) => {
+    if (!sol) return false;
+    const myId = user?.id;
+    const myEmail = (user?.email || "").toLowerCase();
+    const myName = (user?.full_name || user?.nombre || "").toLowerCase();
+    return Boolean(
+      (myId && sol.solicitante_id === myId) ||
+      (myEmail && (sol.solicitante_email || "").toLowerCase() === myEmail) ||
+      (myName && (sol.solicitante_nombre || "").toLowerCase() === myName)
+    );
+  };
+
+  /** @param {string} comentarios @param {Array<Record<string, any>>} articulos @param {boolean} isCompra */
+  const getComentariosConArticulos = (comentarios, articulos, isCompra) => {
+    const cleanComentarios = getCleanComentarios(comentarios);
+    const metaTag = `__META_ARTICULOS__:${JSON.stringify(articulos)}${isCompra ? " __TIPO_COMPRA__" : ""}`;
+    return [cleanComentarios, metaTag].filter(Boolean).join("\n\n");
   };
 
   const isCompraSolicitud = (sol) => {
@@ -711,10 +776,10 @@ export default function Inventario() {
     setInputTalla("");
     setInputCantidad("1");
 
-    // Auto-fill registered unit price if in Compra mode
+    // Only expose the registered inventory price to financial roles.
     if (isCompra) {
-      const p = art.precio_unitario ?? art.precio_por_unidad ?? 0;
-      setInputPrecioUnitario(String(p));
+      const p = art.precio_unitario ?? art.precio_por_unidad;
+      setInputPrecioUnitario(canViewMonto && p != null ? String(p) : "");
     }
   };
 
@@ -793,7 +858,7 @@ export default function Inventario() {
       // ── MODO COMPRA: Puede ser existente (sin stock o reabastecimiento) o nuevo no registrado
       let nombreItem = "";
       let itemId = null;
-      let precioUnit = Number(inputPrecioUnitario) || 0;
+      let precioUnit = null;
 
       if (compraModoNuevo) {
         if (!inputNombreNuevo.trim()) {
@@ -803,6 +868,13 @@ export default function Inventario() {
         nombreItem = inputNombreNuevo.trim();
         if (inputColor || inputTalla) {
           nombreItem += ` ${[inputColor, inputTalla && `Talla ${inputTalla}`].filter(Boolean).join(" - ")}`;
+        }
+        if (inputPrecioUnitario.trim() !== "") {
+          precioUnit = Number(inputPrecioUnitario);
+          if (!Number.isFinite(precioUnit) || precioUnit < 0) {
+            setSolicitudError("Ingresa un precio unitario válido o déjalo pendiente de cotizar.");
+            return;
+          }
         }
       } else {
         if (!articuloSeleccionado) {
@@ -815,8 +887,15 @@ export default function Inventario() {
           ? `${articuloSeleccionado.nombre} - ${inputColor || ""} (Talla ${inputTalla || ""})`.trim()
           : articuloSeleccionado.nombre;
 
-        if (!precioUnit) {
-          precioUnit = Number(articuloSeleccionado.precio_unitario || articuloSeleccionado.precio_por_unidad || 0);
+        const precioInventario = articuloSeleccionado.precio_unitario ?? articuloSeleccionado.precio_por_unidad;
+        if (canViewMonto && inputPrecioUnitario.trim() !== "") {
+          precioUnit = Number(inputPrecioUnitario);
+          if (!Number.isFinite(precioUnit) || precioUnit < 0) {
+            setSolicitudError("Ingresa un precio unitario válido o déjalo pendiente de cotizar.");
+            return;
+          }
+        } else if (precioInventario != null && precioInventario !== "") {
+          precioUnit = Number(precioInventario);
         }
       }
 
@@ -832,7 +911,7 @@ export default function Inventario() {
           talla: inputTalla || null,
           cantidad: qty,
           precio_unitario: precioUnit,
-          subtotal: qty * precioUnit,
+          subtotal: precioUnit == null ? null : qty * precioUnit,
         },
       ]);
       resetSubFormArticulo();
@@ -862,9 +941,7 @@ export default function Inventario() {
       const servicioNombre = servicioObj ? servicioObj.nombre : (solicitudServicioId === "oficina" ? "Oficina / General" : "Sin asignar");
 
       const totalCantidad = articulosList.reduce((sum, a) => sum + (Number(a.cantidad) || 0), 0);
-      const totalCosto = isCompra
-        ? articulosList.reduce((sum, a) => sum + (Number(a.subtotal) || 0), 0)
-        : null;
+      const totalCosto = isCompra ? getCompraTotal(articulosList) : null;
 
       const resumenArticulos = articulosList
         .map((a) => `${a.nombre} (x${a.cantidad})`)
@@ -874,8 +951,7 @@ export default function Inventario() {
       const tipo = isCompra ? "compra" : "pedido";
 
       // Meta tag for fallback if columns do not exist yet in DB
-      const metaTag = `\n\n__META_ARTICULOS__:${JSON.stringify(articulosList)}${isCompra ? " __TIPO_COMPRA__" : ""}`;
-      const finalComentarios = (solicitudComentarios.trim() + metaTag).trim();
+      const finalComentarios = getComentariosConArticulos(solicitudComentarios.trim(), articulosList, isCompra);
 
       const payload = {
         tipo,
@@ -923,6 +999,18 @@ export default function Inventario() {
   // ── Actions on Solicitudes ──
   // Compras: Aprobar / Rechazar
   const handleUpdateCompraEstado = async (id, nuevoEstado) => {
+    const solicitud = selectedSolicitud?.id === id
+      ? selectedSolicitud
+      : solicitudes.find((sol) => sol.id === id);
+    if (!canApproveCompra || solicitud?.estado !== "pendiente") return;
+    if (nuevoEstado === "aprobado" && getSolicitudCompraTotal(solicitud) == null) {
+      toast({
+        title: "Cotización pendiente",
+        description: "No se puede aprobar la compra hasta que todos los artículos tengan precio.",
+        variant: "destructive"
+      });
+      return;
+    }
     try {
       await sercoApi.entities.SolicitudInventario.update(id, { estado: nuevoEstado });
       if (selectedSolicitud?.id === id) {
@@ -939,6 +1027,71 @@ export default function Inventario() {
         description: e?.message,
         variant: "destructive"
       });
+    }
+  };
+
+  /** @param {Record<string, any>} sol */
+  const handleSavePurchasePrices = async (sol) => {
+    if (sol.estado !== "pendiente") return;
+    const articulos = getSolicitudArticulos(sol);
+    const puedeEditarPropia = Boolean(
+      solicitudEsPropia(sol) &&
+      sol.estado === "pendiente" &&
+      articulos.some((art) => !art.inventario_item_id)
+    );
+    if (!canEditPurchasePrice && !puedeEditarPropia) return;
+
+    let articulosActualizados;
+    try {
+      articulosActualizados = articulos.map((art, index) => {
+        const puedeEditarArticulo = canEditPurchasePrice || (!art.inventario_item_id && puedeEditarPropia);
+        if (!puedeEditarArticulo) return art;
+        const editKey = `${sol.id}-${index}`;
+        const rawPrice = Object.prototype.hasOwnProperty.call(purchasePriceEdits, editKey)
+          ? purchasePriceEdits[editKey]
+          : (art.precio_unitario ?? "");
+        const precio = rawPrice === "" ? null : Number(rawPrice);
+        if (precio !== null && (!Number.isFinite(precio) || precio < 0)) {
+          throw new Error("Ingresa un precio válido o deja el campo pendiente de cotizar.");
+        }
+        return {
+          ...art,
+          precio_unitario: precio,
+          subtotal: precio == null ? null : (Number(art.cantidad) || 0) * precio
+        };
+      });
+    } catch (error) {
+      toast({ title: "Precio no válido", description: error.message, variant: "destructive" });
+      return;
+    }
+    const costo = getCompraTotal(articulosActualizados);
+    const comentarios = getComentariosConArticulos(sol.comentarios, articulosActualizados, true);
+    const payload = { articulos: articulosActualizados, costo, comentarios };
+
+    setSaving(true);
+    try {
+      try {
+        await sercoApi.entities.SolicitudInventario.update(sol.id, payload);
+      } catch (err) {
+        if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+          const { articulos: _articulos, ...fallbackPayload } = payload;
+          await sercoApi.entities.SolicitudInventario.update(sol.id, fallbackPayload);
+        } else {
+          throw err;
+        }
+      }
+      const updatedSolicitud = { ...sol, ...payload };
+      setSelectedSolicitud(updatedSolicitud);
+      await load();
+      toast({ title: "Cotización actualizada" });
+    } catch (error) {
+      toast({
+        title: "Error al guardar la cotización",
+        description: error?.message || "No se pudo actualizar la solicitud.",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1021,6 +1174,21 @@ export default function Inventario() {
   const pendingPedidosCount = pedidosList.filter((s) => s.estado === "pendiente").length;
   const pendingComprasCount = comprasList.filter((s) => s.estado === "pendiente").length;
   const totalPendingSolicitudes = pendingPedidosCount + pendingComprasCount;
+  const canEditOwnPurchasePrice = Boolean(
+    selectedSolicitud &&
+    isCompraSolicitud(selectedSolicitud) &&
+    selectedSolicitud.estado === "pendiente" &&
+    solicitudEsPropia(selectedSolicitud) &&
+    getSolicitudArticulos(selectedSolicitud).some((art) => !art.inventario_item_id)
+  );
+
+  /** @param {Record<string, any>} sol */
+  const openSolicitudDetalle = (sol) => {
+    setPurchasePriceEdits(Object.fromEntries(
+      getSolicitudArticulos(sol).map((art, index) => [`${sol.id}-${index}`, art.precio_unitario ?? ""])
+    ));
+    setSelectedSolicitud(sol);
+  };
 
   return (
     <div className="space-y-4">
@@ -1653,12 +1821,14 @@ export default function Inventario() {
                     comprasList.map((sol) => {
                       const arts = getSolicitudArticulos(sol);
                       const isPendiente = sol.estado === "pendiente";
+                      const costoCompra = getSolicitudCompraTotal(sol);
+                      const requiereCotizacion = costoCompra == null;
 
                       return (
                         <TableRow
                           key={sol.id}
                           className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => setSelectedSolicitud(sol)}
+                          onClick={() => openSolicitudDetalle(sol)}
                         >
                           <TableCell className="font-medium">
                             <div className="flex flex-col">
@@ -1670,10 +1840,10 @@ export default function Inventario() {
                           </TableCell>
                           {canViewMonto && (
                             <TableCell className="text-right font-semibold text-foreground">
-                              {sol.costo != null && Number(sol.costo) > 0 ? (
-                                `$${Number(sol.costo).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              {!requiereCotizacion ? (
+                                `$${costoCompra.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               ) : (
-                                <span className="text-muted-foreground font-normal">Por cotizar</span>
+                                <span className="text-muted-foreground font-normal">Pendiente de cotizar</span>
                               )}
                             </TableCell>
                           )}
@@ -1707,7 +1877,7 @@ export default function Inventario() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                            {isPendiente && canViewAllSolicitudes && (
+                            {isPendiente && canApproveCompra && (
                               <div className="flex justify-end gap-1.5">
                                 <Button
                                   size="icon"
@@ -1715,6 +1885,7 @@ export default function Inventario() {
                                   className="h-7 w-7 border-emerald-300 hover:bg-emerald-50 text-emerald-600"
                                   onClick={() => handleUpdateCompraEstado(sol.id, "aprobado")}
                                   title="Aprobar Compra"
+                                  disabled={requiereCotizacion}
                                 >
                                   <Check className="h-4 w-4" />
                                 </Button>
@@ -1777,6 +1948,30 @@ export default function Inventario() {
             </DialogHeader>
 
             <div className="space-y-4 py-2 text-sm">
+              {(() => {
+                const selectedArticles = getSolicitudArticulos(selectedSolicitud);
+                const hasQuoteEdits = selectedArticles.some((art, index) => {
+                  const editKey = `${selectedSolicitud.id}-${index}`;
+                  const currentPrice = Object.prototype.hasOwnProperty.call(purchasePriceEdits, editKey)
+                    ? purchasePriceEdits[editKey]
+                    : (art.precio_unitario ?? "");
+                  return currentPrice !== (art.precio_unitario ?? "");
+                });
+                const editedArticles = selectedArticles.map((art, index) => {
+                  const editKey = `${selectedSolicitud.id}-${index}`;
+                  const rawPrice = Object.prototype.hasOwnProperty.call(purchasePriceEdits, editKey)
+                    ? purchasePriceEdits[editKey]
+                    : (art.precio_unitario ?? "");
+                  return { ...art, precio_unitario: rawPrice === "" ? null : rawPrice };
+                });
+                const quoteTotal = hasQuoteEdits
+                  ? getCompraTotal(editedArticles)
+                  : getSolicitudCompraTotal(selectedSolicitud);
+                const ownOnlyNewItems = selectedArticles.length > 0 && selectedArticles.every((art) => !art.inventario_item_id);
+                const canShowRequestPrices = canViewMonto || canEditOwnPurchasePrice;
+                const isPendingPurchase = isCompraSolicitud(selectedSolicitud) && selectedSolicitud.estado === "pendiente";
+                return (
+                  <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/30 p-3 rounded-lg border text-xs">
                 <div>
                   <span className="text-muted-foreground block">Solicitante:</span>
@@ -1809,7 +2004,7 @@ export default function Inventario() {
                       <TableRow className="bg-muted/40 text-xs">
                         <TableHead>Artículo</TableHead>
                         <TableHead className="text-right">Cantidad</TableHead>
-                        {isCompraSolicitud(selectedSolicitud) && canViewMonto && (
+                        {isCompraSolicitud(selectedSolicitud) && canShowRequestPrices && (
                           <>
                             <TableHead className="text-right">Precio Unitario</TableHead>
                             <TableHead className="text-right">Subtotal</TableHead>
@@ -1818,7 +2013,19 @@ export default function Inventario() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {getSolicitudArticulos(selectedSolicitud).map((art, idx) => (
+                      {selectedArticles.map((art, idx) => {
+                        const editKey = `${selectedSolicitud.id}-${idx}`;
+                        const canEditLinePrice = isPendingPurchase && (
+                          canEditPurchasePrice || (canEditOwnPurchasePrice && !art.inventario_item_id)
+                        );
+                        const rawEditedPrice = Object.prototype.hasOwnProperty.call(purchasePriceEdits, editKey)
+                          ? purchasePriceEdits[editKey]
+                          : (art.precio_unitario ?? "");
+                        const editedPrice = rawEditedPrice === "" ? null : Number(rawEditedPrice);
+                        const lineSubtotal = editedPrice == null || !Number.isFinite(editedPrice)
+                          ? null
+                          : editedPrice * (Number(art.cantidad) || 0);
+                        return (
                         <TableRow key={idx}>
                           <TableCell className="font-medium text-xs">
                             {art.nombre}
@@ -1826,30 +2033,64 @@ export default function Inventario() {
                           <TableCell className="text-right font-semibold text-xs">
                             {art.cantidad}
                           </TableCell>
-                          {isCompraSolicitud(selectedSolicitud) && canViewMonto && (
+                          {isCompraSolicitud(selectedSolicitud) && canShowRequestPrices && (
                             <>
                               <TableCell className="text-right text-xs">
-                                {art.precio_unitario != null && Number(art.precio_unitario) > 0
-                                  ? `$${Number(art.precio_unitario).toFixed(2)}`
-                                  : "—"}
+                                {canEditLinePrice ? (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="Pendiente de cotizar"
+                                    value={rawEditedPrice}
+                                    onChange={(event) => setPurchasePriceEdits((prev) => ({ ...prev, [editKey]: event.target.value }))}
+                                    aria-label={`Precio unitario de ${art.nombre}`}
+                                    className="h-8 min-w-36 text-right"
+                                  />
+                                ) : canViewMonto ? (
+                                  art.precio_unitario != null && art.precio_unitario !== ""
+                                    ? `$${Number(art.precio_unitario).toFixed(2)}`
+                                    : <span className="text-amber-700">Pendiente de cotizar</span>
+                                ) : (
+                                  <span className="text-muted-foreground">No visible</span>
+                                )}
                               </TableCell>
                               <TableCell className="text-right font-semibold text-xs">
-                                {art.subtotal != null && Number(art.subtotal) > 0
-                                  ? `$${Number(art.subtotal).toFixed(2)}`
-                                  : "—"}
+                                {canViewMonto || !art.inventario_item_id
+                                  ? lineSubtotal != null && Number.isFinite(lineSubtotal)
+                                    ? `$${lineSubtotal.toFixed(2)}`
+                                    : <span className="text-amber-700 font-normal">Pendiente</span>
+                                  : <span className="text-muted-foreground font-normal">No visible</span>}
                               </TableCell>
                             </>
                           )}
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
               </div>
 
-              {isCompraSolicitud(selectedSolicitud) && canViewMonto && selectedSolicitud.costo != null && Number(selectedSolicitud.costo) > 0 && (
+              {isCompraSolicitud(selectedSolicitud) && (canViewMonto || (canEditOwnPurchasePrice && ownOnlyNewItems)) && (
                 <div className="flex justify-end pr-2 text-sm font-bold text-foreground">
-                  Total Estimado de Compra: ${Number(selectedSolicitud.costo).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN
+                  {quoteTotal == null
+                    ? <span className="text-amber-700">Total pendiente de cotización</span>
+                    : `Total estimado de compra: $${quoteTotal.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`}
+                </div>
+              )}
+              {canViewMonto && canEditPurchasePrice && isPendingPurchase && (
+                <div className="flex justify-end">
+                  <Button onClick={() => handleSavePurchasePrices(selectedSolicitud)} disabled={saving}>
+                    Guardar cotización
+                  </Button>
+                </div>
+              )}
+              {!canViewMonto && canEditOwnPurchasePrice && isPendingPurchase && (
+                <div className="flex justify-end">
+                  <Button onClick={() => handleSavePurchasePrices(selectedSolicitud)} disabled={saving}>
+                    Guardar precio
+                  </Button>
                 </div>
               )}
 
@@ -1862,6 +2103,9 @@ export default function Inventario() {
                   </p>
                 </div>
               )}
+                  </>
+                );
+              })()}
             </div>
 
             <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-center gap-2 pt-2 border-t">
@@ -1877,13 +2121,14 @@ export default function Inventario() {
                   </Button>
                 )}
 
-                {isCompraSolicitud(selectedSolicitud) && selectedSolicitud.estado === "pendiente" && canViewAllSolicitudes && (
+                {isCompraSolicitud(selectedSolicitud) && selectedSolicitud.estado === "pendiente" && canApproveCompra && (
                   <div className="flex gap-2">
                     <Button
                       variant="default"
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
                       onClick={() => handleUpdateCompraEstado(selectedSolicitud.id, "aprobado")}
-                      disabled={saving}
+                      disabled={saving || getSolicitudCompraTotal(selectedSolicitud) == null}
+                      title={getSolicitudCompraTotal(selectedSolicitud) == null ? "Pendiente de cotización" : "Aprobar compra"}
                     >
                       <Check className="w-4 h-4" /> Aprobar Compra
                     </Button>
@@ -2156,7 +2401,7 @@ export default function Inventario() {
               })()}
 
               {/* Cantidad y Precio (en compras, solo visible para finanzas, admin y ceo) */}
-              <div className={`grid ${isCompra && canViewMonto ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-3 pt-1`}>
+              <div className={`grid ${isCompra && (canViewMonto || compraModoNuevo) ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-3 pt-1`}>
                 <div>
                   <Label className="text-xs">Cantidad *</Label>
                   <Input
@@ -2167,22 +2412,22 @@ export default function Inventario() {
                   />
                 </div>
 
-                {/* En Compra: Mostrar / editar precio por unidad (solo finanzas, admin y ceo) */}
-                {isCompra && canViewMonto && (
+                {/* Las compras nuevas aceptan un precio opcional sin exponer precios de inventario. */}
+                {isCompra && (canViewMonto || compraModoNuevo) && (
                   <div>
                     <Label className="text-xs">Precio unitario estimado ($)</Label>
                     <Input
                       type="number"
                       step="0.01"
                       min="0"
-                      placeholder="0.00"
+                      placeholder="Pendiente de cotizar"
                       value={inputPrecioUnitario}
                       onChange={(e) => setInputPrecioUnitario(e.target.value)}
                     />
                   </div>
                 )}
 
-                <div className={`flex items-end ${isCompra && canViewMonto ? "col-span-2 sm:col-span-1" : "col-span-1"}`}>
+                <div className={`flex items-end ${isCompra && (canViewMonto || compraModoNuevo) ? "col-span-2 sm:col-span-1" : "col-span-1"}`}>
                   <Button
                     type="button"
                     variant="secondary"
@@ -2207,12 +2452,17 @@ export default function Inventario() {
                 </div>
               ) : (
                 <div className="border rounded-lg bg-card overflow-hidden">
+                  {(() => {
+                    const mostrarPreciosSolicitud = isCompra && (
+                      canViewMonto || articulosList.some((art) => !art.inventario_item_id)
+                    );
+                    return (
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40 text-xs">
                         <TableHead>Artículo</TableHead>
                         <TableHead className="text-right">Cantidad</TableHead>
-                        {isCompra && canViewMonto && (
+                        {mostrarPreciosSolicitud && (
                           <>
                             <TableHead className="text-right">Precio c/u</TableHead>
                             <TableHead className="text-right">Subtotal</TableHead>
@@ -2230,13 +2480,21 @@ export default function Inventario() {
                           <TableCell className="text-right font-semibold text-xs">
                             {art.cantidad}
                           </TableCell>
-                          {isCompra && canViewMonto && (
+                          {mostrarPreciosSolicitud && (
                             <>
                               <TableCell className="text-right text-xs">
-                                ${Number(art.precio_unitario || 0).toFixed(2)}
+                                {canViewMonto || !art.inventario_item_id
+                                  ? art.precio_unitario != null
+                                    ? `$${Number(art.precio_unitario).toFixed(2)}`
+                                    : <span className="text-amber-700">Pendiente de cotizar</span>
+                                  : <span className="text-muted-foreground">No visible</span>}
                               </TableCell>
                               <TableCell className="text-right font-bold text-xs text-emerald-700">
-                                ${Number(art.subtotal || 0).toFixed(2)}
+                                {canViewMonto || !art.inventario_item_id
+                                  ? art.subtotal != null
+                                    ? `$${Number(art.subtotal).toFixed(2)}`
+                                    : <span className="text-amber-700 font-normal">Pendiente</span>
+                                  : <span className="text-muted-foreground font-normal">No visible</span>}
                               </TableCell>
                             </>
                           )}
@@ -2255,12 +2513,16 @@ export default function Inventario() {
                       ))}
                     </TableBody>
                   </Table>
+                    );
+                  })()}
                 </div>
               )}
 
-              {isCompra && canViewMonto && articulosList.length > 0 && (
+              {isCompra && articulosList.length > 0 && (canViewMonto || articulosList.every((art) => !art.inventario_item_id)) && (
                 <div className="flex justify-end p-2 text-sm font-bold text-foreground">
-                  Total Estimado de Compra: ${articulosList.reduce((sum, a) => sum + (Number(a.subtotal) || 0), 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN
+                  {getCompraTotal(articulosList) == null
+                    ? <span className="text-amber-700">Total pendiente de cotización</span>
+                    : `Total estimado de compra: $${getCompraTotal(articulosList).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`}
                 </div>
               )}
             </div>
