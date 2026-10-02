@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { formatPersonName, formatNombreNatural } from "@/lib/userNameFormatting";
+import { formatNombreNatural } from "@/lib/userNameFormatting";
 
 export function numeroALetras(num) {
   if (num === 0) return "CERO PESOS";
@@ -126,7 +126,15 @@ export function loadLogoImage(src = "/favicon.png") {
   });
 }
 
-export async function generateContractPDF(emp, params, sedes, options = {}) {
+const mesesNombres = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+];
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 1. CONTRATO SEDE MONTERREY (TIEMPO DETERMINADO - SEMANAL)
+// ═════════════════════════════════════════════════════════════════════════════
+export async function generateContractMonterreyPDF(emp, params, sedes, options = {}) {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -142,7 +150,6 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
   let y = 25;
 
   const addPageDecorations = (pageNum, totalPages) => {
-    // Watermark Logo de la empresa en el fondo
     if (logoImg) {
       try {
         doc.saveGraphicsState();
@@ -161,7 +168,7 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     doc.text(`Página ${pageNum} de ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: "center" });
-    doc.text("CONTRATO INDIVIDUAL DE TRABAJO - CIMA-SERCO", margin, 12);
+    doc.text("CONTRATO INDIVIDUAL DE TRABAJO - CIMA-SERCO (SEDE MONTERREY)", margin, 12);
     doc.setDrawColor(200, 200, 200);
     doc.line(margin, 14, pageWidth - margin, 14);
   };
@@ -205,7 +212,10 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     
-    const patronNameLines = doc.splitTextToSize("JUAN CARLOS CANALIZO HERNÁNDEZ\nAPODERADO LEGAL DE “CIMA-SERCO SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V.”", contentWidth / 2 - 10);
+    const patronNameLines = doc.splitTextToSize(
+      "JUAN CARLOS CANALIZO HERNÁNDEZ\nAPODERADO LEGAL DE “CIMA-SERCO SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V.”",
+      contentWidth / 2 - 10
+    );
     let tempY = y;
     patronNameLines.forEach(line => {
       doc.text(line, margin, tempY);
@@ -236,11 +246,10 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
   const rfc = emp.rfc || "______";
   const curp = emp.curp || "______";
   
-  const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
   const fechaCapacitacionParts = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(emp.fecha_ingreso || "");
   const monthIndex = fechaCapacitacionParts ? Number(fechaCapacitacionParts[2]) - 1 : -1;
-  const fechaContrato = fechaCapacitacionParts && meses[monthIndex]
-    ? `${Number(fechaCapacitacionParts[3])} de ${meses[monthIndex]} del año ${fechaCapacitacionParts[1]}`
+  const fechaContrato = fechaCapacitacionParts && mesesNombres[monthIndex]
+    ? `${Number(fechaCapacitacionParts[3])} de ${mesesNombres[monthIndex]} del año ${fechaCapacitacionParts[1]}`
     : "___ de ______ del año ______";
 
   const duracionTexto = params.duracion_meses === "3" ? "3 (tres meses)" : `${params.duracion_meses} meses`;
@@ -307,8 +316,8 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
     `VIGÉSIMA. - EXÁMENES TOXICOLÓGICOS. “El Trabajador” acepta someterse a exámenes toxicológicos o de detección de consumo de alcohol o sustancias prohibidas, los cuales podrán aplicarse al ingreso, de manera periódica, aleatoria o cuando existan indicios razonables, con la finalidad de garantizar la adecuada prestación de los servicios de seguridad.`,
     `Dichos exámenes podrán realizarse durante la jornada laboral o en las instalaciones que determine “El Patrón”, conforme a las políticas internas de la empresa.`,
     `El incumplimiento injustificado a someterse a dichas pruebas o el resultado positivo podrá dar lugar a la aplicación de las medidas correspondientes conforme a la Ley Federal del Trabajo y al reglamento interno de trabajo.`,
-    `VIGÉSIMA. PRIMERA. - BENEFICIARIO. - “El Trabajador” autoriza a la empresa, con base en el artículo 501 de la Ley Federal del Trabajo, designar como beneficiario/a, para otorgar sus salarios y prestaciones devengadas y no cobradas, en caso de muerte y/o desaparición por un acto delincuencial, al/a la C. ${params.beneficiario.toUpperCase()}, con parentesco ${params.parentesco} y ${params.porcentaje}% de dicha percepción.`,
-    `VIGÉSIMA. SEGUNDA- CONTACTO DE EMERGENCIA “El Trabajador” designa como contacto de emergencia a la ${emp.contacto_emergencia || '______'}, quien es su ${emp.parentesco || '______'} y cuenta con número de teléfono: ${emp.telefono_emergencia || '______'}, a quien “El Patrón”, podrá notificar en caso de accidente, enfermedad o cualquier situación que comprometa la salud o integridad de “El Trabajador” durante el desempeño de sus funciones.`,
+    `VIGÉSIMA. PRIMERA. - BENEFICIARIO. - “El Trabajador” autoriza a la empresa, con base en el artículo 501 de la Ley Federal del Trabajo, designar como beneficiario/a, para otorgar sus salarios y prestaciones devengadas y no cobradas, en caso de muerte y/o desaparición por un acto delincuencial, al/a la C. ${(params.beneficiario || emp.beneficiario || "_____________________________________").toUpperCase()}, con parentesco ${params.parentesco || emp.parentesco_beneficiario || emp.parentesco || "__________"} y ${params.porcentaje || "100"}% de dicha percepción.`,
+    `VIGÉSIMA. SEGUNDA- CONTACTO DE EMERGENCIA “El Trabajador” designa como contacto de emergencia a la ${emp.contacto_emergencia || '______'}, quien es su ${emp.parentesco_emergencia || emp.parentesco || '______'} y cuenta con número de teléfono: ${emp.telefono_emergencia || '______'}, a quien “El Patrón”, podrá notificar en caso de accidente, enfermedad o cualquier situación que comprometa la salud o integridad de “El Trabajador” durante el desempeño de sus funciones.`,
     `VIGÉSIMA. TERCERA. - INASISTENCIAS. Cuando “El Trabajador” por cualquier circunstancia se vea obligado a faltar a sus labores, deberá avisar a “El Patrón”, por conducto de sus representantes, con mínimo 12 horas de anticipación a la entrada de su turno. El aviso no justifica la falta, pues en todo caso “El Trabajador” al regresar a sus labores deberá justificar su ausencia con el comprobante respectivo, que en caso de enfermedad será únicamente el certificado de incapacidad. Cuando “El Trabajador” solicite permiso para faltar a sus labores, deberá recabar en todo caso constancia escrita de “El Patrón”; sin dicho requisito, su inasistencia se considerará como falta injustificada.`,
     `VIGÉSIMA CUARTA. - AVISO. Se establece y reconoce “El Trabajador” que, si desea dejar de laborar para “El Patrón”, tendrá la obligación de avisar con 10 días naturales de anticipación, así como de hacer entrega a la administración de toda y cada una de la documentación, indumentaria o materiales que tenga en su poder.`,
     `VIGÉSIMA QUINTA. - AUTORIZACIÓN. “El Trabajador” autoriza a “El Patrón” a ser grabado mediante cámaras de seguridad durante la jornada laboral, a fin de salvaguardar la seguridad del trabajador en caso de un accidente y/o acción suscitada en las instalaciones de la empresa, o donde se encuentre prestando sus servicios.`,
@@ -321,10 +330,6 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
     `El incumplimiento de estas obligaciones podrá dar lugar a las responsabilidades que correspondan conforme a la legislación laboral aplicable y a las disposiciones internas de la empresa.`,
     `VIGÉSIMA OCTAVA. - ENCABEZADOS Y JURISDICCIÓN. Los encabezados de las cláusulas del presente contrato se han colocado para conveniencia de “Las Partes”, con el exclusivo objeto de facilitar su lectura y localización; por tanto, no necesariamente definen ni limitan el contenido de estas. Para la interpretación de cada cláusula deberá entenderse exclusivamente a su contenido, y de ninguna manera a su título, por lo que no afectará la interpretación y la validez de este instrumento, ni los términos, condiciones, derechos u obligaciones en el presente contrato. Así mismo se someten a la jurisdicción de los Juzgados Laborales de la ciudad de Monterrey Nuevo León, renunciando a cualquier otro fuero que pudiera corresponderles por domicilio futuro. Ambas partes convienen en que lo no previsto en el presente contrato se sujetará a las disposiciones de la Ley Federal del Trabajo en vigor.`,
     `Leído que fue por ambas partes el presente contrato individual de trabajo, enterados de su contenido, alcance, fuerza y valor legal, sabedores y conscientes de las obligaciones que contraen, lo ratifican y firman de conformidad en la ciudad de Monterrey, Nuevo León, el día ${fechaContrato}.`,
-    `“El Patrón”`,
-    `JUAN CARLOS CANALIZO HERNÁNDEZAPODERADO LEGAL DE “CIMA-SERCO SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V.”`,
-    `“El Trabajador”`,
-    `Nombre comnpleto, firma y huellas digitales`,
   ];
 
   paragraphs.forEach((p, idx) => {
@@ -343,7 +348,7 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
     addPageDecorations(i, pageCount);
   }
 
-  const filename = `Contrato_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`;
+  const filename = `Contrato_Monterrey_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`;
 
   if (options.returnDoc) {
     const blobUrl = doc.output("bloburl");
@@ -352,4 +357,277 @@ export async function generateContractPDF(emp, params, sedes, options = {}) {
 
   doc.save(filename);
   return { doc, filename };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 2. CONTRATO OTRAS SEDES (PERIODO DE PRUEBA 30 DÍAS - PAGO QUINCENAL)
+// ═════════════════════════════════════════════════════════════════════════════
+export async function generateContractOtrasSedesPDF(emp, params, sedes, options = {}) {
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "letter"
+  });
+
+  const logoImg = await loadLogoImage("/favicon.png");
+
+  const pageHeight = doc.internal.pageSize.height;
+  const pageWidth = doc.internal.pageSize.width;
+  const margin = 20;
+  const contentWidth = pageWidth - (margin * 2);
+  let y = 25;
+
+  const addPageDecorations = (pageNum, totalPages) => {
+    if (logoImg) {
+      try {
+        doc.saveGraphicsState();
+        doc.setGState(new doc.GState({ opacity: 0.08 }));
+        const logoSize = 105;
+        const logoX = (pageWidth - logoSize) / 2;
+        const logoY = (pageHeight - logoSize) / 2;
+        doc.addImage(logoImg, "PNG", logoX, logoY, logoSize, logoSize, undefined, "FAST");
+        doc.restoreGraphicsState();
+      } catch (err) {
+        console.warn("No se pudo dibujar la marca de agua:", err);
+      }
+    }
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`Página ${pageNum} de ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+    doc.text("CONTRATO INDIVIDUAL DE TRABAJO - CIMA-SERCO", margin, 12);
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, 14, pageWidth - margin, 14);
+  };
+
+  const addParagraph = (text, isTitle = false, isCentered = false) => {
+    doc.setFont("helvetica", isTitle ? "bold" : "normal");
+    doc.setFontSize(isTitle ? 11 : 9.5);
+    doc.setTextColor(isTitle ? 30 : 60);
+
+    const lines = doc.splitTextToSize(text, contentWidth);
+    const lineHeight = isTitle ? 6 : 5;
+
+    lines.forEach((line) => {
+      if (y + lineHeight > pageHeight - 20) {
+        doc.addPage();
+        y = 25;
+      }
+      if (isCentered) {
+        doc.text(line, pageWidth / 2, y, { align: "center" });
+      } else {
+        doc.text(line, margin, y);
+      }
+      y += lineHeight;
+    });
+
+    y += 3;
+  };
+
+  const addSignatures = () => {
+    if (y + 45 > pageHeight - 20) {
+      doc.addPage();
+      y = 25;
+    }
+    y += 10;
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("“El Patrón”", margin + 15, y);
+    doc.text("“El Trabajador”", pageWidth - margin - 45, y);
+    
+    y += 25;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    
+    const patronText = "LIC. SAMARA JIMÉNEZ SÁNCHEZ\nAPODERADA LEGAL DE “CIMA-SERCO SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V.”";
+    const patronNameLines = doc.splitTextToSize(patronText, contentWidth / 2 - 10);
+    let tempY = y;
+    patronNameLines.forEach(line => {
+      doc.text(line, margin, tempY);
+      tempY += 4;
+    });
+
+    const trabText = `C. ${nombreTrabajador}\nTrabajador`;
+    const trabNameLines = doc.splitTextToSize(trabText, contentWidth / 2 - 10);
+    tempY = y;
+    trabNameLines.forEach(line => {
+      doc.text(line, pageWidth / 2 + 10, tempY);
+      tempY += 4;
+    });
+  };
+
+  const nombreTrabajador = formatNombreNatural(emp).toUpperCase();
+  const sueldoMensual = Number(emp.sueldo || 0);
+  const salarioQuincenal = Number(params.salario_quincenal) > 0
+    ? Number(params.salario_quincenal)
+    : (sueldoMensual > 0 ? Math.round(sueldoMensual / 2) : 0);
+  const salarioQuincenalLetras = numeroALetras(salarioQuincenal);
+
+  const edad = calcularEdad(emp.fecha_nacimiento);
+  const cp = emp.codigo_postal || "______";
+  const rfc = emp.rfc || "______";
+  const curp = emp.curp || "______";
+
+  const ciudadTrabajador = emp.ciudad || "Xalapa";
+  const estadoTrabajador = emp.estado || (ciudadTrabajador.toLowerCase().includes("xalapa") ? "Veracruz" : "Veracruz");
+
+  // Fechas del periodo de prueba
+  const fechaInicioRaw = params.fecha_inicio_prueba || emp.fecha_ingreso || new Date().toISOString().split("T")[0];
+  let fechaInicioTexto = "_________ de ________";
+  let fechaFinTexto = "________ de __________";
+  let anioTexto = "________";
+  let fechaFirmaTexto = "______ de ____________ del año 2026";
+
+  if (fechaInicioRaw) {
+    const parts = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(fechaInicioRaw);
+    if (parts) {
+      const yStart = Number(parts[1]);
+      const mStart = Number(parts[2]) - 1;
+      const dStart = Number(parts[3]);
+      const startDate = new Date(yStart, mStart, dStart);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 30);
+
+      fechaInicioTexto = `${dStart} de ${mesesNombres[mStart] || "enero"}`;
+      fechaFinTexto = `${endDate.getDate()} de ${mesesNombres[endDate.getMonth()] || "febrero"}`;
+      anioTexto = String(endDate.getFullYear());
+      fechaFirmaTexto = `${dStart} de ${mesesNombres[mStart] || "enero"} del año ${yStart}`;
+    }
+  }
+
+  const beneficiarioNombre = (params.beneficiario || emp.beneficiario || "_____________________________________").toUpperCase();
+  const beneficiarioParentesco = params.parentesco || emp.parentesco_beneficiario || emp.parentesco || "__________";
+  const beneficiarioPorcentaje = params.porcentaje || "100";
+
+  const contactoEmergenciaNombre = emp.contacto_emergencia || "_______________________________________";
+  const contactoEmergenciaParentesco = emp.parentesco_emergencia || emp.parentesco || "______________";
+  const contactoEmergenciaTelefono = emp.telefono_emergencia || "__________________";
+
+  const paragraphs = [
+    `CONTRATO POR PERIODO DE PRUEBA, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`,
+    `DECLARACIONES:`,
+    `I. Declara “El Patrón”:`,
+    `Ser una persona moral legalmente constituida conforme a las leyes mexicanas, acreditando constitución a través del instrumento notarial con número 24,017 (veinticuatro mil diecisiete), de fecha doce de abril del año dos mil veintiuno, otorgada ante la fe del Licenciado Rafael De La Huerta Manjarrez, Titular de la Notaría Pública número Dieciséis de la Décima Primera Demarcación Notarial, con residencia en la Ciudad de Xalapa, Veracruz.`,
+    `Su apoderada legal acredita la personalidad mediante instrumento público número 6,788, de fecha 09 de marzo de 2026, otorgado ante la fe del Licenciado Ángel Ramírez Bretón, titular de la Notaría Pública número 35 del municipio de Emiliano Zapata, Veracruz`,
+    `Declara ser una persona moral debidamente registrada ante la Secretaría de Hacienda y Crédito Público, con Registro Federal de Contribuyentes: CSP210412PK1.`,
+    `Señala como medio de contacto para oír y recibir toda clase de notificaciones el correo electrónico: cimacontacto2024@gmail.com.`,
+    `II. Declara “El Trabajador”:`,
+    `Bajo protesta de decir verdad, declara ser una persona física, de nacionalidad mexicana, contar con la edad de ${edad} años, de estado civil ${emp.estado_civil || '___________'}, sexo ${emp.sexo || '_______________________'}, con domicilio en calle ${emp.calle || '__________________'}, número ${emp.numero || '___'}, colonia ${emp.colonia || '__________'}, C.P. ${cp}, en la ciudad de ${ciudadTrabajador}, estado de ${estadoTrabajador}. Con C.U.R.P. ${curp} y R.F.C. ${rfc}.`,
+    `Poseer la capacidad, facultades, habilidades, aptitudes, experiencia, condiciones de salud y adiestramiento necesario para el desempeño de las actividades a desarrollar y de las tareas inherentes al mismo.`,
+    `“El Trabajador” declara conocer completamente la naturaleza del presente contrato al momento de su firma y se compromete a desempeñar las funciones del puesto bajo la dirección y supervisión de “El Patrón”, cumpliendo con las órdenes e instrucciones relacionadas con todas y cada una de sus responsabilidades.`,
+    `Sus datos generales son veraces, y se obliga a notificar a “El Patrón” por escrito y en forma inmediata, cualquier cambio relacionado con estos; de no hacerlo, se considerarán vigentes los últimos datos que hubiere proporcionado a “El Patrón” para todos los efectos legales a que haya lugar.`,
+    `Reconocer su firma plasmada al calce de cada página y al final del presente contrato.`,
+    `III. Declaran “Las Partes”:`,
+    `“Las Partes” declaran que conocen sus obligaciones y prohibiciones:Por lo que respecta a “El Patrón”: los artículos 132 y 133 de la Ley Federal del Trabajo.`,
+    `Por lo que se refiere a “El Trabajador”: los artículos 134 y 135, así como demás relativos aplicables de dicho ordenamiento legal.`,
+    `Se reconocen la personalidad con la que comparecen y se sujetan a lo dispuesto en la Ley Federal del Trabajo, en lo sucesivo “La Ley”; y finalmente, al referirse al presente escrito se le denominará como “El Contrato”, acordando las partes sujetarse al tenor de las siguientes:`,
+    `CLÁUSULAS`,
+    `PRIMERA. - OBJETO. El presente contrato se celebra bajo la modalidad de periodo de prueba, de conformidad con lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo, con la finalidad de verificar que “El Trabajador” cuenta con los conocimientos, habilidades, aptitudes y experiencia necesarias para desempeñar el puesto de GUARDIA DE SEGURIDAD dentro de la estructura operativa de “El Patrón”.`,
+    `Durante dicho periodo, “El Trabajador” prestará sus servicios personales subordinados en los términos establecidos en el presente contrato, gozando de todas las prestaciones y condiciones de trabajo correspondientes al puesto, conforme a lo previsto en la Ley Federal del Trabajo.`,
+    `Al concluir el periodo de prueba, y previa evaluación del desempeño, en caso de que “El Trabajador” no acredite satisfacer los requisitos o aptitudes necesarias para el puesto, “El Patrón” podrá dar por terminada la relación de trabajo sin responsabilidad, en términos de lo dispuesto por el artículo 39-A de la Ley Federal del Trabajo.`,
+    `PRIMERA BIS. - PERIODO DE PRUEBA. El periodo de prueba tendrá una duración de 30 (treinta) días, mismo que empezará a contar a partir del ${fechaInicioTexto} al ${fechaFinTexto} del año ${anioTexto}.`,
+    `Durante dicho periodo, “El Patrón” evaluará el desempeño, conocimientos, habilidades y aptitudes de “El Trabajador” para el puesto de Guardia de Seguridad, a fin de determinar si reúne los requisitos necesarios para el adecuado desarrollo de las funciones encomendadas.`,
+    `En caso de que “El Trabajador” no acredite las aptitudes o conocimientos requeridos para el puesto, “El Patrón” podrá dar por terminada la relación laboral sin responsabilidad, de conformidad con lo dispuesto en el artículo 39-A de la Ley Federal del Trabajo.`,
+    `SEGUNDA. - FUNCIONES, RESPONSABILIDADES Y OBLIGACIONES DEL PUESTO. – “El Trabajador” se obliga a desempeñar el puesto de Guardia de Seguridad, siendo responsable de la vigilancia, protección y custodia de las instalaciones, bienes y personas que le sean asignadas, actuando en todo momento con diligencia, lealtad y apego a la normatividad aplicable.`,
+    `En el desempeño de sus funciones, deberá controlar accesos, realizar rondines periódicos, operar equipos y sistemas de seguridad, llevar registros en bitácoras, reportar de forma inmediata cualquier incidente o anomalía, y ejecutar los protocolos de emergencia correspondientes.`,
+    `“El Trabajador” se compromete a cumplir con las políticas internas de la empresa, así como con las disposiciones legales y reglamentarias vigentes en materia de seguridad privada, protección civil y demás aplicables en los Estados Unidos Mexicanos.`,
+    `Asimismo, “El Trabajador”, deberá acatar las instrucciones de su superior jerárquico y guardar estricta confidencialidad respecto de la información, procesos, instalaciones y personas relacionadas con el servicio.`,
+    `El incumplimiento de cualquiera de las obligaciones aquí establecidas, así como la negligencia, omisión o conducta indebida en el desempeño de sus funciones, será considerado causa de responsabilidad laboral, pudiendo dar lugar a la aplicación de medidas disciplinarias y, en su caso, a la rescisión de la relación laboral, en términos de la legislación aplicable.`,
+    `TERCERA. - MANUALES Y LINEAMIENTOS. “El Trabajador” reconoce la responsabilidad del puesto asumido y se compromete a cumplir con las medidas necesarias en cuanto al manual de procedimientos, reglamentos y consignas establecidos por “El Patrón”, mismos que a la firma del presente contrato manifiesta conocer todos y cada uno de ellos.`,
+    `Asimismo, “El Trabajador” se compromete a ejecutar cada una de las instrucciones que le haga mención su superior jerárquico.`,
+    `CUARTA. - CENTRO DE TRABAJO Y REUBICACIÓN. “El Trabajador” reconoce y acepta que, derivado de la naturaleza de las funciones propias del puesto de Guardia de Seguridad privada, sus actividades implican que la prestación de sus labores deba realizarse en diversos centros de trabajo o instalaciones en donde se presten los servicios de seguridad, dentro de la zona operativa correspondiente, incluyendo instalaciones de clientes o puntos de operación que le sean asignados según las necesidades del servicio.`,
+    `En consecuencia, el lugar de prestación de servicios de “El Trabajador” podrá ubicarse en cualquiera de los servicios o instalaciones que “El Patrón” tenga asignados dentro de la zona operativa correspondiente, incluyendo oficinas administrativas, centros de operación o instalaciones de clientes, según las necesidades del servicio.`,
+    `“El Patrón” podrá asignar, cambiar o reubicar a “El Trabajador” en cualquiera de dichos centros de trabajo o servicios, cuando así lo requieran las necesidades operativas, administrativas o contractuales del servicio de seguridad privada, siempre que no se afecten el salario ni las condiciones esenciales de trabajo.`,
+    `En caso de que la asignación de servicio implique modificaciones en el horario de labores, “El Trabajador” acepta ajustarse al horario correspondiente al servicio asignado, respetándose en todo momento los límites establecidos por la Ley Federal del Trabajo.`,
+    `QUINTA. - JORNADA LABORAL. La jornada laboral en ningún momento rebasará los máximos legales que para tal efecto señale “la ley”.`,
+    `“El Patrón” otorgará, por cada seis días trabajados, un día de descanso; reservándose el derecho “El Patrón” de modificar el día de descanso con previo aviso, respetando siempre un día de descanso a la semana.`,
+    `SEXTA. ACUERDOS. - “El Trabajador” disfrutará de un día de descanso tal como se establece en la cláusula anterior; sin embargo, “El Trabajador” conviene en laborar los días domingos en que “El Patrón” necesite de sus servicios.Asimismo, “El Trabajador” se obliga a laborar los días festivos que establece el artículo 74 de “La Ley” cuando así lo requieran las necesidades del servicio, teniendo derecho al pago del salario conforme a lo que establece “La Ley” del día en que prestó sus servicios.`,
+    `“El Trabajador” únicamente podrá laborar tiempo extraordinario cuando “El Patrón” se lo indique mediante orden por escrito, en la cual señalará él o los días y horarios en el cual laborará tiempo extra.`,
+    `SÉPTIMA. SALARIO. - “El Trabajador” recibirá un salario quincenal de $${salarioQuincenal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${salarioQuincenalLetras} 00/100 M.N) de manera quincenal, dicha cantidad le será pagada los días 03 y 18 de cada mes, mismo que será efectuado en el lugar de trabajo asignado o por depósito en el número de cuenta o tarjeta bancaria que designe “El Trabajador”.`,
+    `OCTAVA. DEDUCCIONES. - “El Trabajador” autoriza a “El Patrón” deducir de su salario el Impuesto sobre el Producto del Trabajo o también conocido como el Impuesto sobre la Renta y demás impuestos correspondientes, de conformidad con lo establecido en las disposiciones legales en vigor al momento en que se realice el descuento respectivo. Así como demás descuentos descritos en el artículo 97 de la Ley, tales como pensiones alimenticias decretadas por la autoridad competente, pago de rentas, pago de abonos para cubrir préstamos provenientes del Fondo Nacional de la Vivienda para los Trabajadores, etc., según sea el caso de “El Trabajador”.`,
+    `NOVENA. - RECIBOS. “El Trabajador” queda obligado a otorgar su firma al recibo de pago a favor de “El Patrón” por el total de los salarios devengados a que tuviere derecho, conviniendo que la firma implicará un finiquito total hasta la fecha del recibo correspondiente.`,
+    `DÉCIMA. - CONTROL DE ASISTENCIA. “El Trabajador” deberá registrar el inicio y término de su jornada laboral mediante los mecanismos de control de asistencia que establezca “El Patrón”, los cuales podrán consistir en listas de asistencia, sistemas electrónicos, aplicaciones móviles, reportes operativos, mensajes institucionales o cualquier otro medio de control implementado por la empresa.`,
+    `Asimismo, “El Trabajador” se obliga a reportar el inicio de sus labores y su presencia en el servicio o servicios asignados, mediante los medios de comunicación o plataformas que determine “El Patrón”, pudiendo incluir el envío de reportes, fotografías, ubicación o cualquier otro mecanismo que permita verificar la prestación efectiva del servicio.`,
+    `Los registros generados a través de dichos medios constituirán constancia de asistencia, permanencia y cumplimiento de jornada, para efectos administrativos y laborales. En caso de no cumplir con alguno de estos recursos, la asistencia será considerada como injustificada.`,
+    `DÉCIMA PRIMERA. - CADENA DE MANDO. Queda establecido que “El Trabajador” deberá respetar en todo momento la cadena de mando, jerarquía, instrucciones, lineamientos y procedimientos internos establecidos por “El Patrón” para la correcta prestación del servicio de guardia de seguridad.`,
+    `En virtud de la naturaleza operativa del puesto, “El Trabajador” deberá dirigir cualquier solicitud, reporte, incidencia, aclaración, autorización o comunicación relacionada con sus funciones a su superior jerárquico inmediato, incluyendo al Director Operativo, encargado de servicio, jefe de turno o persona designada por “El Patrón”, según corresponda.`,
+    `Asimismo, “El Trabajador” se obliga a cumplir de manera puntual con las instrucciones que le sean dadas por sus superiores jerárquicos respecto a la vigilancia, custodia y protección de personas, bienes e instalaciones; el control de accesos y salidas; la realización de recorridos; el registro de incidencias; la elaboración y entrega de reportes; la asignación de puestos y horarios de servicio; la aplicación de protocolos de seguridad y emergencia; la atención a clientes, usuarios y visitantes, así como las demás actividades propias del servicio de seguridad privada.`,
+    `“El Trabajador” reconoce que el incumplimiento injustificado de la cadena de mando, la desobediencia a instrucciones lícitas y relacionadas con el trabajo, o la omisión de reportar incidencias conforme al conducto correspondiente, podrá ser considerado una falta a sus obligaciones laborales, sin perjuicio de las medidas disciplinarias que resulten procedentes conforme a la Ley Federal del Trabajo, el Reglamento Interior de Trabajo y demás disposiciones aplicables.`,
+    `DÉCIMA SEGUNDA. - UNIFORME. “El Trabajador” deberá acudir al servicio con el uniforme completo y limpio; igualmente, deberá cumplir con las normas de higiene, lo cual implica estar debidamente aseado, con las uñas limpias y el cabello corto; en caso de usar barba o bigote, deberán mantenerse bien recortados. Asimismo, deberá portar zapatos limpios y, cuando corresponda, presentarse debidamente afeitado.`,
+    `DÉCIMA TERCERA. - CUIDADO DEL UNIFORME. “El Trabajador” se compromete a cuidar el uniforme asignado para el ejercicio de su función, firmando de recibido y, en caso de extravío o negligencia propia, “El Trabajador” deberá pagar o reponer lo perdido.`,
+    `El desgaste natural por ejercicio de sus funciones de todas las herramientas y uniforme será repuesto por “El Patrón”; comprometiéndose “El Trabajador” a notificar a “El Patrón” en el momento del desgaste de estos. Asimismo, deberá portarlo única y exclusivamente durante su jornada laboral en el lugar de trabajo asignado.`,
+    `DÉCIMA CUARTA. - CAPACITACIÓN Y ADIESTRAMIENTO. “El Patrón” proporcionará capacitación o adiestramiento, conforme a los planes y programas que sobre este se requieran, en términos de lo dispuesto en el Capítulo III Bis, del Título IV, de la Ley Federal del Trabajo en vigor. “El Trabajador” estará obligado a acudir a dichas capacitaciones, las cuales se computarán conforme a las disposiciones legales aplicables.`,
+    `DÉCIMA QUINTA. - CONFIDENCIALIDAD. “El Trabajador” se obliga a guardar estricta confidencialidad respecto de toda la información a la que tenga acceso con motivo de sus funciones, incluyendo de manera enunciativa mas no limitativa: datos de la empresa, de sus clientes, proveedores, personal, instalaciones, sistemas de seguridad, procedimientos operativos, registros, bitácoras, así como cualquier otra información de carácter reservado o sensible.`,
+    `“El Trabajador” se compromete a no divulgar, revelar, copiar, reproducir, sustraer o utilizar dicha información para fines distintos a los estrictamente relacionados con el desempeño de sus funciones, sin la autorización previa y por escrito de “El Patrón”.`,
+    `Esta obligación de confidencialidad subsistirá aun después de la terminación de la relación laboral, por el tiempo que la información conserve su carácter confidencial.`,
+    `El incumplimiento de esta obligación será considerado falta grave, podrá constituir causa de rescisión de la relación laboral sin responsabilidad para “El Patrón”, en términos de lo dispuesto en el artículo 47 de la Ley Federal del Trabajo, sin perjuicio de las acciones civiles o legales que correspondan.`,
+    `DÉCIMA SEXTA. - ESTUDIO DE MANUALES, CONSIGNAS Y PROCESOS DE EVALUACIÓN. “El Trabajador” se obliga a estudiar, conocer y cumplir con las consignas, manuales operativos, reglamentos internos, protocolos de seguridad y demás lineamientos aplicables a los servicios en los que sea asignado.`,
+    `Asimismo, “El Trabajador” acepta someterse a procesos de evaluación, revisión de conocimientos y aplicación de exámenes, ya sea de manera periódica o aleatoria, con la finalidad de verificar el adecuado conocimiento de los procedimientos, consignas y funciones propias del puesto.`,
+    `Dichas evaluaciones podrán realizarse durante la vigencia de la relación laboral y formarán parte de los mecanismos de control y capacitación necesarios para garantizar la correcta prestación de los servicios de seguridad privada.`,
+    `DÉCIMA SÉPTIMA. - REGLAMENTO INTERNO. “El Trabajador” está obligado a respetar y cumplir con las disposiciones establecidas en el reglamento interno, mismo que se le proporciona a “El Trabajador” para su conocimiento, por lo que no puede violar ninguna de las normas estipuladas en este. Asimismo, “El Trabajador” hace constar, por medio de su firma en el presente contrato, que conoce cada una de las normas a las que se hace referencia en esta cláusula.`,
+    `DÉCIMA OCTAVA. - CAUSAS DE RESCISIÓN. La relación de trabajo podrá rescindirse sin responsabilidad para “El Patrón”, cuando “El Trabajador” incurra en cualquiera de las causas previstas en el artículo 47 y 135 de la Ley Federal del Trabajo.`,
+    `De manera enunciativa, se considerarán causas de rescisión aquellas conductas que impliquen incumplimiento a las obligaciones laborales, desobediencia a las instrucciones de sus superiores, abandono del servicio, actos de indisciplina, consumo de bebidas alcohólicas o sustancias prohibidas durante la jornada laboral, divulgación de información confidencial o cualquier conducta que afecte la prestación de los servicios de seguridad.`,
+    `DÉCIMA NOVENA. - EXÁMENES TOXICOLÓGICOS. “El Trabajador” acepta someterse a exámenes toxicológicos o de detección de consumo de alcohol o sustancias prohibidas, los cuales podrán aplicarse al ingreso, de manera periódica, aleatoria o cuando existan indicios razonables, con la finalidad de garantizar la adecuada prestación de los servicios de seguridad.`,
+    `Dichos exámenes podrán realizarse durante la jornada laboral o en las instalaciones que determine “El Patrón”, conforme a las políticas internas de la empresa.`,
+    `El incumplimiento injustificado a someterse a dichas pruebas o el resultado positivo podrá dar lugar a la aplicación de las medidas correspondientes conforme a la Ley Federal del Trabajo y al reglamento interno de trabajo.`,
+    `VIGÉSIMA. BENEFICIARIO. - “El Trabajador” autoriza a la empresa, con base en el artículo 501 de la Ley Federal del Trabajo, designar como beneficiario/a, para otorgar sus salarios y prestaciones devengadas y no cobradas, en caso de muerte y/o desaparición por un acto delincuencial, al/a la C. ${beneficiarioNombre}, con parentesco ${beneficiarioParentesco} y ${beneficiarioPorcentaje}% de dicha percepción.`,
+    `VIGÉSIMA PRIMERA. - CONTACTO DE EMERGENCIA “El Trabajador” designa como contacto de emergencia a la ${contactoEmergenciaNombre}, quien es su ${contactoEmergenciaParentesco} y cuenta con número de teléfono: ${contactoEmergenciaTelefono}, a quien “El Patrón”, podrá notificar en caso de accidente, enfermedad o cualquier situación que comprometa la salud o integridad de “El Trabajador” durante el desempeño de sus funciones.`,
+    `VIGÉSIMA. SEGUNDA. - INASISTENCIAS. Cuando “El Trabajador” por cualquier circunstancia se vea obligado a faltar a sus labores, deberá avisar a “El Patrón”, por conducto de sus representantes, con mínimo 12 horas de anticipación a la entrada de su turno. El aviso no justifica la falta, pues en todo caso “El Trabajador” al regresar a sus labores deberá justificar su ausencia con el comprobante respectivo, que en caso de enfermedad será únicamente el certificado de incapacidad. Cuando “El Trabajador” solicite permiso para faltar a sus labores, deberá recabar en todo caso constancia escrita de “El Patrón”; sin dicho requisito, su inasistencia se considerará como falta injustificada.`,
+    `VIGÉSIMA TERCERA. - AVISO. Se establece y reconoce “El Trabajador” que, si desea dejar de laborar para “El Patrón”, tendrá la obligación de avisar con 10 días naturales de anticipación, así como de hacer entrega a la administración de toda y cada una de la documentación, indumentaria o materiales que tenga en su poder.`,
+    `VIGÉSIMA CUARTA. - AUTORIZACIÓN. “El Trabajador” autoriza a “El Patrón” a ser grabado mediante cámaras de seguridad durante la jornada laboral, a fin de salvaguardar la seguridad del trabajador en caso de un accidente y/o acción suscitada en las instalaciones de la empresa, o donde se encuentre prestando sus servicios.`,
+    `VIGÉSIMA QUINTA. DATOS PERSONALES. “El Patrón” y “El Trabajador” declaran que los datos personales que se proporcionen entre sí, así como aquellos generados o recopilados durante la relación laboral y una vez terminada dicha relación, serán tratados de forma confidencial, mismas que serán sujetas a medidas de seguridad, en virtud de lo establecido en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares.`,
+    `VIGÉSIMA SEXTA. - USO Y CUIDADO DE MOBILIARIO (LEY SILLA). El trabajador reconoce que, en cumplimiento de la normativa aplicable en materia de condiciones laborales (comúnmente conocida como “Ley Silla”), el empleador le proporcionará una silla o asiento adecuado para el desarrollo de sus funciones, particularmente en aquellas actividades que lo permitan.`,
+    `En virtud de lo anterior, el trabajador se obliga a hacer un uso correcto, responsable y adecuado del mobiliario proporcionado, comprometiéndose a:`,
+    `Utilizar la silla exclusivamente para los fines laborales correspondientes.`,
+    `Mantenerla en buen estado, evitando daños por uso indebido, negligencia o descuido.`,
+    `Reportar de manera inmediata cualquier desperfecto, daño o anomalía que presente el mobiliario.`,
+    `El incumplimiento de estas obligaciones podrá dar lugar a las responsabilidades que correspondan conforme a la legislación laboral aplicable y a las disposiciones internas de la empresa.`,
+    `VIGÉSIMA SEPTIMA. - ENCABEZADOS Y JURISDICCIÓN. Los encabezados de las cláusulas del presente contrato se han colocado para conveniencia de “Las Partes”, con el exclusivo objeto de facilitar su lectura y localización; por tanto, no necesariamente definen ni limitan su contenido. Para la interpretación de cada cláusula deberá atenderse exclusivamente a su contenido y no a su título, por lo que este no afectará la interpretación ni la validez del instrumento, ni los términos, condiciones, derechos u obligaciones previstos en él.`,
+    `Asimismo, “Las Partes” se someten a la jurisdicción de los Tribunales Laborales competentes de la ciudad de Xalapa, Veracruz, renunciando a cualquier otro fuero que pudiera corresponderles por razón de su domicilio presente o futuro. Ambas partes convienen en que lo no previsto en el presente contrato se sujetará a las disposiciones de la Ley Federal del Trabajo en vigor.`,
+    `Leído que fue por ambas partes el presente contrato individual de trabajo, enterados de su contenido, alcance, fuerza y valor legal, sabedores y conscientes de las obligaciones que contraen, lo ratifican y firman de conformidad en la ciudad de Xalapa, Veracruz, el día ${fechaFirmaTexto}.`,
+  ];
+
+  paragraphs.forEach((p, idx) => {
+    if (idx === 0) {
+      addParagraph(p, true, true);
+    } else {
+      addParagraph(p, false, false);
+    }
+  });
+
+  addSignatures();
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    addPageDecorations(i, pageCount);
+  }
+
+  const filename = `Contrato_Prueba_${emp.nombre_completo.replace(/\s+/g, "_")}.pdf`;
+
+  if (options.returnDoc) {
+    const blobUrl = doc.output("bloburl");
+    return { doc, blobUrl, filename };
+  }
+
+  doc.save(filename);
+  return { doc, filename };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 3. GENERADOR PRINCIPAL (DISPATCHER)
+// ═════════════════════════════════════════════════════════════════════════════
+export async function generateContractPDF(emp, params = {}, sedes = [], options = {}) {
+  const sedeId = emp?.sede_id || options?.defaultSedeId;
+  const sedeObj = (sedes || []).find((s) => s.id === sedeId);
+  const isMty = (sedeObj?.nombre || "").toLowerCase().includes("monterrey");
+
+  const tipo = params.tipo_contrato || (isMty ? "monterrey" : "otras_sedes");
+
+  if (tipo === "monterrey") {
+    return generateContractMonterreyPDF(emp, params, sedes, options);
+  }
+  return generateContractOtrasSedesPDF(emp, params, sedes, options);
 }

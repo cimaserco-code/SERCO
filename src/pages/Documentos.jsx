@@ -53,7 +53,11 @@ import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 import { cn } from "@/lib/utils";
 
 const defaultContractForm = {
+  tipo_contrato: "otras_sedes",
   bono_mensual: "2000",
+  salario_quincenal: "",
+  fecha_inicio_prueba: new Date().toISOString().split("T")[0],
+  duracion_dias_prueba: "30",
   beneficiario: "",
   parentesco: "",
   porcentaje: "100",
@@ -135,10 +139,19 @@ export default function Documentos() {
 
   function handleSelectEmployee(emp) {
     setSelectedEmpId(emp.id);
+    const empSede = sedes.find((s) => s.id === (emp.sede_id || defaultSedeId));
+    const isMty = (empSede?.nombre || "").toLowerCase().includes("monterrey");
+    const sueldoNum = Number(emp.sueldo) || 0;
+    const defaultQuincenal = sueldoNum > 0 ? String(Math.round(sueldoNum / 2)) : "";
+
     setContractForm({
+      tipo_contrato: isMty ? "monterrey" : "otras_sedes",
       bono_mensual: "2000",
+      salario_quincenal: defaultQuincenal,
+      fecha_inicio_prueba: emp.fecha_ingreso || new Date().toISOString().split("T")[0],
+      duracion_dias_prueba: "30",
       beneficiario: emp.beneficiario || emp.contacto_emergencia || "",
-      parentesco: emp.parentesco || "",
+      parentesco: emp.parentesco_beneficiario || emp.parentesco || "",
       porcentaje: "100",
       duracion_meses: "3",
     });
@@ -157,7 +170,10 @@ export default function Documentos() {
     }
     setGeneratingPdf(true);
     try {
-      const result = await generateContractPDF(emp, contractForm, sedes, { returnDoc: true });
+      const result = await generateContractPDF(emp, contractForm, sedes, { 
+        returnDoc: true,
+        defaultSedeId 
+      });
       setContractModalOpen(false);
       setCurrentDocToSave(result.doc);
       setPreviewPdfUrl(result.blobUrl);
@@ -378,24 +394,108 @@ export default function Documentos() {
               </Popover>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label>Bono Mensual Puntualidad ($)</Label>
-                <Input
-                  type="number"
-                  value={contractForm.bono_mensual}
-                  onChange={(e) => setContractForm({ ...contractForm, bono_mensual: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Duración Inicial (Meses)</Label>
-                <Input
-                  type="number"
-                  value={contractForm.duracion_meses}
-                  onChange={(e) => setContractForm({ ...contractForm, duracion_meses: e.target.value })}
-                />
+            {/* Selector de plantilla de contrato */}
+            <div>
+              <Label className="mb-1.5 block">Modelo de Contrato</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={contractForm.tipo_contrato === "otras_sedes" ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
+                    contractForm.tipo_contrato === "otras_sedes"
+                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                      : "hover:bg-accent"
+                  )}
+                  onClick={() => setContractForm({ ...contractForm, tipo_contrato: "otras_sedes" })}
+                >
+                  <span className="font-semibold text-xs flex items-center gap-1.5">
+                    Otras Sedes
+                    <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal bg-white/20 text-inherit border-0">
+                      Veracruz / Xalapa
+                    </Badge>
+                  </span>
+                  <span className="text-[11px] opacity-80 font-normal">
+                    Periodo de prueba 30 días · Pago quincenal (03 y 18)
+                  </span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant={contractForm.tipo_contrato === "monterrey" ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
+                    contractForm.tipo_contrato === "monterrey"
+                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                      : "hover:bg-accent"
+                  )}
+                  onClick={() => setContractForm({ ...contractForm, tipo_contrato: "monterrey" })}
+                >
+                  <span className="font-semibold text-xs flex items-center gap-1.5">
+                    Sede Monterrey
+                    <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal bg-white/20 text-inherit border-0">
+                      NL
+                    </Badge>
+                  </span>
+                  <span className="text-[11px] opacity-80 font-normal">
+                    Tiempo determinado · Pago semanal (Viernes)
+                  </span>
+                </Button>
               </div>
             </div>
+
+            {contractForm.tipo_contrato === "otras_sedes" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-muted/40 rounded-lg border border-border/60">
+                <div>
+                  <Label>Salario Quincenal Neto ($)</Label>
+                  <Input
+                    type="number"
+                    value={contractForm.salario_quincenal}
+                    placeholder="Ej. 4500"
+                    onChange={(e) => setContractForm({ ...contractForm, salario_quincenal: e.target.value })}
+                  />
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Pagadero los días 03 y 18 de cada mes
+                  </span>
+                </div>
+                <div>
+                  <Label>Fecha Inicio Periodo de Prueba</Label>
+                  <Input
+                    type="date"
+                    value={contractForm.fecha_inicio_prueba}
+                    onChange={(e) => setContractForm({ ...contractForm, fecha_inicio_prueba: e.target.value })}
+                  />
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Duración: 30 días naturales (Art. 39-A LFT)
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-muted/40 rounded-lg border border-border/60">
+                <div>
+                  <Label>Bono Mensual Puntualidad ($)</Label>
+                  <Input
+                    type="number"
+                    value={contractForm.bono_mensual}
+                    onChange={(e) => setContractForm({ ...contractForm, bono_mensual: e.target.value })}
+                  />
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Bono semanal de asignación proporcional
+                  </span>
+                </div>
+                <div>
+                  <Label>Duración Inicial (Meses)</Label>
+                  <Input
+                    type="number"
+                    value={contractForm.duracion_meses}
+                    onChange={(e) => setContractForm({ ...contractForm, duracion_meses: e.target.value })}
+                  />
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Contrato por tiempo determinado inicial
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>Beneficiario en caso de fallecimiento</Label>
