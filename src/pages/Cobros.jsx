@@ -485,6 +485,9 @@ export default function Cobros() {
       ]);
 
       const activeServicios = allServicios.filter((s) => {
+        const isSuspended = (s.estado || "").toLowerCase() === "suspendido";
+        if (isSuspended) return false;
+
         const isCurrentlyActive = (s.estado || "activo") === "activo";
 
         if (!isCurrentlyActive) {
@@ -565,8 +568,27 @@ export default function Cobros() {
         nextCobros = await sercoApi.entities.Cobro.filter(cobroQuery, "-created_date");
       }
 
-      setItems(nextCobros.filter((c) => !getCobroMeta(c.id)?.excluida));
-      setServicios(allServicios);
+      // Excluir cobros pertenecientes a servicios suspendidos
+      const suspendedServiceIds = new Set(
+        allServicios
+          .filter((s) => (s.estado || "").toLowerCase() === "suspendido")
+          .map((s) => s.id)
+      );
+      const suspendedServiceNames = new Set(
+        allServicios
+          .filter((s) => (s.estado || "").toLowerCase() === "suspendido")
+          .map((s) => (s.nombre || "").trim().toLowerCase())
+      );
+
+      const filteredCobros = nextCobros.filter((c) => {
+        if (getCobroMeta(c.id)?.excluida) return false;
+        if (c.servicio_id && suspendedServiceIds.has(c.servicio_id)) return false;
+        if (c.servicio_nombre && suspendedServiceNames.has((c.servicio_nombre || "").trim().toLowerCase())) return false;
+        return true;
+      });
+
+      setItems(filteredCobros);
+      setServicios(allServicios.filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido"));
       setSedes(allSedes);
     } catch (e) {
       console.error(e);

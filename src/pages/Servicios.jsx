@@ -420,6 +420,50 @@ export default function Servicios() {
         toast({ title: "Servicio creado con éxito" });
       }
 
+      // Si el servicio fue suspendido, desvincular a los elementos asignados y limpiar asignaciones de plantilla
+      if (savedItem && (payload.estado === "suspendido" || (savedItem.estado || "").toLowerCase() === "suspendido")) {
+        const serviceId = savedItem.id;
+        const serviceName = (savedItem.nombre || "").trim().toLowerCase();
+        const oldName = editing ? (editing.nombre || "").trim().toLowerCase() : serviceName;
+
+        try {
+          // 1. Eliminar asignaciones de turno vinculadas a este servicio en Plantilla
+          const [asigsById, asigsByName] = await Promise.all([
+            sercoApi.entities.AsignacionTurno.filter({ servicio_id: serviceId }).catch(() => []),
+            sercoApi.entities.AsignacionTurno.filter({ servicio_nombre: savedItem.nombre }).catch(() => []),
+          ]);
+          const asigsMap = new Map();
+          [...(asigsById || []), ...(asigsByName || [])].forEach((a) => asigsMap.set(a.id, a));
+          for (const asigId of asigsMap.keys()) {
+            await sercoApi.entities.AsignacionTurno.delete(asigId).catch(() => {});
+          }
+        } catch (asigErr) {
+          console.warn("Error al limpiar asignaciones de turno del servicio suspendido:", asigErr);
+        }
+
+        try {
+          // 2. Desvincular empleados asignados a este servicio para que queden sin servicio
+          const allEmps = await sercoApi.entities.Empleado.list().catch(() => []);
+          const affectedEmps = (allEmps || []).filter((e) => {
+            const loc = (e.servicio_ubicacion || "").trim().toLowerCase();
+            return loc === serviceName || (oldName && loc === oldName);
+          });
+
+          for (const emp of affectedEmps) {
+            await sercoApi.entities.Empleado.update(emp.id, {
+              servicio_ubicacion: "",
+            }).catch(() => {});
+          }
+        } catch (empErr) {
+          console.warn("Error al desvincular empleados del servicio suspendido:", empErr);
+        }
+
+        toast({
+          title: "Servicio Suspendido",
+          description: "El servicio fue suspendido. Los elementos asignados quedaron sin servicio y ya no aparecerá en Facturas, Plantilla ni Asistencias.",
+        });
+      }
+
       setEditing(null);
       setForm(emptyForm);
       setModalOpen(false);
@@ -467,6 +511,66 @@ export default function Servicios() {
     await sercoApi.entities.Servicio.delete(deleteId);
     setDeleteId(null);
     await load();
+  }
+
+  async function handleSuspendServiceDirect(item) {
+    if (!item?.id) return;
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await sercoApi.entities.Servicio.update(item.id, {
+        estado: "suspendido",
+        fecha_baja: today,
+      });
+
+      const serviceId = item.id;
+      const serviceName = (item.nombre || "").trim().toLowerCase();
+
+      // 1. Limpiar turnos en Plantilla
+      try {
+        const [asigsById, asigsByName] = await Promise.all([
+          sercoApi.entities.AsignacionTurno.filter({ servicio_id: serviceId }).catch(() => []),
+          sercoApi.entities.AsignacionTurno.filter({ servicio_nombre: item.nombre }).catch(() => []),
+        ]);
+        const asigsMap = new Map();
+        [...(asigsById || []), ...(asigsByName || [])].forEach((a) => asigsMap.set(a.id, a));
+        for (const asigId of asigsMap.keys()) {
+          await sercoApi.entities.AsignacionTurno.delete(asigId).catch(() => {});
+        }
+      } catch (asigErr) {
+        console.warn("Error al limpiar asignaciones de turno:", asigErr);
+      }
+
+      // 2. Desvincular empleados
+      try {
+        const allEmps = await sercoApi.entities.Empleado.list().catch(() => []);
+        const affectedEmps = (allEmps || []).filter((e) => {
+          const loc = (e.servicio_ubicacion || "").trim().toLowerCase();
+          return loc === serviceName;
+        });
+
+        for (const emp of affectedEmps) {
+          await sercoApi.entities.Empleado.update(emp.id, {
+            servicio_ubicacion: "",
+          }).catch(() => {});
+        }
+      } catch (empErr) {
+        console.warn("Error al desvincular empleados:", empErr);
+      }
+
+      toast({
+        title: "Servicio Suspendido",
+        description: "El servicio fue suspendido. Los elementos asignados quedaron sin servicio y ya no aparecerá en Facturas, Plantilla ni Asistencias.",
+      });
+
+      await load();
+    } catch (err) {
+      console.error("Error al suspender servicio:", err);
+      toast({
+        title: "Error al suspender",
+        description: err.message || "Ocurrió un error inesperado al suspender el servicio.",
+        variant: "destructive",
+      });
+    }
   }
 
   if (!canView("servicios")) return <AccessRestricted />;
@@ -878,6 +982,20 @@ export default function Servicios() {
               >
                 <Pencil className="w-4 h-4 mr-1" />
                 Editar
+              </Button>
+            )}
+
+            {can("servicios", "edit") && (viewItem?.estado || "activo") === "activo" && (
+              <Button
+                variant="outline"
+                className="border-amber-500 text-amber-600 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-950"
+                onClick={() => {
+                  const target = viewItem;
+                  setViewItem(null);
+                  handleSuspendServiceDirect(target);
+                }}
+              >
+                Suspender Servicio
               </Button>
             )}
 

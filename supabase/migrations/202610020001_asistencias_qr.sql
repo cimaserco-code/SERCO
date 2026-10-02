@@ -29,6 +29,11 @@ AS $$
    AND at.servicio_id = p_servicio_id
   WHERE (at.servicio_id = p_servicio_id 
      OR e.servicio_ubicacion = (SELECT nombre FROM public.servicios WHERE id = p_servicio_id))
+    AND EXISTS (
+      SELECT 1 FROM public.servicios s 
+      WHERE s.id = p_servicio_id 
+        AND LOWER(COALESCE(s.estado, 'activo')) <> 'suspendido'
+    )
     AND (
       e.fecha_baja IS NULL 
       OR (e.fecha_reingreso IS NOT NULL AND e.fecha_reingreso >= e.fecha_baja) 

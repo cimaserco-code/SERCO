@@ -98,8 +98,9 @@ export default function RegistroAsistenciaQR() {
       try {
         // 1. Si no hay servicio_id en la URL, cargar lista de servicios para seleccionar
         if (!servicioIdParam) {
-          const { data: servs } = await supabase.from("servicios").select("id, nombre, sede_id");
-          setAllServices(servs || []);
+          const { data: servs } = await supabase.from("servicios").select("id, nombre, sede_id, estado");
+          const activeServs = (servs || []).filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido");
+          setAllServices(activeServs);
           setLoading(false);
           return;
         }
@@ -107,11 +108,16 @@ export default function RegistroAsistenciaQR() {
         // Si tenemos servicio_id, cargar datos del servicio
         const { data: servData } = await supabase
           .from("servicios")
-          .select("id, nombre, sede_id")
+          .select("id, nombre, sede_id, estado")
           .eq("id", servicioIdParam)
           .single();
 
         if (servData) {
+          if ((servData.estado || "").toLowerCase() === "suspendido") {
+            setLoading(false);
+            setCameraError("Este servicio se encuentra suspendido. No es posible registrar asistencias.");
+            return;
+          }
           setService(servData);
         }
 

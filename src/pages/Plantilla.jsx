@@ -77,13 +77,16 @@ export default function Plantilla() {
         sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
         sercoApi.entities.AsignacionTurno.filter(sedeFilter).catch(() => []),
       ]);
-      setServicios(servs || []);
+      const activeServs = (servs || []).filter(
+        (s) => (s.estado || "activo").toLowerCase() !== "suspendido"
+      );
+      setServicios(activeServs);
       setEmpleados(emps || []);
       setSedes(seds || []);
       setVacantes(vacs || []);
       setAsignaciones(asigs || []);
-      if (servs?.length > 0) {
-        setVacanteForm(prev => ({ ...prev, servicio_id: prev.servicio_id || servs[0].id }));
+      if (activeServs?.length > 0) {
+        setVacanteForm(prev => ({ ...prev, servicio_id: prev.servicio_id || activeServs[0].id }));
       }
     } finally {
       setLoading(false);

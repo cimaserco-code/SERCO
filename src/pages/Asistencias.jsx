@@ -173,14 +173,25 @@ export default function Asistencias() {
         if (a.empleado_nombre) turnoByEmp.set(a.empleado_nombre.trim().toLowerCase(), a.turno);
       });
 
-      const enrichedEmps = (emps || []).map((e) => ({
-        ...e,
-        turno: turnoByEmp.get(e.id) || turnoByEmp.get((e.nombre_completo || "").trim().toLowerCase()) || "matutino",
-      }));
+      const suspendedServiceNames = new Set(
+        (servs || [])
+          .filter((s) => (s.estado || "").toLowerCase() === "suspendido")
+          .map((s) => (s.nombre || "").trim().toLowerCase())
+      );
+
+      const enrichedEmps = (emps || []).map((e) => {
+        const rawService = (e.servicio_ubicacion || "").trim();
+        const isSuspended = suspendedServiceNames.has(rawService.toLowerCase());
+        return {
+          ...e,
+          servicio_ubicacion: isSuspended ? "" : e.servicio_ubicacion,
+          turno: turnoByEmp.get(e.id) || turnoByEmp.get((e.nombre_completo || "").trim().toLowerCase()) || "matutino",
+        };
+      });
 
       setEmployees(enrichedEmps);
       setSedes(seds || []);
-      setServicios(servs || []);
+      setServicios((servs || []).filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido"));
 
       let currentAsists = asists || [];
 
