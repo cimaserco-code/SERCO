@@ -174,7 +174,7 @@ function createRoundedImage(img, width, height, radius = 6) {
 // 1. GAFETE MONTERREY (CR80: 54mm x 86mm)
 // ═════════════════════════════════════════════════════════════════════════════
 export async function generateGafeteMonterreyPDF(emp, params = {}, options = {}) {
-  const isLetterSheet = options.layout === "hoja_carta";
+  const isLetterSheet = options.layout !== "tarjeta";
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -386,7 +386,7 @@ export async function generateGafeteMonterreyPDF(emp, params = {}, options = {})
 // 2. GAFETE OTRAS SEDES (VERACRUZ / XALAPA - CR80: 54mm x 86mm)
 // ═════════════════════════════════════════════════════════════════════════════
 export async function generateGafeteOtrasSedesPDF(emp, params = {}, options = {}) {
-  const isLetterSheet = options.layout === "hoja_carta";
+  const isLetterSheet = options.layout !== "tarjeta";
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
