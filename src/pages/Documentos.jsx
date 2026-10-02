@@ -12,7 +12,9 @@ import {
   CreditCard,
   UserCheck,
   Shield,
-  FileSignature
+  FileSignature,
+  Upload,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +52,7 @@ import { formatNombreNatural } from "@/lib/userNameFormatting";
 import { resolveEmpleadoNumero } from "@/lib/empleadoNumero";
 import { generateContractPDF } from "@/lib/contratoTemplate";
 import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
+import { generateGafetePDF } from "@/lib/gafeteTemplate";
 import { cn } from "@/lib/utils";
 
 const defaultContractForm = {
@@ -99,6 +102,18 @@ export default function Documentos() {
   const [selectedFichaEmpId, setSelectedFichaEmpId] = useState("");
   const [fichaComboboxOpen, setFichaComboboxOpen] = useState(false);
   const [fichaForm, setFichaForm] = useState(defaultFichaForm);
+
+  // Gafete Generation States
+  const [gafeteModalOpen, setGafeteModalOpen] = useState(false);
+  const [selectedGafeteEmpId, setSelectedGafeteEmpId] = useState("");
+  const [gafeteComboboxOpen, setGafeteComboboxOpen] = useState(false);
+  const [gafeteForm, setGafeteForm] = useState({
+    sede_tipo: "otras_sedes",
+    layout: "tarjeta",
+    vigencia: "31/12/2026",
+    foto_url: "",
+  });
+  const [customPhotoPreview, setCustomPhotoPreview] = useState("");
 
   // General Document Preview Modal States
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -267,8 +282,97 @@ export default function Documentos() {
     }
   }
 
+  // ══════════════════════════════════════════════════════════
+  // HANDLERS: GAFETE DE IDENTIFICACIÓN
+  // ══════════════════════════════════════════════════════════
+  function openGafeteGenerator() {
+    setSelectedGafeteEmpId("");
+    setGafeteForm({
+      sede_tipo: "otras_sedes",
+      layout: "tarjeta",
+      vigencia: "31/12/2026",
+      foto_url: "",
+    });
+    setCustomPhotoPreview("");
+    setGafeteComboboxOpen(false);
+    setGafeteModalOpen(true);
+  }
+
+  function handleSelectGafeteEmployee(emp) {
+    setSelectedGafeteEmpId(emp.id);
+    const empSede = sedes.find((s) => s.id === (emp.sede_id || defaultSedeId));
+    const isMty = (empSede?.nombre || "").toLowerCase().includes("monterrey");
+    setGafeteForm((prev) => ({
+      ...prev,
+      sede_tipo: isMty ? "monterrey" : "otras_sedes",
+      foto_url: emp.foto_url || "",
+      vigencia: prev.vigencia || "31/12/2026",
+    }));
+    setCustomPhotoPreview(emp.foto_url || "");
+    setGafeteComboboxOpen(false);
+  }
+
+  function handlePhotoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result;
+      if (typeof dataUrl === "string") {
+        setCustomPhotoPreview(dataUrl);
+        setGafeteForm((prev) => ({ ...prev, foto_url: dataUrl }));
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleGenerateGafete() {
+    const emp = empleados.find((e) => e.id === selectedGafeteEmpId);
+    if (!emp) {
+      toast({
+        title: "Error",
+        description: "Por favor selecciona un empleado para generar el gafete.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setGeneratingPdf(true);
+    try {
+      const result = await generateGafetePDF(
+        emp,
+        {
+          ...gafeteForm,
+          foto_url: customPhotoPreview || gafeteForm.foto_url || emp.foto_url,
+        },
+        sedes,
+        {
+          returnDoc: true,
+          defaultSedeId,
+          layout: gafeteForm.layout,
+        }
+      );
+      setGafeteModalOpen(false);
+      setCurrentDocToSave(result.doc);
+      setPreviewPdfUrl(result.blobUrl);
+      setDownloadFilename(result.filename);
+      const sedeText = gafeteForm.sede_tipo === "monterrey" ? "Monterrey" : "Otras Sedes";
+      setPreviewTitle(`Gafete de Identificación (${sedeText}) - ${formatNombreNatural(emp)}`);
+      setPreviewModalOpen(true);
+    } catch (e) {
+      console.error(e);
+      toast({
+        title: "Error al generar vista previa",
+        description: "No se pudo generar el gafete en PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
   const selectedEmpleadoObj = empleados.find((e) => e.id === selectedEmpId);
   const selectedFichaEmpObj = empleados.find((e) => e.id === selectedFichaEmpId);
+  const selectedGafeteEmpObj = empleados.find((e) => e.id === selectedGafeteEmpId);
 
   if (!canView("documentos")) return <AccessRestricted />;
 
@@ -308,14 +412,8 @@ export default function Documentos() {
 
         <Button
           size="lg"
-          variant="outline"
-          className="font-medium h-11 px-5"
-          onClick={() => {
-            toast({
-              title: "Próximamente",
-              description: "Generación de gafete en desarrollo.",
-            });
-          }}
+          className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs h-11 px-5"
+          onClick={openGafeteGenerator}
         >
           <CreditCard className="w-4 h-4 mr-2" />
           Gafete
@@ -770,6 +868,242 @@ export default function Documentos() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
               onClick={handleGenerateFicha}
               disabled={!selectedFichaEmpId || generatingPdf}
+            >
+              {generatingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Generando...
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 mr-1.5" /> Generar Vista Previa
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL: GAFETE DE IDENTIFICACIÓN ══════════════════ */}
+      <Dialog open={gafeteModalOpen} onOpenChange={setGafeteModalOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generar Gafete de Identificación</DialogTitle>
+            <DialogDescription>
+              Selecciona el empleado y revisa los datos y fotografía para emitir su gafete oficial.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Searchable Empleado Combobox */}
+            <div className="flex flex-col gap-1.5">
+              <Label>Empleado *</Label>
+              <Popover open={gafeteComboboxOpen} onOpenChange={setGafeteComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={gafeteComboboxOpen}
+                    className="w-full justify-between font-normal h-10 px-3 bg-background"
+                  >
+                    <span className="truncate">
+                      {selectedGafeteEmpObj
+                        ? `${formatNombreNatural(selectedGafeteEmpObj)} (${selectedGafeteEmpObj.puesto || "Guardia"})`
+                        : "Selecciona o busca un empleado..."}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[320px] p-0" align="start">
+                  <Command
+                    filter={(value, search) => {
+                      const normalize = (str) =>
+                        (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                      return normalize(value).includes(normalize(search)) ? 1 : 0;
+                    }}
+                  >
+                    <CommandInput placeholder="Escribe el nombre del empleado..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró ningún empleado.</CommandEmpty>
+                      <CommandGroup>
+                        {empleados.map((emp) => (
+                          <CommandItem
+                            key={emp.id}
+                            value={`${formatNombreNatural(emp)} ${emp.nombre_completo} ${emp.puesto || ""} ${emp.curp || ""}`}
+                            onSelect={() => handleSelectGafeteEmployee(emp)}
+                            className="cursor-pointer font-medium"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 text-primary",
+                                selectedGafeteEmpId === emp.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex flex-col">
+                              <span>{formatNombreNatural(emp)}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {emp.puesto || "Guardia"} · {emp.servicio_ubicacion || "Sin servicio"}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Sede del Gafete (Exclusivo Administrador para alternar) */}
+            {isSuperOrAdmin ? (
+              <div className="p-2.5 rounded-lg border border-dashed border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                    Sede de la Plantilla (Exclusivo Administrador)
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-300">
+                    Admin
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={gafeteForm.sede_tipo === "otras_sedes" ? "default" : "outline"}
+                    className={cn(
+                      "h-8 text-xs font-medium",
+                      gafeteForm.sede_tipo === "otras_sedes" && "bg-amber-600 hover:bg-amber-700 text-white"
+                    )}
+                    onClick={() => setGafeteForm({ ...gafeteForm, sede_tipo: "otras_sedes" })}
+                  >
+                    Otras Sedes (Veracruz / Xalapa)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={gafeteForm.sede_tipo === "monterrey" ? "default" : "outline"}
+                    className={cn(
+                      "h-8 text-xs font-medium",
+                      gafeteForm.sede_tipo === "monterrey" && "bg-amber-600 hover:bg-amber-700 text-white"
+                    )}
+                    onClick={() => setGafeteForm({ ...gafeteForm, sede_tipo: "monterrey" })}
+                  >
+                    Sede Monterrey (NL)
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              selectedGafeteEmpObj && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground px-1 py-0.5">
+                  <span>
+                    Sede: <strong className="text-foreground">{sedes.find((s) => s.id === (selectedGafeteEmpObj.sede_id || defaultSedeId))?.nombre || "Otras Sedes"}</strong>
+                  </span>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {gafeteForm.sede_tipo === "monterrey" ? "Plantilla Monterrey" : "Plantilla Otras Sedes"}
+                  </Badge>
+                </div>
+              )
+            )}
+
+            {/* Formato / Tamaño de Salida */}
+            <div>
+              <Label className="mb-1.5 block">Formato de Impresión</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={gafeteForm.layout === "tarjeta" ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
+                    gafeteForm.layout === "tarjeta" && "bg-amber-600 hover:bg-amber-700 text-white"
+                  )}
+                  onClick={() => setGafeteForm({ ...gafeteForm, layout: "tarjeta" })}
+                >
+                  <span className="font-semibold text-xs">Tarjeta PVC (CR-80)</span>
+                  <span className="text-[11px] opacity-80 font-normal">Frente y Reverso (2 páginas tamaño estándar)</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={gafeteForm.layout === "hoja_carta" ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-2 px-3 flex flex-col items-start text-left gap-0.5",
+                    gafeteForm.layout === "hoja_carta" && "bg-amber-600 hover:bg-amber-700 text-white"
+                  )}
+                  onClick={() => setGafeteForm({ ...gafeteForm, layout: "hoja_carta" })}
+                >
+                  <span className="font-semibold text-xs">Hoja Imprimible (Carta)</span>
+                  <span className="text-[11px] opacity-80 font-normal">Frente y Reverso lado a lado con guías</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Fotografía del Empleado */}
+            <div className="p-3 bg-muted/40 rounded-lg border border-border/60 flex items-center gap-4">
+              <div className="w-16 h-20 bg-muted rounded-md border border-border/80 overflow-hidden flex items-center justify-center shrink-0">
+                {customPhotoPreview || selectedGafeteEmpObj?.foto_url ? (
+                  <img
+                    src={customPhotoPreview || selectedGafeteEmpObj?.foto_url}
+                    alt="Foto Gafete"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Camera className="w-6 h-6 text-muted-foreground/60" />
+                )}
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <Label className="text-xs font-semibold">Fotografía para el Gafete</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  {customPhotoPreview || selectedGafeteEmpObj?.foto_url
+                    ? "Fotografía cargada. Puedes reemplazarla si deseas usar otra imagen."
+                    : "El empleado no tiene foto registrada. Puedes subir una para este gafete."}
+                </p>
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-background border border-input hover:bg-accent transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    Subir Fotografía
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoUpload}
+                    />
+                  </label>
+                  {(customPhotoPreview && customPhotoPreview !== selectedGafeteEmpObj?.foto_url) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => {
+                        setCustomPhotoPreview(selectedGafeteEmpObj?.foto_url || "");
+                        setGafeteForm({ ...gafeteForm, foto_url: selectedGafeteEmpObj?.foto_url || "" });
+                      }}
+                    >
+                      Restaurar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Vigencia */}
+            <div>
+              <Label>Vigencia en el Gafete</Label>
+              <Input
+                value={gafeteForm.vigencia}
+                placeholder="Ej. 31/12/2026"
+                onChange={(e) => setGafeteForm({ ...gafeteForm, vigencia: e.target.value })}
+              />
+              <span className="text-[11px] text-muted-foreground mt-1 block">
+                Aparece al pie del frente del gafete junto al número de permiso estatal.
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGafeteModalOpen(false)}>Cancelar</Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white font-medium"
+              onClick={handleGenerateGafete}
+              disabled={!selectedGafeteEmpId || generatingPdf}
             >
               {generatingPdf ? (
                 <>
