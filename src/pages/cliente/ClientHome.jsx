@@ -27,8 +27,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  AlertCircle
+  AlertCircle,
+  QrCode,
+  Copy,
+  ExternalLink,
+  MessageCircle,
+  Share2
 } from "lucide-react";
+import QRCode from "qrcode";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,6 +112,173 @@ export default function ClientHome() {
 
     return { totalA, totalR, totalF, totalD, totalE, totalDL, totalDLE, totalV, totalJ, punctuality };
   }, [empMonthAsists]);
+
+  // Modal de Enlace y Código QR para Residentes
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedMessage, setCopiedMessage] = useState(false);
+
+  const publicDirectorioUrl = useMemo(() => {
+    if (!selectedServicio?.id) return "";
+    return `${window.location.origin}/residente/${selectedServicio.id}`;
+  }, [selectedServicio?.id]);
+
+  useEffect(() => {
+    if (publicDirectorioUrl && qrModalOpen) {
+      QRCode.toDataURL(publicDirectorioUrl, {
+        width: 380,
+        margin: 2,
+        color: {
+          dark: "#0f172a",
+          light: "#ffffff",
+        },
+      })
+        .then((url) => setQrDataUrl(url))
+        .catch((err) => console.error("Error generating QR:", err));
+    }
+  }, [publicDirectorioUrl, qrModalOpen]);
+
+  const handleCopyLink = () => {
+    if (!publicDirectorioUrl) return;
+    navigator.clipboard.writeText(publicDirectorioUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  const handleCopyWhatsapp = () => {
+    const text = `Estimados residentes y vecinos de ${servicioNombre}:\n\nLes compartimos el enlace al Directorio Oficial de Caseta de Seguridad SERCO. Aquí pueden consultar en tiempo real quiénes son los guardias en turno y los teléfonos directos de la caseta:\n\n👉 ${publicDirectorioUrl}\n\n(No requiere usuario ni contraseña).`;
+    navigator.clipboard.writeText(text);
+    setCopiedMessage(true);
+    setTimeout(() => setCopiedMessage(false), 2500);
+  };
+
+  const handleDownloadQr = () => {
+    if (!qrDataUrl) return;
+    const a = document.createElement("a");
+    a.href = qrDataUrl;
+    a.download = `QR_Caseta_${(selectedServicio?.nombre || "servicio").replace(/\s+/g, "_")}.png`;
+    a.click();
+  };
+
+  const handlePrintPoster = () => {
+    if (!qrDataUrl || !selectedServicio) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Directorio de Seguridad - ${selectedServicio.nombre}</title>
+        <style>
+          @page { size: letter; margin: 20mm; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            color: #0f172a;
+          }
+          .card {
+            border: 3px solid #0f172a;
+            border-radius: 20px;
+            padding: 40px 30px;
+            max-width: 600px;
+            margin: 0 auto;
+          }
+          .logo {
+            font-size: 26px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            color: #0f172a;
+            text-transform: uppercase;
+          }
+          .sublogo {
+            font-size: 13px;
+            font-weight: 600;
+            color: #d97706;
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
+          .divider {
+            height: 2px;
+            background: #e2e8f0;
+            margin: 20px auto;
+            width: 80%;
+          }
+          .service-name {
+            font-size: 28px;
+            font-weight: 800;
+            margin: 10px 0 5px 0;
+            color: #1e293b;
+          }
+          .badge {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 25px;
+          }
+          .qr-img {
+            width: 260px;
+            height: 260px;
+            margin: 0 auto;
+            display: block;
+            border-radius: 12px;
+            border: 1px solid #cbd5e1;
+            padding: 8px;
+            background: #fff;
+          }
+          .instruction {
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 25px;
+            color: #0f172a;
+          }
+          .sub-instruction {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: 6px;
+            max-width: 450px;
+            margin-left: auto;
+            margin-right: auto;
+          }
+          .footer-note {
+            margin-top: 35px;
+            font-size: 11px;
+            color: #94a3b8;
+            font-weight: 600;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="logo">SERCO SEGURIDAD PRIVADA</div>
+          <div class="sublogo">Protección y Confianza 24/7</div>
+          <div class="divider"></div>
+          <div class="service-name">${selectedServicio.nombre}</div>
+          <div class="badge">Directorio Oficial de Caseta para Residentes</div>
+          <img src="${qrDataUrl}" class="qr-img" alt="Código QR" />
+          <div class="instruction">📱 Escanea con tu celular</div>
+          <div class="sub-instruction">
+            Apunta la cámara de tu teléfono a este código para consultar los nombres de los guardias en turno y los números de teléfono directo de la caseta.
+          </div>
+          <div class="footer-note">
+            No requiere registro ni contraseña · Acceso exclusivo para residentes
+          </div>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   const handleOpenFicha = async (guardia) => {
     setSelectedGuardiaFicha(guardia);
@@ -340,23 +513,35 @@ export default function ClientHome() {
             </p>
           </div>
 
-          {/* Campana de Notificaciones dentro de la tarjeta de Bienvenido */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                className="relative h-11 w-11 rounded-xl bg-card border-border shadow-xs hover:bg-muted shrink-0"
-                aria-label={`Notificaciones${notificaciones.length > 0 ? ` (${notificaciones.length} no leídas)` : ""}`}
-              >
-                <Bell className="w-5 h-5 text-foreground" />
-                {notificaciones.length > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
-                    {notificaciones.length}
-                  </span>
-                )}
-              </Button>
-            </PopoverTrigger>
+          <div className="flex items-center gap-2">
+            {/* Botón para abrir el Enlace y QR del Directorio para Residentes */}
+            <Button
+              onClick={() => setQrModalOpen(true)}
+              className="h-11 px-4 rounded-xl text-xs font-bold gap-2 shadow-xs bg-amber-500 hover:bg-amber-600 text-white shrink-0"
+              title="Generar enlace o código QR para colonos y residentes"
+            >
+              <QrCode className="w-4 h-4" />
+              <span className="hidden sm:inline">Enlace para Residentes (QR)</span>
+              <span className="sm:hidden">QR Caseta</span>
+            </Button>
+
+            {/* Campana de Notificaciones dentro de la tarjeta de Bienvenido */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="relative h-11 w-11 rounded-xl bg-card border-border shadow-xs hover:bg-muted shrink-0"
+                  aria-label={`Notificaciones${notificaciones.length > 0 ? ` (${notificaciones.length} no leídas)` : ""}`}
+                >
+                  <Bell className="w-5 h-5 text-foreground" />
+                  {notificaciones.length > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                      {notificaciones.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
             <PopoverContent align="end" className="w-[350px] sm:w-[420px] p-0 shadow-xl z-50">
               <div className="p-3.5 border-b border-border flex items-center justify-between bg-muted/30">
                 <div className="flex items-center gap-2">
@@ -429,6 +614,7 @@ export default function ClientHome() {
               </div>
             </PopoverContent>
           </Popover>
+          </div>
         </div>
 
         {/* Decorative subtle background gradient */}
@@ -690,9 +876,21 @@ export default function ClientHome() {
                   </CardDescription>
                 </div>
               </div>
-              <Badge variant="outline" className="text-xs font-semibold">
-                {guardias.length} en plantilla
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setQrModalOpen(true)}
+                  className="h-8 text-xs font-semibold gap-1.5 border-primary/30 text-primary hover:bg-primary/5 hidden sm:flex"
+                  title="Compartir directorio de guardias con residentes"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  Directorio Residentes (QR)
+                </Button>
+                <Badge variant="outline" className="text-xs font-semibold">
+                  {guardias.length} en plantilla
+                </Badge>
+              </div>
             </div>
           </CardHeader>
 
@@ -1117,6 +1315,165 @@ export default function ClientHome() {
                 </Button>
               )}
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL DE ENLACE Y CÓDIGO QR PARA RESIDENTES ══════════════════ */}
+      <Dialog open={qrModalOpen} onOpenChange={setQrModalOpen}>
+        <DialogContent className="max-w-lg p-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="p-5 pb-3 border-b bg-muted/20">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold shrink-0">
+                <QrCode className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold">
+                  Directorio de Caseta para Residentes
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  Comparte este enlace o código QR con los colonos de <strong>{servicioNombre}</strong>.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+            {/* Aviso de Seguridad y Privacidad */}
+            <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-emerald-900 dark:text-emerald-200 space-y-0.5">
+                <p className="font-bold">Modo Seguro de Solo Lectura</p>
+                <p className="text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-300">
+                  Los residentes solo verán los nombres y turnos de los guardias, y los teléfonos de la caseta. 
+                  Toda tu información financiera, facturas, sueldos y reportes internos permanecen estrictamente <strong>ocultos y protegidos</strong>.
+                </p>
+              </div>
+            </div>
+
+            {/* Código QR Generado */}
+            <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-xl border bg-card text-center sm:text-left">
+              <div className="p-2 bg-white rounded-xl border shadow-xs shrink-0 mx-auto sm:mx-0">
+                {qrDataUrl ? (
+                  <img src={qrDataUrl} alt="Código QR del Directorio" className="w-36 h-36 object-contain" />
+                ) : (
+                  <div className="w-36 h-36 flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <Badge variant="outline" className="text-[10px] bg-primary/5 text-primary border-primary/20">
+                  📱 Escaneo con Cámara Móvil
+                </Badge>
+                <h4 className="text-sm font-bold text-foreground">
+                  Código QR para Caseta o Elevador
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Imprímelo y colócalo en la ventanilla de la caseta para que los vecinos lo escaneen sin necesidad de instalar nada.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDownloadQr}
+                    className="h-8 text-xs gap-1.5"
+                    disabled={!qrDataUrl}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Descargar QR
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePrintPoster}
+                    className="h-8 text-xs gap-1.5"
+                    disabled={!qrDataUrl}
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Imprimir Letrero
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Enlace Directo para Copiar */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                <span>Enlace Directo del Directorio:</span>
+                <a
+                  href={publicDirectorioUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline text-[11px] inline-flex items-center gap-1 font-semibold"
+                >
+                  Abrir vista previa <ExternalLink className="w-3 h-3" />
+                </a>
+              </label>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={publicDirectorioUrl}
+                  className="h-9 px-3 rounded-lg border bg-muted/40 text-xs font-mono flex-1 text-foreground focus:outline-none"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleCopyLink}
+                  className="h-9 px-3 text-xs gap-1.5 shrink-0"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedLink ? "Copiado" : "Copiar"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Compartir por WhatsApp a Grupos de Vecinos */}
+            <div className="p-3.5 rounded-xl border bg-card space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-bold text-foreground">Compartir en WhatsApp de Vecinos</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] text-emerald-700 bg-emerald-50 dark:bg-emerald-950">
+                  Listo para enviar
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Copia este mensaje prediseñado o compártelo directo en el grupo de chat de tu fraccionamiento:
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `Estimados residentes de ${servicioNombre}:\n\nCompartimos el Directorio Oficial de Seguridad y Caseta SERCO (guardias en turno y teléfonos de caseta): ${publicDirectorioUrl}`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Abrir WhatsApp
+                </a>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopyWhatsapp}
+                  className="h-8 text-xs gap-1.5"
+                >
+                  {copiedMessage ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedMessage ? "Mensaje Copiado" : "Copiar Texto"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 border-t bg-muted/20">
+            <Button size="sm" variant="outline" onClick={() => setQrModalOpen(false)} className="w-full sm:w-auto">
+              Cerrar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

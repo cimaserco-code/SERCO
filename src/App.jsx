@@ -38,6 +38,7 @@ import ClientLayout from '@/components/cliente/ClientLayout';
 import ClientHome from '@/pages/cliente/ClientHome';
 import ClientAgenda from '@/pages/cliente/ClientAgenda';
 import ClientAtencion from '@/pages/cliente/ClientAtencion';
+import DirectorioResidente from '@/pages/cliente/DirectorioResidente';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -72,6 +73,8 @@ const AuthenticatedApp = () => {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/registro-asistencia" element={<RegistroAsistenciaQR />} />
+          <Route path="/residente/:id" element={<DirectorioResidente />} />
+          <Route path="/directorio/:id" element={<DirectorioResidente />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             {/* Interfaz de Cliente (Portal de Clientes con 3 módulos: Inicio, Agenda, Atención) */}
             <Route path="/cliente" element={<ClientLayout />}>
