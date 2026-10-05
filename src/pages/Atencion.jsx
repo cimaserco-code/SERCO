@@ -350,10 +350,22 @@ export default function Atencion() {
 
     try {
       if (reporteToDelete.id) {
+        const { error: delErr } = await supabase
+          .from("reportes_cliente")
+          .delete()
+          .eq("id", reporteToDelete.id);
+
+        if (delErr) {
+          console.warn("Error al borrar en Supabase:", delErr);
+        }
+      }
+
+      // Eliminar también por folio si existe
+      if (reporteToDelete.folio) {
         await supabase
           .from("reportes_cliente")
           .delete()
-          .eq("id", reporteToDelete.id)
+          .eq("folio", reporteToDelete.folio)
           .catch(() => {});
       }
 
@@ -374,8 +386,12 @@ export default function Atencion() {
 
       toast({
         title: "Reporte eliminado",
-        description: `Se eliminó el reporte ${reporteToDelete.folio || reporteToDelete.id}.`,
+        description: `Se eliminó el reporte ${reporteToDelete.folio || reporteToDelete.id} correctamente.`,
       });
+
+      if (selectedReporte?.id === reporteToDelete.id || selectedReporte?.folio === reporteToDelete.folio) {
+        setSelectedReporte(null);
+      }
     } catch (err) {
       console.error("Error al eliminar reporte:", err);
       toast({
@@ -727,31 +743,27 @@ export default function Atencion() {
 
                         {/* Acciones */}
                         <TableCell className="text-right pr-4">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="text-xs">
-                              <DropdownMenuItem onClick={() => handleOpenResponder(rep)} className="gap-2 font-medium">
-                                <MessageSquare className="w-3.5 h-3.5 text-primary" />
-                                Ver Detalle / Responder
-                              </DropdownMenuItem>
-                              {isAdmin && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() => setReporteToDelete(rep)}
-                                    className="gap-2 text-destructive focus:text-destructive"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    Eliminar Reporte
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenResponder(rep)}
+                              className="h-8 px-2.5 text-xs font-semibold text-primary hover:bg-primary/10 gap-1.5"
+                              title="Ver Detalle y Responder"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Responder</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setReporteToDelete(rep)}
+                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              title="Eliminar Reporte"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -881,24 +893,36 @@ export default function Atencion() {
               </div>
             </div>
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t">
               <Button
-                variant="outline"
+                variant="destructive"
                 size="sm"
-                onClick={() => setSelectedReporte(null)}
+                onClick={() => setReporteToDelete(selectedReporte)}
                 disabled={savingRespuesta}
+                className="gap-1.5 w-full sm:w-auto"
               >
-                Cancelar
+                <Trash2 className="w-3.5 h-3.5" />
+                Eliminar Reporte
               </Button>
-              <Button
-                size="sm"
-                onClick={handleSaveRespuesta}
-                disabled={savingRespuesta}
-                className="bg-primary text-primary-foreground font-semibold gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                {savingRespuesta ? "Guardando..." : "Guardar y Notificar al Cliente"}
-              </Button>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedReporte(null)}
+                  disabled={savingRespuesta}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveRespuesta}
+                  disabled={savingRespuesta}
+                  className="bg-primary text-primary-foreground font-semibold gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {savingRespuesta ? "Guardando..." : "Guardar y Notificar al Cliente"}
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
