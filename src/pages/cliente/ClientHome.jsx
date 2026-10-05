@@ -123,8 +123,47 @@ export default function ClientHome() {
 
   const publicDirectorioUrl = useMemo(() => {
     if (!selectedServicio?.id) return "";
-    return `${window.location.origin}/residente/${selectedServicio.id}`;
-  }, [selectedServicio?.id]);
+    try {
+      const payload = {
+        id: selectedServicio.id,
+        n: selectedServicio.nombre || "",
+        dir: selectedServicio.direccion || "",
+        ciudad: selectedServicio.ciudad || "",
+        t1: selectedServicio.telefono || "",
+        t2: selectedServicio.telefono_2 || "",
+        g: (guardias || []).map((g) => ({
+          id: g.id,
+          n: g.nombre,
+          p: g.puesto,
+          t: g.turno,
+          f: g.foto_url || g.foto_url_runtime || "",
+        })),
+        tel: (telefonos || []).map((t) => ({
+          id: t.id,
+          num: t.numero,
+          nom: t.nombre || "Caseta Principal",
+          c: t.compania || "",
+          tipo: t.tipo || "Celular Operativo",
+        })),
+      };
+
+      try {
+        localStorage.setItem(`serco_residente_directorio_${selectedServicio.id}`, JSON.stringify(payload));
+      } catch {}
+
+      const json = JSON.stringify(payload);
+      const bytes = new TextEncoder().encode(json);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const token = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      return `${window.location.origin}/residente/${selectedServicio.id}?d=${token}`;
+    } catch (e) {
+      console.warn("Error generando token de directorio público:", e);
+      return `${window.location.origin}/residente/${selectedServicio.id}`;
+    }
+  }, [selectedServicio, guardias, telefonos]);
 
   useEffect(() => {
     if (publicDirectorioUrl && qrModalOpen) {

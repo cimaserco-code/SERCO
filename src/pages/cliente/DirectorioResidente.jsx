@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import {
   Shield,
@@ -8,24 +8,19 @@ import {
   Phone,
   PhoneCall,
   Clock,
-  User,
   Users,
   MapPin,
-  CheckCircle2,
-  ExternalLink,
   MessageCircle,
   AlertTriangle,
-  Loader2,
-  Calendar,
-  Sparkles
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function DirectorioResidente() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const [servicio, setServicio] = useState(null);
   const [guardias, setGuardias] = useState([]);
   const [telefonos, setTelefonos] = useState([]);
@@ -39,133 +34,184 @@ export default function DirectorioResidente() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!id) {
-      setError("No se especificó el servicio");
-      setLoading(false);
-      return;
+  const applyDirectoryPayload = (payload) => {
+    if (!payload) return;
+    setServicio({
+      id: payload.id || id,
+      nombre: payload.n || payload.nombre || "Servicio SERCO",
+      direccion: payload.dir || payload.direccion || "",
+      ciudad: payload.ciudad || "",
+      telefono: payload.t1 || payload.telefono || "",
+      telefono_2: payload.t2 || payload.telefono_2 || "",
+      estado: payload.estado || "activo",
+    });
+
+    if (Array.isArray(payload.g)) {
+      setGuardias(
+        payload.g.map((g, idx) => ({
+          id: g.id || `g_${idx}`,
+          nombre: g.n || g.nombre || "Guardia de Seguridad",
+          puesto: g.p || g.puesto || "Guardia de Seguridad",
+          turno: g.t || g.turno || "Matutino",
+          foto_url: g.f || g.foto_url || null,
+        }))
+      );
+    } else if (Array.isArray(payload.guardias)) {
+      setGuardias(payload.guardias);
     }
+
+    if (Array.isArray(payload.tel)) {
+      setTelefonos(
+        payload.tel.map((t, idx) => ({
+          id: t.id || `tel_${idx}`,
+          numero: t.num || t.numero || "",
+          etiqueta: t.nom || t.etiqueta || "Caseta Principal",
+          compania: t.c || t.compania || "",
+          tipo: t.tipo || "caseta",
+        }))
+      );
+    } else if (Array.isArray(payload.telefonos)) {
+      setTelefonos(payload.telefonos);
+    }
+  };
+
+  useEffect(() => {
     loadDirectorio();
-  }, [id]);
+  }, [id, searchParams]);
 
   async function loadDirectorio() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Cargar servicio público
-      const { data: servData, error: servErr } = await supabase
+      // 1. PRIMER NIVEL: Token codificado en parámetro de URL (funciona siempre sin login ni base de datos)
+      const token = searchParams.get("d");
+      if (token) {
+        try {
+          let base64 = token.replace(/-/g, "+").replace(/_/g, "/");
+          while (base64.length % 4) base64 += "=";
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const json = new TextDecoder().decode(bytes);
+          const parsed = JSON.parse(json);
+          if (parsed && (parsed.id === id || !id || parsed.n)) {
+            applyDirectoryPayload(parsed);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("No se pudo decodificar el token de URL:", e);
+        }
+      }
+
+      // 2. SEGUNDO NIVEL: Cache local prealmacenado en este dispositivo/navegador
+      if (id) {
+        try {
+          const localCached = localStorage.getItem(`serco_residente_directorio_${id}`);
+          if (localCached) {
+            const parsed = JSON.parse(localCached);
+            if (parsed && (parsed.id === id || parsed.n)) {
+              applyDirectoryPayload(parsed);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("No se pudo leer de cache local:", e);
+        }
+      }
+
+      // 3. TERCER NIVEL: Función RPC de Supabase con SECURITY DEFINER
+      if (id) {
+        try {
+          const { data: rpcData, error: rpcErr } = await supabase.rpc("get_directorio_residente", {
+            p_servicio_id: id,
+          });
+          if (!rpcErr && rpcData && rpcData.success && rpcData.servicio) {
+            setServicio(rpcData.servicio);
+            setGuardias(rpcData.guardias || []);
+            setTelefonos(rpcData.telefonos || []);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("RPC get_directorio_residente no disponible:", e);
+        }
+      }
+
+      // 4. CUARTO NIVEL: Consulta directa a la base de datos de Supabase
+      if (!id) {
+        throw new Error("No se especificó el servicio en el enlace.");
+      }
+
+      const { data: servData } = await supabase
         .from("servicios")
         .select("id, nombre, direccion, ciudad, telefono, telefono_2, estado, sede_id, admin_nombre")
         .eq("id", id)
         .maybeSingle();
 
-      if (servErr || !servData) {
-        throw new Error("El servicio no fue encontrado o el enlace no es válido.");
-      }
+      if (servData) {
+        setServicio(servData);
 
-      setServicio(servData);
-
-      // 2. Cargar asignaciones de turnos para este servicio
-      const { data: asigData } = await supabase
-        .from("asignacion_turnos")
-        .select("id, empleado_id, turno, estado")
-        .eq("servicio_id", id);
-
-      const activeAsigs = (asigData || []).filter(
-        (a) => !a.estado || a.estado === "activo" || a.estado === "asignado"
-      );
-
-      // 3. Cargar información pública de los guardias asignados (solo nombre, puesto, foto, turno)
-      if (activeAsigs.length > 0) {
-        const empIds = [...new Set(activeAsigs.map((a) => a.empleado_id).filter(Boolean))];
-        if (empIds.length > 0) {
-          const { data: empData } = await supabase
-            .from("empleados")
-            .select("id, nombre, puesto, foto_url, estado")
-            .in("id", empIds);
-
-          const empMap = new Map((empData || []).map((e) => [e.id, e]));
-
-          // Enlazar asignación con guardia
-          const list = activeAsigs
-            .map((asig) => {
-              const emp = empMap.get(asig.empleado_id);
-              if (!emp || emp.estado === "baja" || emp.estado === "inactivo") return null;
-              return {
-                id: emp.id,
-                asigId: asig.id,
-                nombre: emp.nombre || "Guardia de Seguridad",
-                puesto: emp.puesto || "Guardia de Seguridad",
-                foto_url: emp.foto_url || null,
-                turno: asig.turno || "Turno Operativo",
-              };
-            })
-            .filter(Boolean);
-
-          // Ordenar por turno: Matutino, Vespertino, Cubredescansos / otro
-          const orderMap = { matutino: 1, vespertino: 2, cubredescanso: 3, cubredescansos: 3 };
-          list.sort((a, b) => {
-            const tA = (a.turno || "").toLowerCase();
-            const tB = (b.turno || "").toLowerCase();
-            const rankA = orderMap[tA] || 99;
-            const rankB = orderMap[tB] || 99;
-            if (rankA !== rankB) return rankA - rankB;
-            return a.nombre.localeCompare(b.nombre);
+        // Guardias vía función RPC de asistencia QR o asignación de turnos
+        try {
+          const { data: rpcGuards } = await supabase.rpc("get_personal_servicio_qr", {
+            p_servicio_id: id,
           });
-
-          setGuardias(list);
-        } else {
-          setGuardias([]);
-        }
-      } else {
-        setGuardias([]);
-      }
-
-      // 4. Cargar teléfonos de caseta / celulares asignados al servicio
-      const phoneList = [];
-
-      // Si el servicio tiene teléfonos configurados directamente
-      if (servData.telefono) {
-        phoneList.push({
-          id: "serv_tel_1",
-          numero: servData.telefono,
-          etiqueta: "Caseta Principal / Acceso",
-          tipo: "caseta",
-        });
-      }
-      if (servData.telefono_2) {
-        phoneList.push({
-          id: "serv_tel_2",
-          numero: servData.telefono_2,
-          etiqueta: "Teléfono Secundario / Rondín",
-          tipo: "secundario",
-        });
-      }
-
-      // Buscar si hay líneas asignadas en recargas_celular / inventario para este servicio
-      try {
-        const { data: recargasData } = await supabase
-          .from("recargas_celular")
-          .select("id, numero_telefono, compania, notas")
-          .eq("servicio_id", id);
-
-        if (Array.isArray(recargasData)) {
-          recargasData.forEach((r, idx) => {
-            if (r.numero_telefono && !phoneList.some((p) => p.numero === r.numero_telefono)) {
-              phoneList.push({
-                id: `cel_${r.id || idx}`,
-                numero: r.numero_telefono,
-                etiqueta: r.notas ? `Celular: ${r.notas}` : "Celular de Caseta",
-                tipo: "celular",
-              });
+          if (rpcGuards && rpcGuards.length > 0) {
+            setGuardias(
+              rpcGuards.map((g) => ({
+                id: g.empleado_id,
+                nombre: g.nombre_completo,
+                puesto: g.puesto || "Guardia de Seguridad",
+                turno: g.turno || "Matutino",
+                foto_url: null,
+              }))
+            );
+          } else {
+            // Intentar tabla asignacion_turnos
+            const { data: asigData } = await supabase
+              .from("asignacion_turnos")
+              .select("id, empleado_id, empleado_nombre, turno")
+              .eq("servicio_id", id);
+            if (asigData && asigData.length > 0) {
+              setGuardias(
+                asigData.map((a) => ({
+                  id: a.empleado_id || a.id,
+                  nombre: a.empleado_nombre || "Guardia de Seguridad",
+                  puesto: "Guardia de Seguridad",
+                  turno: a.turno || "Matutino",
+                  foto_url: null,
+                }))
+              );
             }
+          }
+        } catch {}
+
+        // Teléfonos del servicio
+        const phoneList = [];
+        if (servData.telefono) {
+          phoneList.push({
+            id: "serv_tel_1",
+            numero: servData.telefono,
+            etiqueta: "Caseta Principal / Acceso",
+            tipo: "caseta",
           });
         }
-      } catch {
-        // Fallback silencioso si la tabla no está disponible
+        if (servData.telefono_2) {
+          phoneList.push({
+            id: "serv_tel_2",
+            numero: servData.telefono_2,
+            etiqueta: "Teléfono Secundario / Rondín",
+            tipo: "secundario",
+          });
+        }
+        setTelefonos(phoneList);
+        setLoading(false);
+        return;
       }
 
-      setTelefonos(phoneList);
+      throw new Error("El servicio no fue encontrado o el enlace no es válido.");
     } catch (err) {
       console.error("Error al cargar directorio de residentes:", err);
       setError(err.message || "No se pudo cargar la información del directorio.");
