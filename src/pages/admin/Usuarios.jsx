@@ -36,7 +36,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
-import { createClient } from "@supabase/supabase-js";
 
 export default function Usuarios() {
   const { user: currentUser } = useAuth();
@@ -266,66 +265,28 @@ export default function Usuarios() {
 
     setCreatingClient(true);
     try {
-      // 1. Crear en Supabase Auth mediante cliente aislado para no cerrar la sesión del admin actual
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-      const tempAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.access_token) throw new Error("La sesión de administrador expiró. Inicia sesión nuevamente.");
 
-      const { data: authData, error: authError } = await tempAuthClient.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            role: "cliente",
-            full_name: fullName,
-            usuario: email.split("@")[0],
-          },
+      const response = await fetch("/api/create-client", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
+        body: JSON.stringify({ email, password, fullName }),
       });
-
-      if (authError && !authError.message?.toLowerCase().includes("already registered")) {
-        throw authError;
+      const responseBody = await response.text();
+      let result = {};
+      try {
+        result = responseBody ? JSON.parse(responseBody) : {};
+      } catch {
+        result = {};
       }
-
-      const authUserId = authData?.user?.id;
-
-      // 2. Guardar o actualizar en la tabla profiles con role = "cliente"
-      if (authUserId) {
-        const { error: profileErr } = await supabase
-          .from("profiles")
-          .upsert({
-            id: authUserId,
-            email,
-            full_name: fullName,
-            role: "cliente",
-            usuario: email.split("@")[0],
-            estado: "active",
-          });
-        if (profileErr) console.warn("Aviso al actualizar profiles:", profileErr.message);
-      } else {
-        const { error: directErr } = await supabase
-          .from("profiles")
-          .upsert(
-            {
-              email,
-              full_name: fullName,
-              role: "cliente",
-              usuario: email.split("@")[0],
-              estado: "active",
-            },
-            { onConflict: "email" }
-          );
-        if (directErr) {
-          await sercoApi.entities.User.create({
-            email,
-            full_name: fullName,
-            role: "cliente",
-            usuario: email.split("@")[0],
-            estado: "active",
-          }).catch(() => {});
-        }
+      if (!response.ok) {
+        const serverMessage = result.error || responseBody.trim();
+        throw new Error(serverMessage || `El endpoint respondió con HTTP ${response.status}.`);
       }
 
       // Si seleccionó un servicio y no tenía correo, guardarlo para sincronización

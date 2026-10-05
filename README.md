@@ -103,6 +103,8 @@ VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu-anon-key-de-supabase
 ```
 
+El endpoint de Vercel para crear cuentas de cliente también requiere `SUPABASE_SERVICE_ROLE_KEY` configurada como variable de entorno **solo del servidor** en Vercel. No uses el prefijo `VITE_` para esta clave ni la expongas en el frontend. También se puede configurar `SUPABASE_URL` para el endpoint; si no está definida, usará `VITE_SUPABASE_URL`.
+
 ### Comandos de Ejecución
 *   **Correr servidor local**:
     ```bash
