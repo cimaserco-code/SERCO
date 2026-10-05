@@ -46,7 +46,7 @@ export default function ClientAtencion() {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.titulo.trim() || !form.descripcion.trim()) {
       toast({
@@ -59,10 +59,11 @@ export default function ClientAtencion() {
 
     setSubmitting(true);
     try {
-      const created = addReporte(form);
+      const created = await addReporte(form);
+      const folioRef = created?.folio || created?.id || "Generado";
       toast({
         title: "Reporte Levantado con Éxito",
-        description: `Se ha registrado el folio ${created.id}. El equipo de SERCO atenderá tu solicitud a la brevedad.`,
+        description: `Se ha registrado el folio ${folioRef}. El equipo de SERCO atenderá tu solicitud a la brevedad.`,
       });
       setForm({
         tipo: "Incidencia Operativa",

@@ -25,7 +25,8 @@ const tableMap = {
   Mantenimiento: 'mantenimientos',
   Gasolina: 'gasolina',
   Automovil: 'automoviles',
-  Agenda: 'agenda'
+  Agenda: 'agenda',
+  ReporteCliente: 'reportes_cliente'
 };
 
 function formatSupabaseError(error) {

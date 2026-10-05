@@ -314,13 +314,36 @@ export function ClientPortalProvider({ children }) {
       });
       setAgendaEvents(servEvents);
 
-      // 5. Load client reports from localStorage + server
+      // 5. Load client reports from Supabase reportes_cliente + localStorage fallback
       try {
         const localKey = `serco_reportes_cliente_${selectedServicio.id}`;
         const localReports = JSON.parse(localStorage.getItem(localKey) || "[]");
-        setReportesCliente(localReports);
+
+        let remoteReports = [];
+        try {
+          const { data: dbData, error: dbErr } = await supabase
+            .from("reportes_cliente")
+            .select("*")
+            .eq("servicio_id", selectedServicio.id)
+            .order("created_at", { ascending: false });
+          if (!dbErr && dbData) {
+            remoteReports = dbData;
+          }
+        } catch (dbErr) {
+          console.warn("No se pudieron cargar reportes desde Supabase:", dbErr);
+        }
+
+        const combined = [...remoteReports];
+        const existingFolios = new Set(remoteReports.map((r) => r.folio || r.id));
+        localReports.forEach((lr) => {
+          if (!existingFolios.has(lr.folio || lr.id)) {
+            combined.push(lr);
+          }
+        });
+
+        setReportesCliente(combined);
       } catch (e) {
-        console.error("Error reading client reports from localStorage:", e);
+        console.error("Error reading client reports from localStorage/Supabase:", e);
       }
     } catch (err) {
       console.error("Error loading client service data:", err);
@@ -444,14 +467,15 @@ export function ClientPortalProvider({ children }) {
   }, [selectedServicio, allServices, empleados, asignaciones]);
 
   // Submit client report / incident
-  const addReporte = (nuevoReporte) => {
-    if (!selectedServicio) return;
+  const addReporte = async (nuevoReporte) => {
+    if (!selectedServicio) return null;
     const ticketId = `REP-${Date.now().toString().slice(-6)}`;
     const now = new Date();
     const item = {
-      id: ticketId,
+      folio: ticketId,
       servicio_id: selectedServicio.id,
       servicio_nombre: selectedServicio.nombre,
+      sede_id: selectedServicio.sede_id || null,
       tipo: nuevoReporte.tipo || "Incidencia Operativa",
       titulo: nuevoReporte.titulo || "",
       descripcion: nuevoReporte.descripcion || "",
@@ -460,18 +484,42 @@ export function ClientPortalProvider({ children }) {
       fecha: now.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }),
       hora: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
       creado_por: user?.full_name || user?.nombre || "Cliente",
-      respuesta: "Tu reporte ha sido canalizado a la mesa de operaciones de SERCO."
+      cliente_email: user?.email || selectedServicio.correo || "",
+      cliente_telefono: selectedServicio.telefono || "",
+      respuesta: null
     };
 
-    const updated = [item, ...reportesCliente];
+    // Actualización inmediata en estado local
+    const optimisticItem = { id: ticketId, ...item };
+    const updated = [optimisticItem, ...reportesCliente];
     setReportesCliente(updated);
+
     try {
       const localKey = `serco_reportes_cliente_${selectedServicio.id}`;
       localStorage.setItem(localKey, JSON.stringify(updated));
     } catch (e) {
-      console.error("Error saving client report:", e);
+      console.error("Error saving client report to localStorage:", e);
     }
-    return item;
+
+    // Persistir en Supabase para que el equipo de SERCO lo reciba en el módulo de Atención
+    try {
+      const { data: dbCreated, error: dbErr } = await supabase
+        .from("reportes_cliente")
+        .insert(item)
+        .select()
+        .single();
+
+      if (!dbErr && dbCreated) {
+        setReportesCliente((prev) =>
+          prev.map((r) => (r.folio === ticketId || r.id === ticketId ? dbCreated : r))
+        );
+        return dbCreated;
+      }
+    } catch (err) {
+      console.warn("Fallo al guardar reporte en Supabase:", err);
+    }
+
+    return optimisticItem;
   };
 
   // Generate the 4 Smart Notification types:
