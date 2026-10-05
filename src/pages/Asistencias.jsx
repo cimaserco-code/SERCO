@@ -34,6 +34,60 @@ const estadosConfig = {
   festivo: { label: "F", name: "Festivo", color: "bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-sm" },
 };
 
+export const getAttendanceCellState = (employee, dateStr) => {
+  const baja = employee?.fecha_baja;
+  const reingreso = employee?.fecha_reingreso;
+
+  if (!baja || (reingreso && reingreso < baja) || dateStr < baja) return "active";
+  if (reingreso && dateStr >= reingreso) return "active";
+  if (dateStr === baja) return "leave-day";
+  return "leave-period";
+};
+
+export const evaluateCellStatus = (employee, dateStr, existingRecord, cellState) => {
+  if (existingRecord?.festivo) return "festivo";
+  if (existingRecord?.estado) return existingRecord.estado;
+  if (cellState !== "active") return null;
+
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  const todayDateStr = `${yyyy}-${mm}-${dd}`;
+
+  // Fechas pasadas sin registro -> se vuelve Falta
+  if (dateStr < todayDateStr) {
+    return "falta";
+  }
+
+  // Fechas futuras -> casilla en blanco
+  if (dateStr > todayDateStr) {
+    return null;
+  }
+
+  // Día de hoy:
+  // Inicialmente casilla en blanco; si vence la hora límite del turno sin registro -> se vuelve Falta
+  const hours = today.getHours();
+  const minutes = today.getMinutes();
+  const totalMinutes = hours * 60 + minutes;
+  const morningLimit = 7 * 60 + 15; // 07:15 AM
+  const eveningLimit = 19 * 60 + 15; // 19:15 PM
+  const turno = (employee?.turno || "").toLowerCase();
+
+  if (turno.includes("matutino")) {
+    return totalMinutes > morningLimit ? "falta" : null;
+  } else if (turno.includes("vespertino")) {
+    return totalMinutes > eveningLimit ? "falta" : null;
+  } else {
+    // Cubredescansos u otro turno:
+    if (hours < 13) {
+      return totalMinutes > morningLimit ? "falta" : null;
+    } else {
+      return totalMinutes > eveningLimit ? "falta" : null;
+    }
+  }
+};
+
 export default function Asistencias() {
   const { user } = useAuth();
   const { canView, can } = usePermissions();
@@ -74,16 +128,6 @@ export default function Asistencias() {
   const [vacacionesSaving, setVacacionesSaving] = useState(false);
   const [empSearch, setEmpSearch] = useState("");
   const [attendanceSearch, setAttendanceSearch] = useState("");
-
-  const getAttendanceCellState = (employee, dateStr) => {
-    const baja = employee?.fecha_baja;
-    const reingreso = employee?.fecha_reingreso;
-
-    if (!baja || (reingreso && reingreso < baja) || dateStr < baja) return "active";
-    if (reingreso && dateStr >= reingreso) return "active";
-    if (dateStr === baja) return "leave-day";
-    return "leave-period";
-  };
 
   const isEmployeeVisibleInMonth = (employee) => {
     const baja = employee?.fecha_baja;
@@ -193,6 +237,50 @@ export default function Asistencias() {
       setSedes(seds || []);
       setServicios((servs || []).filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido"));
       setAsistencias(asists || []);
+
+      // Sincronización en segundo plano de faltas no registradas vencidas para nóminas y reportes
+      setTimeout(async () => {
+        try {
+          const today = new Date();
+          const yyyy = today.getFullYear();
+          const mm = String(today.getMonth() + 1).padStart(2, '0');
+          const dd = String(today.getDate()).padStart(2, '0');
+          const todayMonthStr = `${yyyy}-${mm}`;
+          const todayDateStr = `${yyyy}-${mm}-${dd}`;
+
+          if (currentMonth !== todayMonthStr) return;
+
+          const existingKeys = new Set(
+            (asists || []).map((a) => `${a.empleado_id}_${a.fecha}`)
+          );
+
+          const missingFaltas = [];
+          (enrichedEmps || []).forEach((emp) => {
+            const cellState = getAttendanceCellState(emp, todayDateStr);
+            if (cellState !== "active") return;
+            const key = `${emp.id}_${todayDateStr}`;
+            if (existingKeys.has(key)) return;
+
+            const computed = evaluateCellStatus(emp, todayDateStr, null, cellState);
+            if (computed === "falta") {
+              missingFaltas.push({
+                empleado_id: emp.id,
+                fecha: todayDateStr,
+                estado: "falta",
+                sede_id: emp.sede_id || null,
+              });
+            }
+          });
+
+          if (missingFaltas.length > 0) {
+            for (const f of missingFaltas) {
+              await sercoApi.entities.Asistencia.upsert(f, "empleado_id,fecha").catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.warn("Sync diferido de faltas:", err);
+        }
+      }, 1500);
     } catch (e) {
       console.error("Error al cargar datos de asistencias:", e);
     } finally {
@@ -634,7 +722,8 @@ export default function Asistencias() {
       const dayCells = daysArray.map((day) => {
         const dateStr = `${currentMonth}-${String(day).padStart(2, "0")}`;
         const record = asistenciasMap.get(`${emp.id}_${dateStr}`);
-        let estado = record?.estado || "";
+        const cellState = getAttendanceCellState(emp, dateStr);
+        const estado = evaluateCellStatus(emp, dateStr, record, cellState);
 
         if (estado === "asistió") countA++;
         else if (estado === "retraso") countR++;
@@ -916,7 +1005,6 @@ export default function Asistencias() {
                         {daysArray.map((day) => {
                           const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                           const asig = asistenciasMap.get(`${emp.id}_${dateStr}`);
-                          let currentVal = asig?.festivo ? "festivo" : (asig?.estado || null);
                           const todayFlag = isToday(day);
                           const cellState = getAttendanceCellState(emp, dateStr);
 
@@ -930,6 +1018,7 @@ export default function Asistencias() {
                             );
                           }
 
+                          const currentVal = evaluateCellStatus(emp, dateStr, asig, cellState);
                           const cfg = currentVal ? estadosConfig[currentVal] : null;
 
                           return (
@@ -1334,17 +1423,48 @@ export default function Asistencias() {
 // Attendance summary modal helper
 const EmployeeSummaryDialog = ({ employee, currentMonth, monthName, year, asistencias, onClose }) => {
   const { user } = useAuth();
-  const empAsists = asistencias.filter(a => a.empleado_id === employee.id && a.fecha?.startsWith(currentMonth));
-  const totalA = empAsists.filter(a => a.estado === "asistió").length;
-  const totalR = empAsists.filter(a => a.estado === "retraso").length;
-  const totalF = empAsists.filter(a => a.estado === "falta").length;
-  const totalD = empAsists.filter(a => a.estado === "descanso").length;
-  const totalE = empAsists.filter(a => a.estado === "extra").length;
-  const totalDL = empAsists.filter(a => a.estado === "descanso_laborado").length;
-  const totalDLE = empAsists.filter(a => a.estado === "descanso_extra").length;
-  const totalV = empAsists.filter(a => a.estado === "vacaciones").length;
-  const totalJ = empAsists.filter(a => a.estado === "justificada").length;
-  
+
+  const asistenciasMap = useMemo(() => {
+    const map = new Map();
+    (asistencias || []).forEach((a) => {
+      if (a.empleado_id === employee.id && a.fecha) {
+        map.set(`${a.empleado_id}_${a.fecha}`, a);
+      }
+    });
+    return map;
+  }, [asistencias, employee.id]);
+
+  const [yStr, mStr] = currentMonth.split("-");
+  const daysInMonth = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
+  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  let totalA = 0;
+  let totalR = 0;
+  let totalF = 0;
+  let totalD = 0;
+  let totalE = 0;
+  let totalDL = 0;
+  let totalDLE = 0;
+  let totalV = 0;
+  let totalJ = 0;
+
+  daysArray.forEach((day) => {
+    const dateStr = `${currentMonth}-${String(day).padStart(2, "0")}`;
+    const record = asistenciasMap.get(`${employee.id}_${dateStr}`);
+    const cellState = getAttendanceCellState(employee, dateStr);
+    const estado = evaluateCellStatus(employee, dateStr, record, cellState);
+
+    if (estado === "asistió") totalA++;
+    else if (estado === "retraso") totalR++;
+    else if (estado === "falta") totalF++;
+    else if (estado === "descanso") totalD++;
+    else if (estado === "extra") totalE++;
+    else if (estado === "descanso_laborado") totalDL++;
+    else if (estado === "descanso_extra") totalDLE++;
+    else if (estado === "vacaciones") totalV++;
+    else if (estado === "justificada") totalJ++;
+  });
+
   const divisor = totalA + totalR + totalF + totalDL + totalDLE;
   const punctuality = divisor > 0 ? Math.round(((totalA + totalR + totalDL + totalDLE) / divisor) * 100) : 100;
 

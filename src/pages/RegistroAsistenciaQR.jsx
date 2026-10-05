@@ -275,9 +275,10 @@ export default function RegistroAsistenciaQR() {
     };
   }, []);
 
-  // Iniciar cámara al seleccionar empleado
+  // Iniciar cámara al seleccionar empleado (permite iniciar si no tiene registro o si está provisionalmente en 'falta')
   useEffect(() => {
-    if (selectedEmployee && !existingRecord?.estado && !photoDataUrl) {
+    const canRegister = !existingRecord?.estado || existingRecord?.estado === "falta";
+    if (selectedEmployee && canRegister && !photoDataUrl) {
       startCamera();
     }
   }, [selectedEmployee, existingRecord]);
@@ -685,6 +686,19 @@ export default function RegistroAsistenciaQR() {
                       <div className="bg-sky-950/40 border border-sky-800/60 p-2.5 rounded-lg text-xs text-sky-300 flex items-center justify-between mt-2">
                         <span>Ya registraste asistencia hoy:</span>
                         <Badge className="bg-sky-600 text-white font-bold">{existingRecord.estado.toUpperCase()}</Badge>
+                      </div>
+                    ) : existingRecord?.estado === "falta" ? (
+                      <div className="space-y-1.5 pt-1 border-t border-slate-900 text-xs mt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-rose-400 font-medium">Estado provisional:</span>
+                          <Badge className="bg-rose-600 text-white font-bold text-[10px]">FALTA (SIN REGISTRO PREVIO)</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Al registrarte ahora cambiará a:</span>
+                          <Badge className="bg-amber-600 text-white font-bold text-[10px]">
+                            {evaluatedStatus === "asistió" ? "A TIEMPO (ASISTIÓ)" : "DESPUÉS DE HORA (RETRASO)"}
+                          </Badge>
+                        </div>
                       </div>
                     ) : (
                       <div className="flex items-center justify-between pt-1 border-t border-slate-900 text-xs">
