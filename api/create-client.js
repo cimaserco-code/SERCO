@@ -90,6 +90,19 @@ export default async function handler(request, response) {
     const authUserId = createdAuth.user?.id;
     if (!authUserId) throw new Error("Supabase Auth no devolvió el usuario creado.");
 
+    const { data: confirmedAuth, error: confirmationError } = await supabase.auth.admin.updateUserById(
+      authUserId,
+      { email_confirm: true }
+    );
+    if (confirmationError || !confirmedAuth.user?.email_confirmed_at) {
+      const { error: cleanupError } = await supabase.auth.admin.deleteUser(authUserId);
+      const confirmationMessage = confirmationError
+        ? describeError(confirmationError)
+        : "Supabase no devolvió email_confirmed_at después de confirmar el usuario.";
+      const cleanupMessage = cleanupError ? ` No se pudo eliminar el usuario incompleto: ${cleanupError.message}` : "";
+      throw new Error(`No se pudo confirmar el correo del usuario cliente: ${confirmationMessage}.${cleanupMessage}`);
+    }
+
     try {
       const { error: profileError } = await supabase.from("profiles").upsert({
         id: authUserId,
