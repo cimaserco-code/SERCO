@@ -94,7 +94,7 @@ export default function Egresos() {
   const [recargas, setRecargas] = useState([]);
   const [recargaModalOpen, setRecargaModalOpen] = useState(false);
   const [recargaEditing, setRecargaEditing] = useState(null);
-  const [recargaForm, setRecargaForm] = useState({ monto: "50", fecha: "" });
+  const [recargaForm, setRecargaForm] = useState({ monto: "50", montoPersonalizado: "", fecha: "" });
   const [recargaSaving, setRecargaSaving] = useState(false);
 
   // Mantenimiento state
@@ -188,19 +188,88 @@ export default function Egresos() {
         sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
       ]);
       setSaldos(data || []);
+
       let rechargeData = null;
       if (sercoApi.entities.RecargaCelular) {
         rechargeData = await sercoApi.entities.RecargaCelular
           .filter({ saldo_id: { $in: (data || []).map((saldo) => saldo.id) } })
           .catch(() => null);
       }
-      setRecargas(rechargeData || (data || []).filter((saldo) => saldo.monto && (saldo.fecha || saldo.mes)).map((saldo) => ({
-        id: `legacy-${saldo.id}`,
-        saldo_id: saldo.id,
-        monto: saldo.monto,
-        fecha: saldo.fecha,
-        mes: saldo.mes || saldo.fecha?.slice(0, 7),
-      })));
+
+      // Mapa para deduplicar y consolidar recargas sin duplicados
+      const recargasMap = new Map();
+
+      // 1. Recargas de tabla recargas_celular si están disponibles en base de datos
+      if (Array.isArray(rechargeData)) {
+        rechargeData.forEach((r) => {
+          if (r && r.saldo_id && r.fecha) {
+            const dedupeKey = `${r.saldo_id}_${r.fecha}_${Number(r.monto) || 0}`;
+            recargasMap.set(dedupeKey, {
+              ...r,
+              mes: r.mes || r.fecha?.slice(0, 7),
+            });
+          }
+        });
+      }
+
+      // 2. Recargas guardadas en notas de saldos (historial_recargas)
+      (data || []).forEach((saldo) => {
+        let parsedNotas = {};
+        try {
+          parsedNotas = typeof saldo.notas === "string" ? JSON.parse(saldo.notas) : (saldo.notas || {});
+        } catch (_) {}
+
+        const hasHistorial = Array.isArray(parsedNotas.historial_recargas) && parsedNotas.historial_recargas.length > 0;
+
+        if (hasHistorial) {
+          parsedNotas.historial_recargas.forEach((rec) => {
+            const dedupeKey = `${rec.saldo_id || saldo.id}_${rec.fecha}_${Number(rec.monto) || 0}`;
+            if (!recargasMap.has(dedupeKey)) {
+              recargasMap.set(dedupeKey, {
+                ...rec,
+                saldo_id: rec.saldo_id || saldo.id,
+                mes: rec.mes || rec.fecha?.slice(0, 7),
+              });
+            }
+          });
+        } else if (Number(saldo.monto) > 0 && (saldo.fecha || saldo.mes)) {
+          // Solo si NO tiene historial_recargas, se toma el saldo.monto como su única recarga legacy inicial
+          const fechaRecarga = saldo.fecha || `${saldo.mes}-01`;
+          const dedupeKey = `${saldo.id}_${fechaRecarga}_${Number(saldo.monto) || 0}`;
+          if (!recargasMap.has(dedupeKey)) {
+            recargasMap.set(dedupeKey, {
+              id: `legacy-${saldo.id}`,
+              saldo_id: saldo.id,
+              monto: Number(saldo.monto),
+              fecha: fechaRecarga,
+              mes: saldo.mes || saldo.fecha?.slice(0, 7),
+            });
+          }
+        }
+      });
+
+      // 3. Recargas en caché local (deduplicadas por saldo_id + fecha + monto)
+      try {
+        const cachedRaw = localStorage.getItem("serco_recargas_celulares_cache");
+        if (cachedRaw) {
+          const cachedList = JSON.parse(cachedRaw);
+          if (Array.isArray(cachedList)) {
+            cachedList.forEach((rec) => {
+              if (rec && rec.saldo_id && rec.fecha && rec.monto) {
+                const dedupeKey = `${rec.saldo_id}_${rec.fecha}_${Number(rec.monto) || 0}`;
+                if (!recargasMap.has(dedupeKey)) {
+                  recargasMap.set(dedupeKey, {
+                    ...rec,
+                    mes: rec.mes || rec.fecha?.slice(0, 7),
+                  });
+                }
+              }
+            });
+          }
+        }
+      } catch (_) {}
+
+      setRecargas(Array.from(recargasMap.values()));
       if (sv) setServicios(sv);
     } catch {
       setSaldos([]);
@@ -481,21 +550,104 @@ export default function Egresos() {
 
   function openRecarga(item) {
     setRecargaEditing(item);
-    setRecargaForm({ monto: "50", fecha: new Date().toISOString().slice(0, 10) });
+    setRecargaForm({
+      monto: "50",
+      montoPersonalizado: "",
+      fecha: new Date().toISOString().slice(0, 10),
+    });
     setRecargaModalOpen(true);
   }
 
   async function handleRecargaSave() {
+    if (!recargaEditing) return;
     setRecargaSaving(true);
     try {
-      const monto = Number(recargaForm.monto) || 0;
+      const finalMonto = recargaForm.monto === "otro"
+        ? (Number(recargaForm.montoPersonalizado) || 0)
+        : (Number(recargaForm.monto) || 0);
+
+      if (finalMonto <= 0) {
+        toast({
+          title: "Monto inválido",
+          description: "Por favor ingresa un monto mayor a $0 para la recarga.",
+          variant: "destructive",
+        });
+        setRecargaSaving(false);
+        return;
+      }
+
       const mes = recargaForm.fecha.slice(0, 7);
-      await sercoApi.entities.RecargaCelular.create({ saldo_id: recargaEditing.id, monto, fecha: recargaForm.fecha, mes });
+      const nuevaRecargaItem = {
+        id: `rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        saldo_id: recargaEditing.id,
+        monto: finalMonto,
+        fecha: recargaForm.fecha,
+        mes,
+        created_at: new Date().toISOString(),
+      };
+
+      // 1. Intentar registrar en tabla recargas_celular
+      try {
+        if (sercoApi.entities.RecargaCelular) {
+          const res = await sercoApi.entities.RecargaCelular.create({
+            saldo_id: recargaEditing.id,
+            monto: finalMonto,
+            fecha: recargaForm.fecha,
+            mes,
+          });
+          if (res?.id) {
+            nuevaRecargaItem.id = res.id;
+          }
+        }
+      } catch (dbErr) {
+        console.warn("No se pudo escribir en tabla recargas_celular (posible RLS), aplicando persistencia en saldo:", dbErr?.message);
+      }
+
+      // 2. Persistir siempre en el registro del saldo (saldos) para asegurar consistencia
+      let parsedNotas = {};
+      try {
+        parsedNotas = typeof recargaEditing.notas === "string" ? JSON.parse(recargaEditing.notas) : (recargaEditing.notas || {});
+      } catch {
+        parsedNotas = { notas_texto: recargaEditing.notas || "" };
+      }
+      const historial = Array.isArray(parsedNotas.historial_recargas) ? parsedNotas.historial_recargas : [];
+      parsedNotas.historial_recargas = [nuevaRecargaItem, ...historial];
+
+      try {
+        await sercoApi.entities.Saldo.update(recargaEditing.id, {
+          monto: finalMonto,
+          fecha: recargaForm.fecha,
+          mes,
+          saldo_actual: (Number(recargaEditing.saldo_actual) || 0) + finalMonto,
+          notas: JSON.stringify(parsedNotas),
+        });
+      } catch (saldoErr) {
+        console.warn("Error al actualizar saldo en DB:", saldoErr?.message);
+      }
+
+      // 3. Guardar en caché local para respuesta inmediata y persistente
+      try {
+        const cachedRaw = localStorage.getItem("serco_recargas_celulares_cache");
+        const list = cachedRaw ? JSON.parse(cachedRaw) : [];
+        list.unshift(nuevaRecargaItem);
+        localStorage.setItem("serco_recargas_celulares_cache", JSON.stringify(list));
+      } catch (cacheErr) {
+        console.warn("Error guardando en caché local:", cacheErr);
+      }
+
       setRecargaModalOpen(false);
       await loadSaldos();
-      toast({ title: "Recarga registrada" });
+      toast({
+        title: "Recarga guardada con éxito",
+        description: `Se registró la recarga de $${finalMonto.toLocaleString("es-MX")} para ${recargaEditing.nombre || recargaEditing.numero_telefono || "el equipo"}.`,
+      });
     } catch (e) {
-      toast({ title: "Error al registrar recarga", description: e?.message || "No se pudo registrar", variant: "destructive" });
+      console.error("Error al registrar recarga:", e);
+      toast({
+        title: "Error al registrar recarga",
+        description: e?.message || "No se pudo registrar la recarga",
+        variant: "destructive",
+      });
     } finally {
       setRecargaSaving(false);
     }
@@ -1131,12 +1283,62 @@ export default function Egresos() {
 
       <Dialog open={recargaModalOpen} onOpenChange={setRecargaModalOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Recargar celular</DialogTitle><DialogDescription>Registra la recarga del celular.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Recargar celular</DialogTitle>
+            <DialogDescription>
+              Registra la recarga para {recargaEditing?.nombre ? `${recargaEditing.nombre} (${recargaEditing.numero_telefono})` : recargaEditing?.numero_telefono || "el equipo"}.
+            </DialogDescription>
+          </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div><Label>Monto *</Label><Select value={String(recargaForm.monto)} onValueChange={(value) => setRecargaForm({ ...recargaForm, monto: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="50">$50.00 MXN</SelectItem><SelectItem value="100">$100.00 MXN</SelectItem><SelectItem value="150">$150.00 MXN</SelectItem></SelectContent></Select></div>
-            <div><Label>Fecha *</Label><Input type="date" value={recargaForm.fecha} onChange={(event) => setRecargaForm({ ...recargaForm, fecha: event.target.value })} /></div>
+            <div>
+              <Label>Monto de Recarga *</Label>
+              <Select
+                value={String(recargaForm.monto)}
+                onValueChange={(value) => setRecargaForm({ ...recargaForm, monto: value })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">$50.00 MXN</SelectItem>
+                  <SelectItem value="100">$100.00 MXN</SelectItem>
+                  <SelectItem value="150">$150.00 MXN</SelectItem>
+                  <SelectItem value="200">$200.00 MXN</SelectItem>
+                  <SelectItem value="300">$300.00 MXN</SelectItem>
+                  <SelectItem value="500">$500.00 MXN</SelectItem>
+                  <SelectItem value="otro">Otro monto...</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {recargaForm.monto === "otro" && (
+              <div>
+                <Label htmlFor="monto_custom">Monto personalizado ($ MXN) *</Label>
+                <Input
+                  id="monto_custom"
+                  type="number"
+                  placeholder="Ej. 80"
+                  value={recargaForm.montoPersonalizado || ""}
+                  onChange={(e) => setRecargaForm({ ...recargaForm, montoPersonalizado: e.target.value })}
+                  min="1"
+                />
+              </div>
+            )}
+            <div>
+              <Label>Fecha de Recarga *</Label>
+              <Input
+                type="date"
+                value={recargaForm.fecha}
+                onChange={(event) => setRecargaForm({ ...recargaForm, fecha: event.target.value })}
+              />
+            </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setRecargaModalOpen(false)}>Cancelar</Button><Button onClick={handleRecargaSave} disabled={recargaSaving || !recargaForm.monto || !recargaForm.fecha}>{recargaSaving ? "Guardando..." : "Guardar"}</Button></DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecargaModalOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={handleRecargaSave}
+              disabled={recargaSaving || !recargaForm.monto || !recargaForm.fecha || (recargaForm.monto === "otro" && !recargaForm.montoPersonalizado)}
+            >
+              {recargaSaving ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

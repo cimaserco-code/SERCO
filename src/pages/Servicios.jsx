@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
+import { getServicioCobroConfig, setServicioCobroConfig } from "@/pages/Cobros";
 import { Plus, Pencil, Trash2, Search, } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -171,7 +172,8 @@ function cleanAddressForGeocoding(address, sedeName) {
 
 const emptyForm = {
   nombre: "", direccion: "", admin_nombre: "", telefono: "", telefono_2: "", correo: "", correo_2: "", fecha_inicio: "", estado: "activo", fecha_baja: "", sede_id: "",
-  dia_costo: "", dia_pago: "", costo: "", pago: "", turnos_autorizados: ""
+  dia_costo: "", dia_pago: "", costo: "", pago: "", turnos_autorizados: "",
+  metodo_pago: "transferencia", nombre_constancia: ""
 };
 
 export default function Servicios() {
@@ -313,6 +315,7 @@ export default function Servicios() {
 
   function openEdit(item) {
     setEditing(item);
+    const cfg = getServicioCobroConfig(item.id) || {};
     setForm({ 
       ...emptyForm, 
       ...item, 
@@ -323,7 +326,9 @@ export default function Servicios() {
       estado: item.estado || "activo",
       fecha_baja: item.fecha_baja ?? "",
       latitud: item.latitud ?? "",
-      longitud: item.longitud ?? ""
+      longitud: item.longitud ?? "",
+      metodo_pago: cfg.metodo_pago || item.metodo_pago || "transferencia",
+      nombre_constancia: cfg.nombre_constancia || item.nombre_constancia || ""
     });
     setModalOpen(true);
   }
@@ -360,7 +365,9 @@ export default function Servicios() {
         fecha_inicio: form.fecha_inicio || null,
         fecha_baja: form.estado === "suspendido" ? (form.fecha_baja || null) : null,
         latitud: finalLat,
-        longitud: finalLon
+        longitud: finalLon,
+        nombre_constancia: (form.nombre_constancia || "").trim() || null,
+        metodo_pago: form.metodo_pago || "transferencia"
       };
 
       if (form.sede_id) {
@@ -377,6 +384,8 @@ export default function Servicios() {
             const fallback = { ...payload };
             delete fallback.telefono_2;
             delete fallback.correo_2;
+            delete fallback.nombre_constancia;
+            delete fallback.metodo_pago;
             savedItem = await sercoApi.entities.Servicio.update(editing.id, fallback);
           } else {
             throw err;
@@ -391,6 +400,8 @@ export default function Servicios() {
             const fallback = { ...payload };
             delete fallback.telefono_2;
             delete fallback.correo_2;
+            delete fallback.nombre_constancia;
+            delete fallback.metodo_pago;
             savedItem = await sercoApi.entities.Servicio.create(fallback);
           } else {
             throw err;
@@ -401,7 +412,7 @@ export default function Servicios() {
           const [startYear, startMonth] = (payload.fecha_inicio || "").split("-");
           const targetMonth = `${startYear}-${startMonth}`;
           if (startYear && startMonth) {
-            await sercoApi.entities.Cobro.create({
+            const initialCobro = await sercoApi.entities.Cobro.create({
               servicio_id: savedItem.id,
               servicio_nombre: savedItem.nombre,
               mes: targetMonth,
@@ -412,12 +423,31 @@ export default function Servicios() {
               fecha_pago: null,
               sede_id: savedItem.sede_id,
             });
+            if (initialCobro?.id) {
+              try {
+                localStorage.setItem(`serco_cobro_meta_${initialCobro.id}`, JSON.stringify({
+                  metodo_pago: form.metodo_pago || "transferencia",
+                  nombre_constancia: (form.nombre_constancia || "").trim(),
+                  calcular_iva: form.metodo_pago !== "efectivo",
+                }));
+              } catch (_) {}
+            }
           }
         } catch (cobroError) {
           console.error("No se pudo crear el cobro inicial para el servicio:", cobroError);
         }
 
         toast({ title: "Servicio creado con éxito" });
+      }
+
+      // Guardar configuración de cobro y constancia del servicio
+      if (savedItem?.id) {
+        const existingCfg = getServicioCobroConfig(savedItem.id) || {};
+        setServicioCobroConfig(savedItem.id, {
+          ...existingCfg,
+          metodo_pago: form.metodo_pago || "transferencia",
+          nombre_constancia: (form.nombre_constancia || "").trim()
+        });
       }
 
       // Si el servicio fue suspendido, desvincular a los elementos asignados y limpiar asignaciones de plantilla
@@ -860,6 +890,44 @@ export default function Servicios() {
                 </div>
               )}
             </div>
+
+            {/* CONFIGURACIÓN DE FACTURACIÓN Y PAGO */}
+            <div className="rounded-lg border p-3.5 bg-slate-50 dark:bg-slate-900/40 space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
+                Facturación y Método de Pago
+              </Label>
+              <div>
+                <Label>Método de Pago Habitual</Label>
+                <Select
+                  value={form.metodo_pago || "transferencia"}
+                  onValueChange={(v) => setForm({ ...form, metodo_pago: v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="transferencia">Transferencia</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                    <SelectItem value="efectivo">Efectivo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(form.metodo_pago === "transferencia" || form.metodo_pago === "cheque" || !form.metodo_pago) && (
+                <div className="space-y-1">
+                  <Label htmlFor="nombre_constancia_serv">
+                    Nombre en Constancia de Situación Fiscal (Razón Social Receptor)
+                  </Label>
+                  <Input
+                    id="nombre_constancia_serv"
+                    placeholder="Ej. GRUPO INDUSTRIAL DEL NORTE S.A. DE C.V."
+                    value={form.nombre_constancia || ""}
+                    onChange={(e) => setForm({ ...form, nombre_constancia: e.target.value })}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Se utilizará automáticamente como "RECEPTOR" al descargar el archivo Excel de facturas.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
@@ -955,6 +1023,30 @@ export default function Servicios() {
                 </p>
               </div>
             )}
+
+            {(() => {
+              const cfg = viewItem?.id ? getServicioCobroConfig(viewItem.id) : null;
+              const constancia = viewItem?.nombre_constancia || cfg?.nombre_constancia;
+              const metodo = viewItem?.metodo_pago || cfg?.metodo_pago;
+              if (!constancia && !metodo) return null;
+              return (
+                <div className="rounded-lg border p-3 bg-muted/20 space-y-2">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase">Facturación y Cobro</Label>
+                  {metodo && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Método de pago: </span>
+                      <span className="text-sm font-semibold capitalize">{metodo}</span>
+                    </div>
+                  )}
+                  {constancia && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Nombre en Constancia (Receptor): </span>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{constancia}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
           </div>
 

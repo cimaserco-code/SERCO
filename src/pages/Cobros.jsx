@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard, Download } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -382,6 +382,7 @@ const emptyForm = {
   es_variable: false,
   costo_dia: "",
   metodo_pago: "transferencia", // transferencia | efectivo | cheque
+  nombre_constancia: "",
   calcular_iva: true,
   frecuencia_pago: "mensual", // mensual | quincenal | semanal
   dias_quincena: 15, // 15 | 16
@@ -556,6 +557,7 @@ export default function Cobros() {
                 es_variable: cfg.es_variable,
                 costo_dia: cfg.costo_dia,
                 metodo_pago: cfg.metodo_pago,
+                nombre_constancia: cfg.nombre_constancia || "",
                 calcular_iva: cfg.calcular_iva,
                 frecuencia_pago: cfg.frecuencia_pago,
                 dias_quincena: cfg.dias_quincena || 15,
@@ -641,6 +643,7 @@ export default function Cobros() {
       es_variable: false,
       costo_dia: "",
       metodo_pago: "transferencia",
+      nombre_constancia: "",
       calcular_iva: true,
       frecuencia_pago: "mensual",
       dias_quincena: 15,
@@ -655,6 +658,9 @@ export default function Cobros() {
   function openEdit(item) {
     setEditing(item);
     const meta = getCobroMeta(item.id) || {};
+    const servCfg = getServicioCobroConfig(item.servicio_id) || {};
+    const serv = servicios.find((s) => s.id === item.servicio_id);
+    const nombreConstancia = meta.nombre_constancia || servCfg.nombre_constancia || serv?.nombre_constancia || item.nombre_constancia || "";
     const esVariable = meta.es_variable ?? false;
     const costoDia = meta.costo_dia ?? "";
     const metodoPago = meta.metodo_pago ?? "transferencia";
@@ -678,6 +684,7 @@ export default function Cobros() {
       es_variable: esVariable,
       costo_dia: costoDia,
       metodo_pago: metodoPago,
+      nombre_constancia: nombreConstancia,
       calcular_iva: calcularIva,
       frecuencia_pago: frecuenciaPago,
       dias_quincena: diasQuincena,
@@ -820,6 +827,97 @@ export default function Cobros() {
     await load();
   }
 
+  // Exportar reporte de facturas para Excel con las columnas requeridas por el SAT/administración
+  const handleExportExcel = () => {
+    const dataToExport = filtered.length > 0 ? filtered : monthlyItems;
+    if (!dataToExport || dataToExport.length === 0) {
+      toast({
+        title: "Sin datos para exportar",
+        description: "No hay facturas en el periodo seleccionado para generar el archivo Excel.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, "0");
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const yyyy = today.getFullYear();
+    const fechaSolicitud = `${dd}/${mm}/${yyyy}`;
+
+    const meses = [
+      "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+      "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
+    ];
+    const mesDescarga = meses[today.getMonth()];
+    const anioDescarga = today.getFullYear();
+    const concepto = `SEGURIDAD PRIVADA CORRESPONDIENTE DE ${mesDescarga} DEL ${anioDescarga}`;
+
+    const headers = [
+      "FECHA SOLICITUD",
+      "TIPO",
+      "EMITE",
+      "RECEPTOR",
+      "VALOR BASE",
+      "IVA",
+      "TOTAL",
+      "CONCEPTO",
+      "METODO DE PAGO"
+    ];
+
+    const rows = dataToExport.map((item) => {
+      const meta = getCobroMeta(item.id) || {};
+      const servCfg = getServicioCobroConfig(item.servicio_id) || {};
+      const serv = servicios.find((s) => s.id === item.servicio_id);
+
+      const receptor = (
+        meta.nombre_constancia ||
+        servCfg.nombre_constancia ||
+        serv?.nombre_constancia ||
+        item.nombre_constancia ||
+        item.servicio_nombre ||
+        ""
+      ).trim().toUpperCase();
+
+      const valorBaseNum = Number(item.monto || 0);
+      const ivaNum = valorBaseNum * 0.16;
+      const totalNum = valorBaseNum + ivaNum;
+
+      return [
+        fechaSolicitud,
+        "FAC",
+        "CIMA SERCO",
+        receptor,
+        valorBaseNum.toFixed(2),
+        ivaNum.toFixed(2),
+        totalNum.toFixed(2),
+        concepto,
+        "PUE"
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [
+      headers.join(","),
+      ...rows.map((row) =>
+        row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(",")
+      ),
+    ].join("\r\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Facturas_CIMA_SERCO_${currentMonth}_${yyyy}${mm}${dd}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Excel descargado con éxito",
+      description: `Se exportaron ${rows.length} facturas con el formato requerido.`,
+    });
+  };
+
   function getFormPlan() {
     const diasMes = getDiasMesParaFrecuencia(form.mes || currentMonth, form.frecuencia_pago);
     return calcularPlanPagos({
@@ -931,21 +1029,26 @@ export default function Cobros() {
         fecha_limite_pago: form.fecha_limite_pago || null,
         fecha_pago: finalEstado === "pagado" ? latestFechaPago : null,
         sede_id: form.sede_id || defaultSedeId,
+        nombre_constancia: (form.nombre_constancia || "").trim() || null,
       };
 
       if (editing) {
         try {
           await sercoApi.entities.Cobro.update(editing.id, payload);
         } catch (dbErr) {
-          console.warn("DB update falló con estado:", finalEstado, dbErr);
+          console.warn("DB update falló con estado o columna:", finalEstado, dbErr);
+          const fallbackPayload = { ...payload };
+          if (dbErr?.message?.includes("PGRST204") || dbErr?.message?.includes("column")) {
+            delete fallbackPayload.nombre_constancia;
+          }
           if (finalEstado === "parcial") {
             await sercoApi.entities.Cobro.update(editing.id, {
-              ...payload,
+              ...fallbackPayload,
               estado: "pendiente",
               fecha_pago: null,
             });
           } else {
-            throw dbErr;
+            await sercoApi.entities.Cobro.update(editing.id, fallbackPayload);
           }
         }
 
@@ -953,6 +1056,7 @@ export default function Cobros() {
           es_variable: form.es_variable,
           costo_dia: form.costo_dia,
           metodo_pago: form.metodo_pago,
+          nombre_constancia: (form.nombre_constancia || "").trim(),
           calcular_iva: form.calcular_iva,
           frecuencia_pago: form.frecuencia_pago,
           dias_quincena: form.dias_quincena || 15,
@@ -988,6 +1092,7 @@ export default function Cobros() {
                   es_variable: form.es_variable,
                   costo_dia: form.costo_dia,
                   metodo_pago: form.metodo_pago,
+                  nombre_constancia: (form.nombre_constancia || "").trim(),
                   calcular_iva: form.calcular_iva,
                   frecuencia_pago: form.frecuencia_pago,
                   dias_quincena: form.dias_quincena || 15,
@@ -1018,12 +1123,24 @@ export default function Cobros() {
           });
         }
       } else {
-        const created = await sercoApi.entities.Cobro.create(payload);
+        let created = null;
+        try {
+          created = await sercoApi.entities.Cobro.create(payload);
+        } catch (dbErr) {
+          if (dbErr?.message?.includes("PGRST204") || dbErr?.message?.includes("column")) {
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.nombre_constancia;
+            created = await sercoApi.entities.Cobro.create(fallbackPayload);
+          } else {
+            throw dbErr;
+          }
+        }
         if (created?.id) {
           setCobroMeta(created.id, {
             es_variable: form.es_variable,
             costo_dia: form.costo_dia,
             metodo_pago: form.metodo_pago,
+            nombre_constancia: (form.nombre_constancia || "").trim(),
             calcular_iva: form.calcular_iva,
             frecuencia_pago: form.frecuencia_pago,
             dias_quincena: form.dias_quincena || 15,
@@ -1040,6 +1157,7 @@ export default function Cobros() {
         es_variable: form.es_variable,
         costo_dia: form.costo_dia,
         metodo_pago: form.metodo_pago,
+        nombre_constancia: (form.nombre_constancia || "").trim(),
         calcular_iva: form.calcular_iva,
         frecuencia_pago: form.frecuencia_pago,
         dias_quincena: form.dias_quincena || 15,
@@ -1199,6 +1317,17 @@ export default function Cobros() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportExcel}
+            className="gap-2 text-xs font-semibold h-9 border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 shadow-2xs"
+            title="Descargar reporte de facturas para Excel (Formato SAT)"
+          >
+            <Download className="w-4 h-4 text-blue-600" />
+            <span>Descargar Excel</span>
+          </Button>
+
           {can("cobros", "edit") && (
             <Button
               variant="outline"
@@ -1382,6 +1511,7 @@ export default function Cobros() {
                     } else if (cfg?.monto != null && cfg.monto !== "") {
                       initMonto = Number(cfg.monto);
                     }
+                    const servNombreConstancia = cfg?.nombre_constancia || serv?.nombre_constancia || "";
                     setForm({
                       ...form,
                       servicio_id: val,
@@ -1391,6 +1521,7 @@ export default function Cobros() {
                       es_variable: cfg?.es_variable ?? form.es_variable,
                       costo_dia: cfg?.costo_dia ?? form.costo_dia,
                       metodo_pago: cfg?.metodo_pago ?? form.metodo_pago,
+                      nombre_constancia: servNombreConstancia || form.nombre_constancia || "",
                       calcular_iva: cfg?.calcular_iva ?? form.calcular_iva,
                       frecuencia_pago: cfg?.frecuencia_pago ?? form.frecuencia_pago,
                       dias_quincena: cfg?.dias_quincena ?? form.dias_quincena ?? 15,
@@ -1581,6 +1712,29 @@ export default function Cobros() {
                 </Select>
               </div>
             </div>
+
+            {/* NOMBRE DE CONSTANCIA FISCAL */}
+            {(form.metodo_pago === "transferencia" || form.metodo_pago === "cheque" || !form.metodo_pago) && (
+              <div className="space-y-1.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="nombre_constancia" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Nombre en Constancia de Situación Fiscal (Receptor)
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    Para Excel SAT
+                  </Badge>
+                </div>
+                <Input
+                  id="nombre_constancia"
+                  placeholder="Ej. GRUPO INDUSTRIAL DEL NORTE S.A. DE C.V."
+                  value={form.nombre_constancia || ""}
+                  onChange={(e) => setForm({ ...form, nombre_constancia: e.target.value })}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Se tomará en la columna "RECEPTOR" al descargar el archivo Excel de facturas.
+                </p>
+              </div>
+            )}
 
             {/* SWITCH OPCIÓN IVA */}
             <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
