@@ -192,86 +192,7 @@ export default function Asistencias() {
       setEmployees(enrichedEmps);
       setSedes(seds || []);
       setServicios((servs || []).filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido"));
-
-      let currentAsists = asists || [];
-
-      // Procesamiento automático de Faltas para el día de hoy si ya venció la hora límite del turno
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      const todayMonthStr = `${yyyy}-${mm}`;
-      const todayDateStr = `${yyyy}-${mm}-${dd}`;
-
-      if (currentMonth === todayMonthStr) {
-        const hours = today.getHours();
-        const minutes = today.getMinutes();
-        const totalMinutes = hours * 60 + minutes;
-        const morningLimit = 7 * 60 + 15; // 07:15 AM
-        const eveningLimit = 19 * 60 + 15; // 19:15 PM
-
-        const asistsMapQuick = new Map();
-        currentAsists.forEach((a) => {
-          if (a.empleado_id && a.fecha) {
-            asistsMapQuick.set(`${a.empleado_id}_${a.fecha}`, a);
-          }
-        });
-
-        const faltasToUpsert = [];
-
-        (emps || []).forEach((emp) => {
-          if (getAttendanceCellState(emp, todayDateStr) !== "active") return;
-
-          const key = `${emp.id}_${todayDateStr}`;
-          const existing = asistsMapQuick.get(key);
-
-          // Si ya existe registro hoy (asistió, retraso, vacaciones, descanso, falta, etc.), no tocar
-          if (existing?.estado) return;
-
-          const turno = (emp.turno || "").toLowerCase();
-          let shouldMarkFalta = false;
-
-          if (turno.includes("matutino")) {
-            if (totalMinutes > morningLimit) shouldMarkFalta = true;
-          } else if (turno.includes("vespertino")) {
-            if (totalMinutes > eveningLimit) shouldMarkFalta = true;
-          } else {
-            // Cubredescansos / otro: según hora más cercana
-            if (hours < 13 && totalMinutes > morningLimit) {
-              shouldMarkFalta = true;
-            } else if (hours >= 13 && totalMinutes > eveningLimit) {
-              shouldMarkFalta = true;
-            }
-          }
-
-          if (shouldMarkFalta) {
-            faltasToUpsert.push({
-              empleado_id: emp.id,
-              fecha: todayDateStr,
-              estado: "falta",
-              sede_id: emp.sede_id || null,
-            });
-          }
-        });
-
-        if (faltasToUpsert.length > 0) {
-          try {
-            for (const f of faltasToUpsert) {
-              await sercoApi.entities.Asistencia.upsert(f, "empleado_id,fecha").catch(() => {});
-            }
-          } catch (upsertErr) {
-            console.warn("Error al registrar faltas automáticas:", upsertErr);
-          }
-
-          const newFaltasWithIds = faltasToUpsert.map((f, idx) => ({
-            id: `auto-falta-${Date.now()}-${idx}`,
-            ...f,
-          }));
-          currentAsists = [...currentAsists, ...newFaltasWithIds];
-        }
-      }
-
-      setAsistencias(currentAsists);
+      setAsistencias(asists || []);
     } catch (e) {
       console.error("Error al cargar datos de asistencias:", e);
     } finally {
@@ -715,22 +636,6 @@ export default function Asistencias() {
         const record = asistenciasMap.get(`${emp.id}_${dateStr}`);
         let estado = record?.estado || "";
 
-        if (!estado && isToday(day)) {
-          const now = new Date();
-          const totalM = now.getHours() * 60 + now.getMinutes();
-          const morningLim = 7 * 60 + 15;
-          const eveningLim = 19 * 60 + 15;
-          const t = (emp.turno || "").toLowerCase();
-          if (t.includes("matutino") && totalM > morningLim) {
-            estado = "falta";
-          } else if (t.includes("vespertino") && totalM > eveningLim) {
-            estado = "falta";
-          } else if (!t.includes("matutino") && !t.includes("vespertino")) {
-            if (now.getHours() < 13 && totalM > morningLim) estado = "falta";
-            if (now.getHours() >= 13 && totalM > eveningLim) estado = "falta";
-          }
-        }
-
         if (estado === "asistió") countA++;
         else if (estado === "retraso") countR++;
         else if (estado === "falta") countF++;
@@ -1023,23 +928,6 @@ export default function Asistencias() {
                                 )}
                               </TableCell>
                             );
-                          }
-
-                          // Si no tiene registro hoy pero ya venció la hora del turno, mostrar Falta automáticamente
-                          if (!currentVal && todayFlag) {
-                            const now = new Date();
-                            const totalM = now.getHours() * 60 + now.getMinutes();
-                            const morningLim = 7 * 60 + 15;
-                            const eveningLim = 19 * 60 + 15;
-                            const t = (emp.turno || "").toLowerCase();
-                            if (t.includes("matutino") && totalM > morningLim) {
-                              currentVal = "falta";
-                            } else if (t.includes("vespertino") && totalM > eveningLim) {
-                              currentVal = "falta";
-                            } else if (!t.includes("matutino") && !t.includes("vespertino")) {
-                              if (now.getHours() < 13 && totalM > morningLim) currentVal = "falta";
-                              if (now.getHours() >= 13 && totalM > eveningLim) currentVal = "falta";
-                            }
                           }
 
                           const cfg = currentVal ? estadosConfig[currentVal] : null;
