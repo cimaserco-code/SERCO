@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useClientPortal } from "@/context/ClientPortalContext";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
+import { sercoApi } from "@/api/sercoClient";
 import {
   FileText,
   DollarSign,
@@ -21,7 +22,12 @@ import {
   Bell,
   Download,
   Printer,
-  Loader2
+  Loader2,
+  UserCheck,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  AlertCircle
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +47,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 
 export default function ClientHome() {
@@ -61,12 +68,75 @@ export default function ClientHome() {
   const [fichaDocToSave, setFichaDocToSave] = useState(null);
   const [fichaFilename, setFichaFilename] = useState("");
   const [loadingFichaPdf, setLoadingFichaPdf] = useState(false);
+  const [activeModalTab, setActiveModalTab] = useState("ficha");
+  const [guardiaAsistencias, setGuardiaAsistencias] = useState([]);
+  const [loadingAsistencia, setLoadingAsistencia] = useState(false);
+  const [selectedAsistenciaMonth, setSelectedAsistenciaMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  const monthNames = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+
+  const [selYear, selMonthNum] = (selectedAsistenciaMonth || "").split("-").map(Number);
+  const selMonthName = monthNames[(selMonthNum || 1) - 1] || "";
+
+  const empMonthAsists = useMemo(() => {
+    return (guardiaAsistencias || []).filter(
+      (a) => a.fecha && a.fecha.startsWith(selectedAsistenciaMonth)
+    );
+  }, [guardiaAsistencias, selectedAsistenciaMonth]);
+
+  const asistenciaStats = useMemo(() => {
+    const totalA = empMonthAsists.filter((a) => a.estado === "asistió").length;
+    const totalR = empMonthAsists.filter((a) => a.estado === "retraso").length;
+    const totalF = empMonthAsists.filter((a) => a.estado === "falta").length;
+    const totalD = empMonthAsists.filter((a) => a.estado === "descanso").length;
+    const totalE = empMonthAsists.filter((a) => a.estado === "extra").length;
+    const totalDL = empMonthAsists.filter((a) => a.estado === "descanso_laborado").length;
+    const totalDLE = empMonthAsists.filter((a) => a.estado === "descanso_extra").length;
+    const totalV = empMonthAsists.filter((a) => a.estado === "vacaciones").length;
+    const totalJ = empMonthAsists.filter((a) => a.estado === "justificada").length;
+
+    const divisor = totalA + totalR + totalF + totalDL + totalDLE;
+    const punctuality = divisor > 0 ? Math.round(((totalA + totalR + totalDL + totalDLE) / divisor) * 100) : 100;
+
+    return { totalA, totalR, totalF, totalD, totalE, totalDL, totalDLE, totalV, totalJ, punctuality };
+  }, [empMonthAsists]);
 
   const handleOpenFicha = async (guardia) => {
     setSelectedGuardiaFicha(guardia);
+    setActiveModalTab("ficha");
     setLoadingFichaPdf(true);
     setFichaPdfUrl(null);
     setFichaDocToSave(null);
+    setLoadingAsistencia(true);
+    setGuardiaAsistencias([]);
+
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    setSelectedAsistenciaMonth(currentMonthKey);
+
+    const empId = guardia.empleado?.id || guardia.id;
+
+    if (empId) {
+      sercoApi.entities.Asistencia.filter({ empleado_id: empId }, "-fecha")
+        .then((res) => {
+          setGuardiaAsistencias(res || []);
+        })
+        .catch((err) => {
+          console.warn("Error cargando asistencias del guardia:", err);
+          setGuardiaAsistencias([]);
+        })
+        .finally(() => {
+          setLoadingAsistencia(false);
+        });
+    } else {
+      setLoadingAsistencia(false);
+    }
 
     try {
       const emp = guardia.empleado || {
@@ -109,6 +179,93 @@ export default function ClientHome() {
     setFichaPdfUrl(null);
     setFichaDocToSave(null);
     setSelectedGuardiaFicha(null);
+    setGuardiaAsistencias([]);
+    setActiveModalTab("ficha");
+  };
+
+  const getAsistenciaStatusBadge = (estado, festivo) => {
+    if (festivo) {
+      return (
+        <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-bold text-[11px]">
+          ⭐ Festivo
+        </Badge>
+      );
+    }
+    switch (estado?.toLowerCase()) {
+      case "asistió":
+        return (
+          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold text-[11px]">
+            ✓ Asistió
+          </Badge>
+        );
+      case "retraso":
+        return (
+          <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 font-bold text-[11px]">
+            ⏱ Retraso (R)
+          </Badge>
+        );
+      case "falta":
+        return (
+          <Badge className="bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 font-bold text-[11px]">
+            ✕ Falta (F)
+          </Badge>
+        );
+      case "descanso":
+        return (
+          <Badge className="bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 font-bold text-[11px]">
+            Descanso (D)
+          </Badge>
+        );
+      case "extra":
+        return (
+          <Badge className="bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300 font-bold text-[11px]">
+            + Turno Extra (E)
+          </Badge>
+        );
+      case "descanso_laborado":
+        return (
+          <Badge className="bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950/60 dark:text-sky-300 font-bold text-[11px]">
+            Descanso Lab. (DL)
+          </Badge>
+        );
+      case "descanso_extra":
+        return (
+          <Badge className="bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/60 dark:text-indigo-300 font-bold text-[11px]">
+            Descanso Extra (DLE)
+          </Badge>
+        );
+      case "vacaciones":
+        return (
+          <Badge className="bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950/60 dark:text-teal-300 font-bold text-[11px]">
+            Vacaciones (V)
+          </Badge>
+        );
+      case "justificada":
+        return (
+          <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 font-bold text-[11px]">
+            Justificada (J)
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className="text-[11px] font-medium capitalize">
+            {estado || "Sin registro"}
+          </Badge>
+        );
+    }
+  };
+
+  const formatFechaDia = (fechaStr) => {
+    if (!fechaStr) return "";
+    try {
+      const [y, m, d] = fechaStr.split("-").map(Number);
+      const date = new Date(y, m - 1, d);
+      const dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+      const diaSemana = dias[date.getDay()];
+      return `${diaSemana} ${d}`;
+    } catch {
+      return fechaStr;
+    }
   };
 
   const displayName = formatUserDisplayName(user?.full_name || user?.nombre || "Cliente", user?.role);
@@ -555,7 +712,7 @@ export default function ClientHome() {
                     className="p-3.5 rounded-xl border border-border bg-card hover:bg-muted/40 hover:border-primary/40 hover:shadow-xs transition cursor-pointer flex items-center gap-3.5 shadow-2xs group"
                     role="button"
                     tabIndex={0}
-                    title="Click para ver la Ficha Técnica del guardia"
+                    title="Click para ver la Ficha Técnica y el Resumen de Asistencias del guardia"
                   >
                     <Avatar className="w-12 h-12 border border-border shadow-xs shrink-0 group-hover:scale-105 transition-transform">
                       <AvatarImage src={guardia.foto_url_runtime || undefined} alt={guardia.nombre} className="object-cover" />
@@ -573,7 +730,10 @@ export default function ClientHome() {
                         <h4 className="text-xs sm:text-sm font-bold text-foreground truncate group-hover:text-primary transition-colors">
                           {guardia.nombre}
                         </h4>
-                        <FileText className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" title="Ver ficha técnica" />
+                        <div className="flex items-center gap-1 text-muted-foreground group-hover:text-primary transition-colors shrink-0">
+                          <FileText className="w-3.5 h-3.5" title="Ficha Técnica" />
+                          <UserCheck className="w-3.5 h-3.5" title="Asistencias" />
+                        </div>
                       </div>
                       <p className="text-[11px] text-muted-foreground truncate">
                         {guardia.puesto}
@@ -581,7 +741,7 @@ export default function ClientHome() {
                       <div className="flex items-center justify-between gap-1 pt-0.5">
                         {getTurnoBadge(guardia.turno)}
                         <span className="text-[10px] text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity hidden sm:inline">
-                          Ver ficha &rarr;
+                          Ficha y asistencia &rarr;
                         </span>
                       </div>
                     </div>
@@ -657,23 +817,23 @@ export default function ClientHome() {
 
       </div>
 
-      {/* ────────────────── MODAL DE FICHA TÉCNICA DEL GUARDIA ────────────────── */}
+      {/* ────────────────── MODAL DE DETALLE DEL GUARDIA (FICHA TÉCNICA Y ASISTENCIAS) ────────────────── */}
       <Dialog open={!!selectedGuardiaFicha} onOpenChange={(open) => !open && handleCloseFicha()}>
-        <DialogContent className="max-w-4xl w-[96vw] h-[90vh] flex flex-col p-4 sm:p-6 overflow-hidden">
+        <DialogContent className="max-w-4xl w-[96vw] h-[92vh] flex flex-col p-4 sm:p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border shrink-0">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <Avatar className="w-11 h-11 border border-border shadow-xs shrink-0">
+                <Avatar className="w-12 h-12 border border-border shadow-xs shrink-0">
                   <AvatarImage src={selectedGuardiaFicha?.foto_url_runtime || selectedGuardiaFicha?.foto_url || undefined} alt={selectedGuardiaFicha?.nombre} className="object-cover" />
                   <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                     {(selectedGuardiaFicha?.nombre || "G").split(" ").map((n) => n[0]).slice(0, 2).join("")}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <DialogTitle className="text-base sm:text-lg font-bold">
-                    Ficha Técnica: {selectedGuardiaFicha?.nombre}
+                  <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
+                    <span>{selectedGuardiaFicha?.nombre}</span>
                   </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                  <DialogDescription className="text-xs text-muted-foreground flex flex-wrap items-center gap-2 mt-0.5">
                     <span>{selectedGuardiaFicha?.puesto || "Guardia de Seguridad"}</span>
                     <span>•</span>
                     <span className="capitalize">{selectedGuardiaFicha?.turno}</span>
@@ -682,57 +842,280 @@ export default function ClientHome() {
                   </DialogDescription>
                 </div>
               </div>
+
+              {/* KPI Badge de puntualidad mensual en el encabezado */}
+              <div className="flex items-center gap-2">
+                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 font-bold text-xs px-2.5 py-1">
+                  <UserCheck className="w-3.5 h-3.5 mr-1 inline" />
+                  {asistenciaStats.punctuality}% Asistencia ({selMonthName})
+                </Badge>
+              </div>
             </div>
+
+            {/* Pestañas de Navegación */}
+            <Tabs value={activeModalTab} onValueChange={setActiveModalTab} className="w-full mt-3">
+              <TabsList className="grid grid-cols-2 w-full max-w-sm">
+                <TabsTrigger value="ficha" className="gap-2 text-xs font-semibold">
+                  <FileText className="w-3.5 h-3.5" />
+                  Ficha Técnica
+                </TabsTrigger>
+                <TabsTrigger value="asistencia" className="gap-2 text-xs font-semibold">
+                  <UserCheck className="w-3.5 h-3.5" />
+                  Resumen de Asistencia
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </DialogHeader>
 
-          {/* PDF Preview Container */}
-          <div className="flex-1 w-full my-3 bg-muted/20 rounded-xl overflow-hidden border border-border flex items-center justify-center min-h-0">
-            {loadingFichaPdf ? (
-              <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                <span className="font-medium">Generando ficha técnica del guardia...</span>
+          {/* CUERPO DEL MODAL SEGÚN PESTAÑA */}
+          {activeModalTab === "ficha" ? (
+            /* Vista 1: Ficha Técnica Oficial PDF */
+            <div className="flex-1 w-full my-3 bg-muted/20 rounded-xl overflow-hidden border border-border flex items-center justify-center min-h-0">
+              {loadingFichaPdf ? (
+                <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  <span className="font-medium">Generando ficha técnica del guardia...</span>
+                </div>
+              ) : fichaPdfUrl ? (
+                <iframe
+                  src={fichaPdfUrl}
+                  className="w-full h-full border-0 rounded-lg"
+                  title={`Ficha Técnica - ${selectedGuardiaFicha?.nombre}`}
+                />
+              ) : (
+                <div className="text-center p-6 text-muted-foreground text-sm">
+                  <p>No se pudo generar la vista previa del documento.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Vista 2: Resumen y Reporte Mensual de Asistencias */
+            <div className="flex-1 w-full my-3 overflow-y-auto pr-1 space-y-3.5 min-h-0">
+              {/* Barra de Navegación de Mes */}
+              <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-xl border border-border">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1 font-semibold"
+                  onClick={() => {
+                    const prevDate = new Date(selYear, selMonthNum - 2, 1);
+                    setSelectedAsistenciaMonth(
+                      `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`
+                    );
+                  }}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Mes Anterior
+                </Button>
+                <div className="text-center">
+                  <span className="text-xs sm:text-sm font-bold text-foreground block">
+                    {selMonthName} {selYear}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Control mensual de asistencia en {servicioNombre}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1 font-semibold"
+                  onClick={() => {
+                    const nextDate = new Date(selYear, selMonthNum, 1);
+                    setSelectedAsistenciaMonth(
+                      `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`
+                    );
+                  }}
+                >
+                  Mes Siguiente <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
               </div>
-            ) : fichaPdfUrl ? (
-              <iframe
-                src={fichaPdfUrl}
-                className="w-full h-full border-0 rounded-lg"
-                title={`Ficha Técnica - ${selectedGuardiaFicha?.nombre}`}
-              />
-            ) : (
-              <div className="text-center p-6 text-muted-foreground text-sm">
-                <p>No se pudo generar la vista previa del documento.</p>
-              </div>
-            )}
-          </div>
 
+              {loadingAsistencia ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground text-sm">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  <span className="font-medium">Cargando registros de asistencia...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Tarjetas KPI Principales (idénticas a Asistencias.jsx) */}
+                  <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                    <Card className="bg-primary/5 border-primary/20 shadow-2xs">
+                      <CardContent className="p-3 text-center">
+                        <div className="text-2xl sm:text-3xl font-black text-primary">
+                          {asistenciaStats.punctuality}%
+                        </div>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-bold tracking-wider mt-0.5">
+                          Asistencia
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50 shadow-2xs">
+                      <CardContent className="p-3 text-center">
+                        <div className="text-2xl sm:text-3xl font-black text-green-600">
+                          {asistenciaStats.totalA}
+                        </div>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-bold tracking-wider mt-0.5">
+                          Asistió
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-900/50 shadow-2xs">
+                      <CardContent className="p-3 text-center">
+                        <div className="text-2xl sm:text-3xl font-black text-orange-600">
+                          {asistenciaStats.totalR}
+                        </div>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-bold tracking-wider mt-0.5">
+                          Retrasos (R)
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Desglose Detallado de Registros */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs">
+                      <span className="text-muted-foreground">Faltas:</span>
+                      <span className="font-bold text-red-500">{asistenciaStats.totalF}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs">
+                      <span className="text-muted-foreground">Turnos Extras (E):</span>
+                      <span className="font-bold text-purple-600">{asistenciaStats.totalE}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs">
+                      <span className="text-muted-foreground">Descansos (D):</span>
+                      <span className="font-bold text-slate-500">{asistenciaStats.totalD}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs">
+                      <span className="text-muted-foreground">Descanso Lab. (DL):</span>
+                      <span className="font-bold text-sky-600">{asistenciaStats.totalDL}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs">
+                      <span className="text-muted-foreground">Descanso + Extra (DLE):</span>
+                      <span className="font-bold text-indigo-600">{asistenciaStats.totalDLE}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs">
+                      <span className="text-muted-foreground">Vacaciones (V):</span>
+                      <span className="font-bold text-teal-600">{asistenciaStats.totalV}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-card px-3 py-2 rounded-lg border border-border text-xs shadow-2xs col-span-2">
+                      <span className="text-muted-foreground">Justificaciones (J):</span>
+                      <span className="font-bold text-amber-600">{asistenciaStats.totalJ}</span>
+                    </div>
+                  </div>
+
+                  {/* Tabla / Historial Día por Día del Mes */}
+                  <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xs">
+                    <div className="p-3 bg-muted/40 border-b border-border flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        <span className="text-xs sm:text-sm font-bold text-foreground">
+                          Bitácora Diaria de {selMonthName} {selYear}
+                        </span>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] font-semibold">
+                        {empMonthAsists.length} días registrados
+                      </Badge>
+                    </div>
+
+                    {empMonthAsists.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Calendar className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                        <p className="text-sm font-medium text-foreground">
+                          No hay registros de asistencia en {selMonthName} de {selYear}.
+                        </p>
+                        <p className="text-xs mt-0.5">
+                          Las asistencias tomadas en este servicio aparecerán listadas aquí.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-border/60 max-h-56 overflow-y-auto">
+                        {empMonthAsists
+                          .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
+                          .map((asist) => (
+                            <div
+                              key={asist.id || asist.fecha}
+                              className="p-2.5 px-3.5 flex items-center justify-between gap-3 hover:bg-muted/30 transition text-xs"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="font-semibold text-foreground capitalize">
+                                  {formatFechaDia(asist.fecha)}
+                                </span>
+                                <span className="text-[11px] font-mono text-muted-foreground">
+                                  ({asist.fecha})
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {asist.motivo && (
+                                  <span className="text-[10px] text-muted-foreground italic truncate max-w-[120px] hidden sm:inline" title={asist.motivo}>
+                                    {asist.motivo}
+                                  </span>
+                                )}
+                                {getAsistenciaStatusBadge(asist.estado, asist.festivo)}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Footer adaptativo según pestaña */}
           <DialogFooter className="pt-3 border-t border-border flex flex-row items-center justify-between gap-2 shrink-0 w-full">
             <Button variant="outline" size="sm" onClick={handleCloseFicha}>
               Cerrar
             </Button>
+
             <div className="flex items-center gap-2">
-              {fichaPdfUrl && (
+              {activeModalTab === "ficha" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveModalTab("asistencia")}
+                    className="gap-1.5"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-primary" />
+                    <span>Ver Asistencias</span>
+                  </Button>
+                  {fichaPdfUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(fichaPdfUrl, "_blank")}
+                    >
+                      <Printer className="w-4 h-4 mr-1.5" />
+                      Imprimir
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    className="bg-primary text-primary-foreground font-semibold"
+                    disabled={!fichaDocToSave}
+                    onClick={() => {
+                      if (fichaDocToSave && fichaFilename) {
+                        fichaDocToSave.save(fichaFilename);
+                      }
+                    }}
+                  >
+                    <Download className="w-4 h-4 mr-1.5" />
+                    Descargar PDF
+                  </Button>
+                </>
+              ) : (
                 <Button
-                  variant="outline"
                   size="sm"
-                  onClick={() => window.open(fichaPdfUrl, "_blank")}
+                  variant="default"
+                  onClick={() => setActiveModalTab("ficha")}
+                  className="gap-1.5"
                 >
-                  <Printer className="w-4 h-4 mr-1.5" />
-                  Imprimir
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Ver Ficha Técnica</span>
                 </Button>
               )}
-              <Button
-                size="sm"
-                className="bg-primary text-primary-foreground font-semibold"
-                disabled={!fichaDocToSave}
-                onClick={() => {
-                  if (fichaDocToSave && fichaFilename) {
-                    fichaDocToSave.save(fichaFilename);
-                  }
-                }}
-              >
-                <Download className="w-4 h-4 mr-1.5" />
-                Descargar PDF
-              </Button>
             </div>
           </DialogFooter>
         </DialogContent>
