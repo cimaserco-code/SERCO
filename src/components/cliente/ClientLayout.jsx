@@ -58,6 +58,43 @@ import { useAuth } from "@/lib/AuthContext";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
 import { ClientPortalProvider, useClientPortal } from "@/context/ClientPortalContext";
 
+class ClientErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Client Portal Error Caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 max-w-xl mx-auto my-12 text-center bg-card border border-border rounded-2xl shadow-xs space-y-4">
+          <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+            <X className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-foreground">Ocurrió un inconveniente al cargar esta sección</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {this.state.error?.message || "Error inesperado al procesar los datos del portal de cliente."}
+          </p>
+          <div className="pt-2 flex justify-center gap-2">
+            <Button size="sm" onClick={() => window.location.reload()}>
+              Recargar Portal
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => this.setState({ hasError: false })}>
+              Reintentar
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ClientLayoutContent() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
@@ -221,7 +258,7 @@ function ClientLayoutContent() {
               Simular Servicio:
             </label>
             <Select
-              value={selectedServicio?.id || ""}
+              value={selectedServicio?.id ? String(selectedServicio.id) : undefined}
               onValueChange={(val) => setSelectedServiceId(val)}
             >
               <SelectTrigger className="h-7 text-xs font-semibold w-full bg-card border-amber-300 dark:border-amber-800">
@@ -229,8 +266,8 @@ function ClientLayoutContent() {
                 <SelectValue placeholder="Seleccionar servicio..." />
               </SelectTrigger>
               <SelectContent>
-                {allServices.map((s) => (
-                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                {(allServices || []).filter((s) => s && s.id).map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                     {s.nombre}
                   </SelectItem>
                 ))}
@@ -246,7 +283,7 @@ function ClientLayoutContent() {
               Servicio Activo:
             </label>
             <Select
-              value={selectedServicio?.id || ""}
+              value={selectedServicio?.id ? String(selectedServicio.id) : undefined}
               onValueChange={(val) => setSelectedServiceId(val)}
             >
               <SelectTrigger className="h-8 text-xs font-semibold w-full bg-sidebar border-sidebar-border">
@@ -254,8 +291,8 @@ function ClientLayoutContent() {
                 <SelectValue placeholder="Seleccionar servicio..." />
               </SelectTrigger>
               <SelectContent>
-                {clientServices.map((s) => (
-                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                {(clientServices || []).filter((s) => s && s.id).map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                     {s.nombre}
                   </SelectItem>
                 ))}
@@ -346,7 +383,7 @@ function ClientLayoutContent() {
                   Simular Servicio:
                 </label>
                 <Select
-                  value={selectedServicio?.id || ""}
+                  value={selectedServicio?.id ? String(selectedServicio.id) : undefined}
                   onValueChange={(val) => {
                     setSelectedServiceId(val);
                     setMobileSidebarOpen(false);
@@ -357,8 +394,8 @@ function ClientLayoutContent() {
                     <SelectValue placeholder="Seleccionar..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {allServices.map((s) => (
-                      <SelectItem key={s.id} value={s.id} className="text-xs">
+                    {(allServices || []).filter((s) => s && s.id).map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                         {s.nombre}
                       </SelectItem>
                     ))}
@@ -465,7 +502,9 @@ function ClientLayoutContent() {
 
         {/* Contenido Principal a Pantalla Completa */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <Outlet />
+          <ClientErrorBoundary>
+            <Outlet />
+          </ClientErrorBoundary>
         </main>
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useClientPortal } from "@/context/ClientPortalContext";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
 import { sercoApi } from "@/api/sercoClient";
@@ -27,7 +27,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  AlertCircle,
   QrCode,
   Copy,
   ExternalLink,
@@ -53,7 +52,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 
 export default function ClientHome() {
@@ -68,6 +67,9 @@ export default function ClientHome() {
     dismissNotification,
     datosBancarios,
   } = useClientPortal();
+
+  const displayName = formatUserDisplayName(user?.full_name || user?.nombre || "Cliente", user?.role);
+  const servicioNombre = selectedServicio?.nombre || "Servicio Asignado";
 
   const [selectedGuardiaFicha, setSelectedGuardiaFicha] = useState(null);
   const [fichaPdfUrl, setFichaPdfUrl] = useState(null);
@@ -126,16 +128,24 @@ export default function ClientHome() {
 
   useEffect(() => {
     if (publicDirectorioUrl && qrModalOpen) {
-      QRCode.toDataURL(publicDirectorioUrl, {
-        width: 380,
-        margin: 2,
-        color: {
-          dark: "#0f172a",
-          light: "#ffffff",
-        },
-      })
-        .then((url) => setQrDataUrl(url))
-        .catch((err) => console.error("Error generating QR:", err));
+      try {
+        QRCode.toDataURL(publicDirectorioUrl, {
+          width: 380,
+          margin: 2,
+          color: {
+            dark: "#0f172a",
+            light: "#ffffff",
+          },
+        })
+          .then((url) => setQrDataUrl(url))
+          .catch((err) => {
+            console.warn("Fallback QR generator activated:", err);
+            setQrDataUrl(`https://api.qrserver.com/v1/create-qr-code/?size=380x380&data=${encodeURIComponent(publicDirectorioUrl)}`);
+          });
+      } catch (err) {
+        console.warn("Error invoking QRCode:", err);
+        setQrDataUrl(`https://api.qrserver.com/v1/create-qr-code/?size=380x380&data=${encodeURIComponent(publicDirectorioUrl)}`);
+      }
     }
   }, [publicDirectorioUrl, qrModalOpen]);
 
@@ -440,9 +450,6 @@ export default function ClientHome() {
       return fechaStr;
     }
   };
-
-  const displayName = formatUserDisplayName(user?.full_name || user?.nombre || "Cliente", user?.role);
-  const servicioNombre = selectedServicio?.nombre || "Servicio Asignado";
 
   const getTurnoBadge = (turno) => {
     const t = (turno || "").toLowerCase();
