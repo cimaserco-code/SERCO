@@ -833,17 +833,23 @@ export default function ClientHome() {
                             <CreditCard className="w-4 h-4" /> Datos Bancarios para Pago SERCO
                           </div>
                           <div className="space-y-1 text-xs">
-                            <p><strong>Beneficiario:</strong> {datosBancarios?.beneficiario || "SERCO SEGURIDAD PRIVADA S.A. DE C.V."}</p>
-                            <p><strong>Banco:</strong> {datosBancarios?.banco || "BBVA México"}</p>
-                            {datosBancarios?.cuenta && (
-                              <p><strong>Número de Cuenta:</strong> <span className="font-mono font-bold">{datosBancarios.cuenta}</span></p>
+                            {datosBancarios ? (
+                              <>
+                                <p><strong>Beneficiario:</strong> {datosBancarios.beneficiario || "—"}</p>
+                                <p><strong>Banco:</strong> {datosBancarios.banco || "—"}</p>
+                                {datosBancarios.cuenta && (
+                                  <p><strong>Número de Cuenta:</strong> <span className="font-mono font-bold">{datosBancarios.cuenta}</span></p>
+                                )}
+                                <p><strong>CLABE Interbancaria:</strong> <span className="font-mono font-bold tracking-wider">{datosBancarios.clabe || "—"}</span></p>
+                                {datosBancarios.notas && datosBancarios.notas.trim() ? (
+                                  <p className="text-[11px] text-amber-800 dark:text-amber-300 pt-1">
+                                    * {datosBancarios.notas}
+                                  </p>
+                                ) : null}
+                              </>
+                            ) : (
+                              <p>Los datos bancarios aún no están configurados.</p>
                             )}
-                            <p><strong>CLABE Interbancaria:</strong> <span className="font-mono font-bold tracking-wider">{datosBancarios?.clabe || "012 180 00123456789 0"}</span></p>
-                            {datosBancarios?.notas && datosBancarios.notas.trim() && !datosBancarios.notas.includes("Favor de indicar como referencia el nombre de su servicio") ? (
-                              <p className="text-[11px] text-amber-800 dark:text-amber-300 pt-1">
-                                * {datosBancarios.notas}
-                              </p>
-                            ) : null}
                             <p className="text-[11px] text-amber-800 dark:text-amber-300">
                               * Recuerda colocar como concepto o referencia el nombre del servicio: <strong>{servicioNombre}</strong>
                             </p>
@@ -882,7 +888,7 @@ export default function ClientHome() {
                             Este cobro está configurado para liquidarse mediante <strong>cheque nominativo</strong>.
                           </p>
                           <p className="text-xs text-blue-900 dark:text-blue-200">
-                            Expedir a nombre de: <strong>{datosBancarios?.beneficiario || "SERCO SEGURIDAD PRIVADA S.A. DE C.V."}</strong>.
+                            Expedir a nombre de: <strong>{datosBancarios?.beneficiario || "—"}</strong>.
                           </p>
                           <p className="text-[11px] text-blue-700 dark:text-blue-400">
                             Favor de coordinar la entrega con el área administrativa o de supervisión asignada.

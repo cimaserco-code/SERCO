@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabaseClient";
 
 export function getDiasMesFactura(mesString) {
   if (!mesString) return 31;
@@ -96,27 +97,74 @@ export const DEFAULT_DATOS_BANCARIOS = {
   notas: ""
 };
 
-export function getDatosBancarios() {
+function normalizeDatosBancarios(data = {}) {
+  const notas = data.notas === "Favor de indicar como referencia el nombre de su servicio"
+    ? ""
+    : data.notas;
+  return {
+    beneficiario: typeof data.beneficiario === "string" ? data.beneficiario : "",
+    banco: typeof data.banco === "string" ? data.banco : "",
+    clabe: typeof data.clabe === "string" ? data.clabe : "",
+    cuenta: typeof data.cuenta === "string" ? data.cuenta : "",
+    notas: typeof notas === "string" ? notas : "",
+  };
+}
+
+function getLegacyDatosBancarios() {
   try {
     const raw = localStorage.getItem("serco_datos_bancarios_empresa");
-    if (!raw) return DEFAULT_DATOS_BANCARIOS;
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed.notas === "Favor de indicar como referencia el nombre de su servicio") {
-      parsed.notas = "";
-    }
-    return { ...DEFAULT_DATOS_BANCARIOS, ...parsed };
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const data = normalizeDatosBancarios(parsed);
+    return Object.values(data).some((value) => value.trim()) ? data : null;
   } catch {
-    return DEFAULT_DATOS_BANCARIOS;
+    return null;
   }
 }
 
-export function setDatosBancarios(data) {
+export function getDatosBancarios() {
+  return getLegacyDatosBancarios() || DEFAULT_DATOS_BANCARIOS;
+}
+
+function cacheDatosBancarios(data) {
   try {
     localStorage.setItem("serco_datos_bancarios_empresa", JSON.stringify(data));
-    window.dispatchEvent(new Event("serco_datos_bancarios_updated"));
-  } catch (e) {
-    console.error("Error guardando datos bancarios:", e);
+  } catch {
+    // The Supabase record remains the source of truth if browser storage is unavailable.
   }
+  window.dispatchEvent(new Event("serco_datos_bancarios_updated"));
+}
+
+export async function loadDatosBancarios({ migrateLegacy = false } = {}) {
+  const { data, error } = await supabase
+    .from("datos_bancarios_empresa")
+    .select("*")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw error;
+
+  if (data) {
+    const bankData = normalizeDatosBancarios(data);
+    cacheDatosBancarios(bankData);
+    return bankData;
+  }
+
+  const legacyData = migrateLegacy ? getLegacyDatosBancarios() : null;
+  return legacyData ? setDatosBancarios(legacyData) : DEFAULT_DATOS_BANCARIOS;
+}
+
+export async function setDatosBancarios(data) {
+  const { data: saved, error } = await supabase
+    .from("datos_bancarios_empresa")
+    .upsert({ id: 1, ...normalizeDatosBancarios(data) }, { onConflict: "id" })
+    .select()
+    .single();
+  if (error) throw error;
+
+  const bankData = normalizeDatosBancarios(saved);
+  cacheDatosBancarios(bankData);
+  return bankData;
 }
 
 function getParteNombre(frecuencia, index) {
@@ -443,19 +491,34 @@ export default function Cobros() {
   const [bankForm, setBankForm] = useState(getDatosBancarios);
   const [savingBank, setSavingBank] = useState(false);
 
-  const handleSaveBankInfo = () => {
+  const openBankModal = async () => {
+    try {
+      const bankData = await loadDatosBancarios({ migrateLegacy: can("cobros", "edit") });
+      setBankForm(bankData);
+    } catch (error) {
+      toast({
+        title: "Error al cargar datos bancarios",
+        description: error?.message || "No se pudieron cargar los datos desde Supabase.",
+        variant: "destructive",
+      });
+      setBankForm(getDatosBancarios());
+    }
+    setBankModalOpen(true);
+  };
+
+  const handleSaveBankInfo = async () => {
     setSavingBank(true);
     try {
-      setDatosBancarios(bankForm);
+      await setDatosBancarios(bankForm);
       toast({
         title: "Datos Bancarios Actualizados",
         description: "La información de la cuenta se ha guardado y se reflejará en el portal de clientes.",
       });
       setBankModalOpen(false);
-    } catch {
+    } catch (error) {
       toast({
         title: "Error al guardar",
-        description: "No se pudieron actualizar los datos bancarios.",
+        description: error?.message || "No se pudieron actualizar los datos bancarios.",
         variant: "destructive"
       });
     } finally {
@@ -1332,10 +1395,7 @@ export default function Cobros() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                setBankForm(getDatosBancarios());
-                setBankModalOpen(true);
-              }}
+              onClick={openBankModal}
               className="gap-2 text-xs font-semibold h-9 border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 shadow-2xs"
               title="Configurar cuenta bancaria visible para los clientes"
             >

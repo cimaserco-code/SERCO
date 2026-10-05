@@ -180,19 +180,51 @@ export async function generateContractMonterreyPDF(emp, params, sedes, options =
 
     const lines = doc.splitTextToSize(text, contentWidth);
     const lineHeight = isTitle ? 6 : 5;
+    const isHeading = isTitle || isCentered || [
+      "DECLARACIONES:",
+      "I. Declara “El Patrón”:",
+      "II. Declara “El Trabajador”:",
+      "III. Declaran “Las Partes”:",
+      "CLÁUSULAS",
+    ].includes(text);
 
-    lines.forEach((line) => {
-      if (y + lineHeight > pageHeight - 20) {
-        doc.addPage();
-        y = 25;
+    if (isHeading) {
+      lines.forEach((line) => {
+        if (y + lineHeight > pageHeight - 20) {
+          doc.addPage();
+          y = 25;
+        }
+        if (isCentered) {
+          doc.text(line, pageWidth / 2, y, { align: "center" });
+        } else {
+          doc.text(line, margin, y);
+        }
+        y += lineHeight;
+      });
+    } else {
+      let lineIndex = 0;
+      const lineHeightFactor = (lineHeight * doc.internal.scaleFactor) / doc.getFontSize();
+
+      while (lineIndex < lines.length) {
+        if (y + lineHeight > pageHeight - 20) {
+          doc.addPage();
+          y = 25;
+        }
+
+        const availableLines = Math.max(1, Math.floor((pageHeight - 20 - y) / lineHeight));
+        const pageLines = lines.slice(lineIndex, lineIndex + availableLines);
+        const hasMoreLines = lineIndex + pageLines.length < lines.length;
+        const linesToDraw = hasMoreLines ? [...pageLines, ""] : pageLines;
+
+        doc.text(linesToDraw, margin, y, {
+          align: "justify",
+          maxWidth: contentWidth,
+          lineHeightFactor,
+        });
+        y += pageLines.length * lineHeight;
+        lineIndex += pageLines.length;
       }
-      if (isCentered) {
-        doc.text(line, pageWidth / 2, y, { align: "center" });
-      } else {
-        doc.text(line, margin, y);
-      }
-      y += lineHeight;
-    });
+    }
 
     y += 3;
   };
@@ -408,19 +440,51 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
 
     const lines = doc.splitTextToSize(text, contentWidth);
     const lineHeight = isTitle ? 6 : 5;
+    const isHeading = isTitle || isCentered || [
+      "DECLARACIONES:",
+      "I. Declara “El Patrón”:",
+      "II. Declara “El Trabajador”:",
+      "III. Declaran “Las Partes”:",
+      "CLÁUSULAS",
+    ].includes(text);
 
-    lines.forEach((line) => {
-      if (y + lineHeight > pageHeight - 20) {
-        doc.addPage();
-        y = 25;
+    if (isHeading) {
+      lines.forEach((line) => {
+        if (y + lineHeight > pageHeight - 20) {
+          doc.addPage();
+          y = 25;
+        }
+        if (isCentered) {
+          doc.text(line, pageWidth / 2, y, { align: "center" });
+        } else {
+          doc.text(line, margin, y);
+        }
+        y += lineHeight;
+      });
+    } else {
+      let lineIndex = 0;
+      const lineHeightFactor = (lineHeight * doc.internal.scaleFactor) / doc.getFontSize();
+
+      while (lineIndex < lines.length) {
+        if (y + lineHeight > pageHeight - 20) {
+          doc.addPage();
+          y = 25;
+        }
+
+        const availableLines = Math.max(1, Math.floor((pageHeight - 20 - y) / lineHeight));
+        const pageLines = lines.slice(lineIndex, lineIndex + availableLines);
+        const hasMoreLines = lineIndex + pageLines.length < lines.length;
+        const linesToDraw = hasMoreLines ? [...pageLines, ""] : pageLines;
+
+        doc.text(linesToDraw, margin, y, {
+          align: "justify",
+          maxWidth: contentWidth,
+          lineHeightFactor,
+        });
+        y += pageLines.length * lineHeight;
+        lineIndex += pageLines.length;
       }
-      if (isCentered) {
-        doc.text(line, pageWidth / 2, y, { align: "center" });
-      } else {
-        doc.text(line, margin, y);
-      }
-      y += lineHeight;
-    });
+    }
 
     y += 3;
   };

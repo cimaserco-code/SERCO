@@ -6,6 +6,19 @@ import { supabase } from "@/lib/supabaseClient";
 
 const ClientPortalContext = createContext(null);
 
+function normalizeBankData(data) {
+  if (!data) return null;
+  return {
+    beneficiario: data.beneficiario || "",
+    banco: data.banco || "",
+    clabe: data.clabe || "",
+    cuenta: data.cuenta || "",
+    notas: data.notas === "Favor de indicar como referencia el nombre de su servicio"
+      ? ""
+      : data.notas || "",
+  };
+}
+
 /** @param {string} fotoUrl */
 function getEmployeePhotoPath(fotoUrl) {
   try {
@@ -52,44 +65,59 @@ export function ClientPortalProvider({ children }) {
     }
   });
 
-  const parseStoredBankData = (raw) => {
-    if (!raw) {
-      return {
-        beneficiario: "SERCO SEGURIDAD PRIVADA S.A. DE C.V.",
-        banco: "BBVA México",
-        clabe: "012 180 00123456789 0",
-        cuenta: "",
-        notas: ""
-      };
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.notas === "Favor de indicar como referencia el nombre de su servicio") {
-        parsed.notas = "";
-      }
-      return parsed;
-    } catch {
-      return {
-        beneficiario: "SERCO SEGURIDAD PRIVADA S.A. DE C.V.",
-        banco: "BBVA México",
-        clabe: "012 180 00123456789 0",
-        cuenta: "",
-        notas: ""
-      };
-    }
-  };
+  const [datosBancarios, setDatosBancariosState] = useState(null);
 
-  const [datosBancarios, setDatosBancariosState] = useState(() => {
-    return parseStoredBankData(localStorage.getItem("serco_datos_bancarios_empresa"));
-  });
-
+  const userId = user?.id;
   useEffect(() => {
-    const handleBankUpdate = () => {
-      setDatosBancariosState(parseStoredBankData(localStorage.getItem("serco_datos_bancarios_empresa")));
+    let active = true;
+
+    const loadBankData = async () => {
+      if (!userId) {
+        setDatosBancariosState(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("datos_bancarios_empresa")
+        .select("beneficiario, banco, clabe, cuenta, notas")
+        .eq("id", 1)
+        .maybeSingle();
+      if (error) {
+        console.error("Error al cargar datos bancarios de la empresa:", error);
+        return;
+      }
+      if (active) setDatosBancariosState(normalizeBankData(data));
     };
-    window.addEventListener("serco_datos_bancarios_updated", handleBankUpdate);
-    return () => window.removeEventListener("serco_datos_bancarios_updated", handleBankUpdate);
-  }, []);
+
+    const channel = userId
+      ? supabase
+          .channel(`datos-bancarios-empresa-${userId}`)
+          .on("postgres_changes", {
+            event: "*",
+            schema: "public",
+            table: "datos_bancarios_empresa",
+          }, (payload) => {
+            if (payload.eventType === "DELETE") {
+              setDatosBancariosState(null);
+            } else {
+              setDatosBancariosState(normalizeBankData(payload.new));
+            }
+          })
+          .subscribe()
+      : null;
+
+    const handleWindowFocus = () => loadBankData();
+    if (userId) {
+      loadBankData();
+      window.addEventListener("focus", handleWindowFocus);
+    }
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", handleWindowFocus);
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   useEffect(() => () => {
     photoObjectUrls.current.forEach((url) => URL.revokeObjectURL(url));
