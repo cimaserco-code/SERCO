@@ -73,6 +73,7 @@ const defaultFichaForm = {
   fecha_movimiento: new Date().toISOString().split("T")[0],
   servicio_capacita: "",
   dias_capacitacion: "",
+  experiencia: "",
   observaciones: "",
 };
 
@@ -235,13 +236,27 @@ export default function Documentos() {
 
   function handleSelectFichaEmployee(emp) {
     setSelectedFichaEmpId(emp.id);
-    const isBaja = !!emp.fecha_baja;
+    const hasReingreso = Boolean(
+      emp.fecha_reingreso && (!emp.fecha_baja || emp.fecha_reingreso >= emp.fecha_baja)
+    );
+    const isBaja = Boolean(
+      emp.fecha_baja && (!emp.fecha_reingreso || emp.fecha_baja > emp.fecha_reingreso)
+    );
+    const fechaEfectiva = isBaja
+      ? emp.fecha_baja
+      : (hasReingreso ? emp.fecha_reingreso : emp.fecha_ingreso);
+
     setFichaForm({
       tipo_movimiento: isBaja ? "BAJA" : "ALTA",
-      fecha_movimiento: (isBaja ? emp.fecha_baja : emp.fecha_ingreso) || new Date().toISOString().split("T")[0],
+      fecha_movimiento: fechaEfectiva || new Date().toISOString().split("T")[0],
       servicio_capacita: emp.servicio_ubicacion || "",
-      dias_capacitacion: [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") || "3 días inducción RH",
-      observaciones: isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : "",
+      dias_capacitacion:
+        [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") ||
+        "3 días inducción RH",
+      experiencia: emp.experiencia || "",
+      observaciones:
+        emp.observaciones ||
+        (isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : ""),
     });
     setFichaComboboxOpen(false);
   }
@@ -258,6 +273,23 @@ export default function Documentos() {
     }
     setGeneratingPdf(true);
     try {
+      // Guardar observaciones y experiencia en la base de datos para que no se pierdan
+      try {
+        const updatePayload = {
+          observaciones: fichaForm.observaciones || null,
+          experiencia: fichaForm.experiencia || null,
+        };
+        await sercoApi.entities.Empleado.update(emp.id, updatePayload);
+        // Actualizar el estado local en la lista de empleados
+        setEmpleados((prev) =>
+          prev.map((e) => (e.id === emp.id ? { ...e, ...updatePayload } : e))
+        );
+        emp.observaciones = fichaForm.observaciones;
+        emp.experiencia = fichaForm.experiencia;
+      } catch (errDb) {
+        console.warn("No se pudo persistir observaciones/experiencia directamente en el empleado:", errDb);
+      }
+
       const sedeObj = sedes.find((s) => s.id === (emp.sede_id || defaultSedeId));
       const result = await generateFichaTecnicaPDF(
         emp,
@@ -849,6 +881,17 @@ export default function Documentos() {
                 value={fichaForm.dias_capacitacion}
                 placeholder="Ej. 3 días teórico / práctico en base"
                 onChange={(e) => setFichaForm({ ...fichaForm, dias_capacitacion: e.target.value })}
+              />
+            </div>
+
+            {/* Experiencia Laboral / Seguridad */}
+            <div>
+              <Label>Experiencia Laboral / Seguridad</Label>
+              <Textarea
+                rows={2}
+                value={fichaForm.experiencia}
+                placeholder="Indica experiencia previa en seguridad privada o puestos operativos..."
+                onChange={(e) => setFichaForm({ ...fichaForm, experiencia: e.target.value })}
               />
             </div>
 

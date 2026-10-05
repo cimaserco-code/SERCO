@@ -494,7 +494,7 @@ export async function generateGafeteOtrasSedesPDF(emp, params = {}, options = {}
     doc.setFont("helvetica", "normal");
     doc.setFontSize(4.3);
     doc.setTextColor(60, 60, 65);
-    doc.text("Av de las Magnolias No. 30 Bis", startX + 27, startY + 24.5, { align: "center" });
+    doc.text("Avenida Magnolias #38", startX + 27, startY + 24.5, { align: "center" });
     doc.text("Col. Fuentes de las Ánimas, C.P. 91190,", startX + 27, startY + 27, { align: "center" });
     doc.text("Xalapa, Veracruz.", startX + 27, startY + 29.5, { align: "center" });
     doc.text("TEL. (228) 1548022", startX + 27, startY + 32.5, { align: "center" });
@@ -503,50 +503,24 @@ export async function generateGafeteOtrasSedesPDF(emp, params = {}, options = {}
     // Separador
     doc.setDrawColor(220, 220, 225);
     doc.setLineWidth(0.2);
-    doc.line(startX + 8, startY + 38.5, startX + 46, startY + 38.5);
+    doc.line(startX + 8, startY + 39, startX + 46, startY + 39);
 
     // Sección CONTACTO ÁREA OPERATIVA
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.3);
+    doc.setFontSize(6.5);
     doc.setTextColor(25, 25, 28);
-    doc.text("CONTACTO ÁREA OPERATIVA", startX + 27, startY + 43, { align: "center" });
+    doc.text("CONTACTO ÁREA OPERATIVA", startX + 27, startY + 46, { align: "center" });
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.2);
+    doc.setFontSize(5.4);
     doc.setTextColor(40, 40, 40);
-    doc.text("M. EDUARDO SOMMER MÁRQUEZ", startX + 27, startY + 47.5, { align: "center" });
+    doc.text("M. EDUARDO SOMMER MÁRQUEZ", startX + 27, startY + 51, { align: "center" });
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(4.6);
+    doc.setFontSize(4.8);
     doc.setTextColor(80, 80, 85);
-    doc.text("Director Operativo", startX + 27, startY + 50.3, { align: "center" });
-    doc.text("Tel: 2881136384", startX + 27, startY + 53, { align: "center" });
-
-    // Separador fino
-    doc.setDrawColor(220, 220, 225);
-    doc.setLineWidth(0.2);
-    doc.line(startX + 8, startY + 56.5, startX + 46, startY + 56.5);
-
-    // Sección FIRMA / DIRECTORA GENERAL
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(4.6);
-    doc.setTextColor(100, 100, 105);
-    doc.text("Firma", startX + 27, startY + 61.5, { align: "center" });
-
-    // Línea de firma
-    doc.setDrawColor(180, 180, 185);
-    doc.setLineWidth(0.3);
-    doc.line(startX + 12, startY + 68.5, startX + 42, startY + 68.5);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.3);
-    doc.setTextColor(40, 40, 40);
-    doc.text("SARAHÍ PEÑA GALAVIZ", startX + 27, startY + 72, { align: "center" });
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(4.6);
-    doc.setTextColor(80, 80, 85);
-    doc.text("Directora general", startX + 27, startY + 75, { align: "center" });
+    doc.text("Director Operativo", startX + 27, startY + 54.2, { align: "center" });
+    doc.text("Tel: 2881136384", startX + 27, startY + 57.5, { align: "center" });
 
     // Footer de Sede
     doc.setFont("helvetica", "normal");

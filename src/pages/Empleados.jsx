@@ -249,6 +249,8 @@ const emptyForm = {
   usuario_alta: "",
   usuario_baja: "",
   foto_url: "",
+  experiencia: "",
+  observaciones: "",
 };
 
 export default function Empleados() {
@@ -1003,7 +1005,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         })(),
         hospedaje: form.hospedaje ? true : false,
         seguro: form.seguro ? true : false,
-        foto_url: finalFotoUrl
+        foto_url: finalFotoUrl,
+        experiencia: form.experiencia || null,
+        observaciones: form.observaciones || null,
       };
 
       const currentUserName = user?.full_name || user?.nombre || user?.email?.split('@')[0] || "Usuario";
@@ -1033,6 +1037,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             delete fallback.apellido_paterno;
             delete fallback.apellido_materno;
             delete fallback.numero_empleado;
+            delete fallback.experiencia;
+            delete fallback.observaciones;
             await sercoApi.entities.Empleado.update(editing.id, fallback);
           } else {
             throw err;
@@ -1056,6 +1062,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             delete fallback.apellido_paterno;
             delete fallback.apellido_materno;
             delete fallback.numero_empleado;
+            delete fallback.experiencia;
+            delete fallback.observaciones;
             createdRecord = await sercoApi.entities.Empleado.create(fallback);
           } else {
             throw err;
@@ -1425,22 +1433,30 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
   async function _handleOpenEmployeeFicha(emp) {
     if (!emp) return;
-    setViewEmpleado(emp);
     setFichaPreview(null);
     setFichaPreviewOpen(true);
     setGeneratingFicha(true);
-    const isBaja = !!emp.fecha_baja;
+    const hasReingreso = Boolean(
+      emp.fecha_reingreso && (!emp.fecha_baja || emp.fecha_reingreso >= emp.fecha_baja)
+    );
+    const isBaja = Boolean(
+      emp.fecha_baja && (!emp.fecha_reingreso || emp.fecha_baja > emp.fecha_reingreso)
+    );
     const sedeObj = sedes.find((sede) => sede.id === (emp.sede_id || defaultSedeId));
+    const fechaEfectiva = isBaja
+      ? emp.fecha_baja
+      : (hasReingreso ? emp.fecha_reingreso : emp.fecha_ingreso);
 
     try {
       const result = await generateFichaTecnicaPDF(
         emp,
         {
           tipo_movimiento: isBaja ? "BAJA" : "ALTA",
-          fecha_movimiento: (isBaja ? emp.fecha_baja : emp.fecha_ingreso) || new Date().toISOString().slice(0, 10),
+          fecha_movimiento: fechaEfectiva || new Date().toISOString().slice(0, 10),
           servicio_capacita: emp.servicio_ubicacion || "",
           dias_capacitacion: [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") || "3 días inducción RH",
-          observaciones: isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : "",
+          experiencia: emp.experiencia || "",
+          observaciones: emp.observaciones || (isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : ""),
           sede_nombre: sedeObj?.nombre || "Monterrey",
         },
         { returnDoc: true }
@@ -2912,6 +2928,38 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 )}
               </div>
 
+              {/* EXPERIENCIA LABORAL / SEGURIDAD */}
+              <div className="sm:col-span-2">
+                <Label>Experiencia Laboral / Seguridad</Label>
+                <Textarea
+                  rows={2}
+                  value={form.experiencia || ""}
+                  placeholder="Detalla experiencia previa en seguridad o puestos anteriores..."
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      experiencia: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              {/* OBSERVACIONES GENERALES */}
+              <div className="sm:col-span-2">
+                <Label>Observaciones Generales</Label>
+                <Textarea
+                  rows={2}
+                  value={form.observaciones || ""}
+                  placeholder="Observaciones de ingreso, notas operativas o de RRHH..."
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      observaciones: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
             </div>
 
           </div>
@@ -3249,6 +3297,18 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     <div>
                       <Label className="text-[11px] text-muted-foreground">Fecha de Montaje</Label>
                       <p className="text-xs sm:text-sm text-foreground mt-0.5">{viewEmpleado?.fecha_montaje || "—"}</p>
+                    </div>
+                    <div className="col-span-full p-3 rounded-lg border bg-muted/30">
+                      <Label className="text-[11px] font-bold text-muted-foreground uppercase">Experiencia Laboral / Seguridad</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5 whitespace-pre-wrap">
+                        {viewEmpleado?.experiencia || <span className="italic text-muted-foreground text-xs">Sin experiencia registrada</span>}
+                      </p>
+                    </div>
+                    <div className="col-span-full p-3 rounded-lg border bg-muted/30">
+                      <Label className="text-[11px] font-bold text-muted-foreground uppercase">Observaciones Generales</Label>
+                      <p className="text-xs sm:text-sm text-foreground mt-0.5 whitespace-pre-wrap">
+                        {viewEmpleado?.observaciones || <span className="italic text-muted-foreground text-xs">Sin observaciones</span>}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -3658,6 +3718,19 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   Editar
                 </Button>
               )}
+
+              <Button
+                variant="outline"
+                className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:text-indigo-300"
+                onClick={() => {
+                  const emp = viewEmpleado;
+                  setViewEmpleado(null);
+                  _handleOpenEmployeeFicha(emp);
+                }}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Ficha Técnica
+              </Button>
 
               <Button onClick={() => setViewEmpleado(null)}>
                 Cerrar

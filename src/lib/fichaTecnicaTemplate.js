@@ -152,7 +152,15 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
   // ══════════════════════════════════════════════════════════
   // SECCIÓN: TIPO DE MOVIMIENTO (ALTA / BAJA)
   // ══════════════════════════════════════════════════════════
-  const tipoMov = (params.tipo_movimiento || (emp.fecha_baja ? "BAJA" : "ALTA")).toUpperCase();
+  const hasReingreso = Boolean(
+    emp.fecha_reingreso && (!emp.fecha_baja || emp.fecha_reingreso >= emp.fecha_baja)
+  );
+  const isBajaDefinitiva = Boolean(
+    emp.fecha_baja && (!emp.fecha_reingreso || emp.fecha_baja > emp.fecha_reingreso)
+  );
+
+  const defaultTipo = isBajaDefinitiva ? "BAJA" : "ALTA";
+  const tipoMov = (params.tipo_movimiento || defaultTipo).toUpperCase();
   const isAlta = tipoMov === "ALTA";
   const isBaja = tipoMov === "BAJA";
 
@@ -196,7 +204,8 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
   else doc.setTextColor(71, 85, 105);
   doc.text("BAJA", margin + 92, y + 5.3);
 
-  const fechaMov = params.fecha_movimiento || (isBaja ? emp.fecha_baja : emp.fecha_ingreso) || todayStr;
+  const fechaIngresoEfectiva = (hasReingreso ? emp.fecha_reingreso : emp.fecha_ingreso) || "";
+  const fechaMov = params.fecha_movimiento || (isBaja ? emp.fecha_baja : fechaIngresoEfectiva) || todayStr;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
@@ -260,7 +269,7 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
 
   // 3. FECHA DE INGRESO, R.F.C., N.S.S.
   const cW3 = infoW / 3;
-  drawField("FECHA DE INGRESO:", emp.fecha_ingreso || "—", margin + 4, cW3);
+  drawField("FECHA DE INGRESO:", fechaIngresoEfectiva || "—", margin + 4, cW3);
   drawField("R.F.C.:", emp.rfc || "—", margin + 4 + cW3, cW3);
   drawField("N.S.S.:", emp.nss || "—", margin + 4 + (cW3 * 2), cW3);
   rowY += rowH;
@@ -314,6 +323,26 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
   }
 
   // ══════════════════════════════════════════════════════════
+  // EXPERIENCIA LABORAL / SEGURIDAD
+  // ══════════════════════════════════════════════════════════
+  doc.setDrawColor(226, 232, 240);
+  doc.line(margin + 2, rowY - 1, margin + contentWidth - 2, rowY - 1);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text("EXPERIENCIA LABORAL / SEGURIDAD:", margin + 4, rowY + 3);
+
+  const expTexto = params.experiencia || emp.experiencia || "Sin experiencia previa registrada.";
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+  const expLines = doc.splitTextToSize(expTexto, contentWidth - 8);
+  doc.text(expLines.slice(0, 3), margin + 4, rowY + 6.8);
+
+  rowY += Math.max(12, expLines.slice(0, 3).length * 3.8 + 4.5);
+
+  // ══════════════════════════════════════════════════════════
   // OBSERVACIONES DENTRO DEL CUADRITO DE LA INFORMACIÓN
   // ══════════════════════════════════════════════════════════
   doc.setDrawColor(226, 232, 240);
@@ -324,14 +353,14 @@ export async function generateFichaTecnicaPDF(emp, params = {}, options = {}) {
   doc.setTextColor(100, 116, 139);
   doc.text("OBSERVACIONES:", margin + 4, rowY + 3);
 
-  const obsTexto = params.observaciones || (isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : "Sin observaciones.");
+  const obsTexto = params.observaciones || emp.observaciones || (isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : "Sin observaciones.");
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(30, 41, 59);
   const obsLines = doc.splitTextToSize(obsTexto, contentWidth - 8);
   doc.text(obsLines.slice(0, 3), margin + 4, rowY + 6.8);
 
-  rowY += 15;
+  rowY += Math.max(13, obsLines.slice(0, 3).length * 3.8 + 5);
 
   // Altura total del cuadro principal
   const boxHeight = rowY - boxStartY;
