@@ -410,65 +410,36 @@ export default function Agenda() {
     }
   }
 
-  // Guardar evento (Supabase con fallback resiliente)
+  // Guardar evento en Supabase; solo actualizar la interfaz tras confirmación.
   async function persistEvent(eventData, isEdit = false, eventId = null) {
-    try {
-      if (isEdit && eventId) {
-        const { error } = await supabase
-          .from("agenda")
-          .update(eventData)
-          .eq("id", eventId);
-        if (error) {
-          // Si las columnas nuevas aún no están en la BD remota, reintentar sin ellas para no interrumpir la experiencia
-          if (error.message?.includes("fotos_evidencia") || error.message?.includes("tipo_reporte") || error.message?.includes("descripcion_reporte")) {
-            const fallbackData = { ...eventData };
-            delete fallbackData.fotos_evidencia;
-            delete fallbackData.tipo_reporte;
-            delete fallbackData.descripcion_reporte;
-            await supabase.from("agenda").update(fallbackData).eq("id", eventId);
-          } else {
-            throw error;
-          }
-        }
-      } else {
-        const { error } = await supabase
-          .from("agenda")
-          .insert(eventData);
-        if (error) {
-          if (error.message?.includes("fotos_evidencia") || error.message?.includes("tipo_reporte") || error.message?.includes("descripcion_reporte")) {
-            const fallbackData = { ...eventData };
-            delete fallbackData.fotos_evidencia;
-            delete fallbackData.tipo_reporte;
-            delete fallbackData.descripcion_reporte;
-            await supabase.from("agenda").insert(fallbackData);
-          } else {
-            throw error;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("No se pudo guardar en Supabase (usando fallback local):", err?.message);
+    const query = isEdit && eventId
+      ? supabase.from("agenda").update(eventData).eq("id", eventId)
+      : supabase.from("agenda").insert(eventData);
+    let { data, error } = await query.select().maybeSingle();
+
+    if (error && ["fotos_evidencia", "tipo_reporte", "descripcion_reporte"]
+      .some((column) => error.message?.includes(column))) {
+      const fallbackData = { ...eventData };
+      delete fallbackData.fotos_evidencia;
+      delete fallbackData.tipo_reporte;
+      delete fallbackData.descripcion_reporte;
+
+      const fallbackQuery = isEdit && eventId
+        ? supabase.from("agenda").update(fallbackData).eq("id", eventId)
+        : supabase.from("agenda").insert(fallbackData);
+      ({ data, error } = await fallbackQuery.select().maybeSingle());
     }
 
+    if (error) throw error;
+    if (!data) throw new Error("Supabase no devolvió el evento guardado.");
+
     setEvents((prev) => {
-      let updated;
       if (isEdit && eventId) {
-        updated = prev.map((e) => (e.id === eventId ? { ...e, ...eventData } : e));
-      } else {
-        const newObj = {
-          id: eventData.id || `local_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          ...eventData,
-          created_at: new Date().toISOString()
-        };
-        updated = [...prev, newObj];
+        return prev.map((event) => event.id === eventId ? { ...event, ...data } : event);
       }
-      try {
-        localStorage.setItem("serco_agenda_local_events", JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
+      return [...prev, data];
     });
+    return data;
   }
 
   async function removeEvent(eventId) {
@@ -806,7 +777,7 @@ export default function Agenda() {
         hora_inicio: form.hora_inicio || "09:00",
         hora_fin: form.tipo === "entrevista" || form.tipo === "reporte" ? null : (form.hora_fin || null),
         sede_id: form.sede_id || defaultSedeId || null,
-        servicio_id: form.servicio_id || null,
+        servicio_id: form.servicio_id === "oficina" ? null : (form.servicio_id || null),
         servicio_nombre: serv?.nombre || form.servicio_nombre || null,
         responsable_id: form.responsable_id || null,
         responsable_nombre: resp?.full_name || resp?.usuario || form.responsable_nombre || user?.full_name || null,
@@ -840,8 +811,11 @@ export default function Agenda() {
       });
       setModalOpen(false);
     } catch (err) {
-      console.error(err);
-      setFormError("Ocurrió un error al guardar el evento.");
+      console.error("Error real de Supabase al guardar evento:", err);
+      const errorDetails = [err?.message, err?.details, err?.hint, err?.code].filter(Boolean);
+      setFormError(errorDetails.length
+        ? `No se pudo guardar: ${errorDetails.join(" | ")}`
+        : "No se pudo guardar el evento. Supabase no devolvió detalles del error.");
     } finally {
       setSaving(false);
     }
