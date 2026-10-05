@@ -315,6 +315,7 @@ export default function Agenda() {
 
   // Navegación de mes en Calendario
   const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [listScopeAll, setListScopeAll] = useState(false); // false = solo mes actual, true = todo el historial
 
   // Modal de Crear / Editar
   const [modalOpen, setModalOpen] = useState(false);
@@ -563,18 +564,35 @@ export default function Agenda() {
       });
   }, [events, allowedEventTypes, sedeFilter, typeFilter, statusFilter, selectedServiceFilter, searchQuery]);
 
-  // Contadores de resumen dinámicos según los tipos permitidos
+  // Clave del mes actual en formato "YYYY-MM"
+  const currentMonthKey = useMemo(() => {
+    const y = currentDate.getFullYear();
+    const m = String(currentDate.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  }, [currentDate]);
+
+  // Eventos filtrados para el mes seleccionado
+  const monthFilteredEvents = useMemo(() => {
+    return filteredEvents.filter((e) => (e.fecha || "").startsWith(currentMonthKey));
+  }, [filteredEvents, currentMonthKey]);
+
+  // Eventos para la vista de lista según el alcance (mes actual o todo el historial)
+  const displayedListEvents = useMemo(() => {
+    return listScopeAll ? filteredEvents : monthFilteredEvents;
+  }, [listScopeAll, filteredEvents, monthFilteredEvents]);
+
+  // Contadores de resumen dinámicos según los tipos permitidos, calculados EXCLUSIVAMENTE para el mes seleccionado
   const stats = useMemo(() => {
-    const total = filteredEvents.length;
-    const entrevistas = filteredEvents.filter((e) => e.tipo === "entrevista").length;
-    const visitas = filteredEvents.filter((e) => e.tipo === "visita_supervision").length;
-    const capacitaciones = filteredEvents.filter((e) => e.tipo === "capacitacion").length;
-    const reportes = filteredEvents.filter((e) => e.tipo === "reporte").length;
-    const reuniones = filteredEvents.filter((e) => e.tipo === "reunion").length;
-    const inauguraciones = filteredEvents.filter((e) => e.tipo === "inauguracion").length;
-    const limitesPago = filteredEvents.filter((e) => e.tipo === "limite_pago").length;
-    const completadas = filteredEvents.filter((e) => e.estado === "completada").length;
-    const pendientes = filteredEvents.filter((e) => e.estado === "programada").length;
+    const total = monthFilteredEvents.length;
+    const entrevistas = monthFilteredEvents.filter((e) => e.tipo === "entrevista").length;
+    const visitas = monthFilteredEvents.filter((e) => e.tipo === "visita_supervision").length;
+    const capacitaciones = monthFilteredEvents.filter((e) => e.tipo === "capacitacion").length;
+    const reportes = monthFilteredEvents.filter((e) => e.tipo === "reporte").length;
+    const reuniones = monthFilteredEvents.filter((e) => e.tipo === "reunion").length;
+    const inauguraciones = monthFilteredEvents.filter((e) => e.tipo === "inauguracion").length;
+    const limitesPago = monthFilteredEvents.filter((e) => e.tipo === "limite_pago").length;
+    const completadas = monthFilteredEvents.filter((e) => e.estado === "completada").length;
+    const pendientes = monthFilteredEvents.filter((e) => e.estado === "programada").length;
     return { 
       total, 
       entrevistas, 
@@ -587,7 +605,7 @@ export default function Agenda() {
       completadas, 
       pendientes 
     };
-  }, [filteredEvents]);
+  }, [monthFilteredEvents]);
 
   // Navegación de mes
   const handlePrevMonth = () => {
@@ -878,7 +896,23 @@ export default function Agenda() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Navegador de mes global */}
+          <div className="flex items-center bg-card border rounded-lg p-1 shadow-2xs">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevMonth} title="Mes anterior">
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-xs font-bold capitalize px-3 min-w-[130px] text-center text-foreground select-none">
+              {monthName}
+            </span>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextMonth} title="Siguiente mes">
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs px-2.5 ml-1" onClick={handleToday}>
+              Hoy
+            </Button>
+          </div>
+
           {/* Selector de Vista (Calendario / Lista) */}
           <div className="bg-muted p-1 rounded-lg border flex items-center gap-1">
             <Button
@@ -910,8 +944,15 @@ export default function Agenda() {
         </div>
       </div>
 
-      {/* TARJETAS DE RESUMEN RÁPIDO SEGÚN PERMISOS */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* TARJETAS DE RESUMEN RÁPIDO MENSUAL SEGÚN PERMISOS */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <CalendarIcon className="w-3.5 h-3.5 text-primary" />
+            Resumen del Mes: <span className="capitalize text-foreground font-bold">{monthName}</span>
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {allowedEventTypes.includes("entrevista") && (
           <Card className="cursor-pointer hover:border-purple-300 transition-colors" onClick={() => setTypeFilter("entrevista")}>
             <CardContent className="p-4 flex items-center gap-3">
@@ -1017,10 +1058,11 @@ export default function Agenda() {
             </div>
             <div>
               <div className="text-xl font-bold text-foreground">{stats.total}</div>
-              <p className="text-xs text-muted-foreground font-medium">Total de Registros</p>
+              <p className="text-xs text-muted-foreground font-medium">Total del Mes</p>
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {/* BARRA DE FILTROS Y BÚSQUEDA */}
@@ -1220,16 +1262,30 @@ export default function Agenda() {
       {/* VISTA 2: LISTA / CRONOLOGÍA */}
       {viewMode === "lista" && (
         <Card>
-          <CardHeader className="pb-3 border-b">
-            <CardTitle className="text-base font-bold">Listado Cronológico de Eventos y Reportes</CardTitle>
-            <CardDescription className="text-xs">
-              Mostrando {filteredEvents.length} registro(s) ordenados por fecha y hora
-            </CardDescription>
+          <CardHeader className="pb-3 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <CardTitle className="text-base font-bold">Listado Cronológico de Eventos y Reportes</CardTitle>
+              <CardDescription className="text-xs">
+                {listScopeAll
+                  ? `Mostrando ${filteredEvents.length} registro(s) en todo el historial acumulado`
+                  : `Mostrando ${displayedListEvents.length} registro(s) correspondientes a ${monthName}`}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={listScopeAll ? "secondary" : "outline"}
+                size="sm"
+                className="text-xs h-8"
+                onClick={() => setListScopeAll(!listScopeAll)}
+              >
+                {listScopeAll ? `Ver solo ${monthName}` : "Ver todo el historial"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-4">
             {loading ? (
               <p className="text-sm text-muted-foreground py-12 text-center">Cargando eventos...</p>
-            ) : filteredEvents.length === 0 ? (
+            ) : displayedListEvents.length === 0 ? (
               <div className="text-center py-12 space-y-2">
                 <CalendarIcon className="w-10 h-10 text-muted-foreground/40 mx-auto" />
                 <p className="text-sm font-semibold text-foreground">No hay eventos ni reportes en esta selección</p>
@@ -1242,7 +1298,7 @@ export default function Agenda() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredEvents.map((ev) => {
+                {displayedListEvents.map((ev) => {
                   const typeConfig = EVENT_TYPES[ev.tipo] || EVENT_TYPES.entrevista;
                   const IconComp = typeConfig.icon;
                   const isDone = ev.estado === "completada";
