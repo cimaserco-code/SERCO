@@ -32,7 +32,11 @@ import {
   X,
   Maximize2,
   Download,
-  Loader2
+  Loader2,
+  DollarSign,
+  Users,
+  MapPin,
+  Link as LinkIcon
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -57,6 +61,7 @@ const EVENT_TYPES = {
     color: "purple",
     badgeClass: "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800",
     dotClass: "bg-purple-500",
+    borderLeftClass: "border-l-purple-500",
     icon: User,
   },
   visita_supervision: {
@@ -65,6 +70,7 @@ const EVENT_TYPES = {
     color: "blue",
     badgeClass: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800",
     dotClass: "bg-blue-500",
+    borderLeftClass: "border-l-blue-500",
     icon: Eye,
   },
   capacitacion: {
@@ -73,15 +79,44 @@ const EVENT_TYPES = {
     color: "emerald",
     badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800",
     dotClass: "bg-emerald-500",
+    borderLeftClass: "border-l-emerald-500",
     icon: BookOpen,
   },
   reporte: {
     id: "reporte",
-    label: "Reporte",
+    label: "Reporte Operativo",
     color: "amber",
     badgeClass: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800",
     dotClass: "bg-amber-500",
+    borderLeftClass: "border-l-amber-500",
     icon: AlertTriangle,
+  },
+  reunion: {
+    id: "reunion",
+    label: "Reunión",
+    color: "indigo",
+    badgeClass: "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800",
+    dotClass: "bg-indigo-500",
+    borderLeftClass: "border-l-indigo-500",
+    icon: Users,
+  },
+  inauguracion: {
+    id: "inauguracion",
+    label: "Inauguración de Servicio",
+    color: "teal",
+    badgeClass: "bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800",
+    dotClass: "bg-teal-500",
+    borderLeftClass: "border-l-teal-500",
+    icon: Building2,
+  },
+  limite_pago: {
+    id: "limite_pago",
+    label: "Límite de Pago",
+    color: "rose",
+    badgeClass: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800",
+    dotClass: "bg-rose-500",
+    borderLeftClass: "border-l-rose-500",
+    icon: DollarSign,
   },
 };
 
@@ -129,7 +164,7 @@ async function compressImageFile(file, maxWidth = 1200, maxHeight = 1200, qualit
 }
 
 const emptyEventForm = {
-  tipo: "entrevista", // entrevista | visita_supervision | capacitacion | reporte
+  tipo: "entrevista", // entrevista | visita_supervision | capacitacion | reporte | reunion | inauguracion | limite_pago
   titulo: "",
   fecha: new Date().toISOString().slice(0, 10),
   hora_inicio: "09:00",
@@ -152,6 +187,20 @@ const emptyEventForm = {
   // Reporte
   tipo_reporte: "Incidencia Operativa",
   descripcion_reporte: "",
+  // Reunión
+  tema_reunion: "",
+  participantes_reunion: "",
+  lugar_reunion: "",
+  enlace_reunion: "",
+  // Inauguración de Servicio
+  fecha_arranque: "",
+  elementos_requeridos: "",
+  detalles_inauguracion: "",
+  // Límite de Pago
+  monto: "",
+  mes: "",
+  estado_cobro: "",
+  is_system_cobro: false,
   // Evidencias fotográficas (Capacitación y Reporte)
   fotos_evidencia: [],
   // General
@@ -164,44 +213,60 @@ export default function Agenda() {
   const { canView, can } = usePermissions();
   const { sedeFilter, defaultSedeId } = useSedeScope();
 
-  if (!canView("agenda")) return <AccessRestricted />;
-
   const userRole = (user?.role || "").toLowerCase().trim();
 
-  /**
-   * Permisos de vista por Rol estrictos solicitados:
-   * - Director de RH y RH: Entrevistas y Capacitaciones.
-   * - Reclutador: Solo Entrevistas.
-   * - Capacitador: Solo Capacitaciones.
-   * - Director de Supervisor y Supervisor: Supervisiones y Reportes.
-   * - Monitoreo / Monitorista: Solo Reportes.
-   * - ADMIN, CEO y Director General: Pueden ver TODAS.
-   */
-  const allowedEventTypes = useMemo(() => {
-    // 1. ADMIN, CEO y Director General: acceso a todas
-    if (
+  const isFinanzas = useMemo(() => {
+    return userRole.includes("finanz") || userRole === "director de finanzas" || userRole === "director finanzas";
+  }, [userRole]);
+
+  const isExecutive = useMemo(() => {
+    return (
       userRole === "admin" ||
       userRole === "administrador" ||
       userRole === "super administrador" ||
       userRole === "ceo" ||
       userRole === "director" ||
       userRole === "director general" ||
-      userRole === "director_general"
-    ) {
-      return ["entrevista", "visita_supervision", "capacitacion", "reporte"];
+      userRole === "director_general" ||
+      userRole.includes("director general") ||
+      userRole === "gerente general"
+    );
+  }, [userRole]);
+
+  if (!canView("agenda") && !isFinanzas && !isExecutive) return <AccessRestricted />;
+
+  /**
+   * Permisos de vista por Rol estrictos solicitados:
+   * - Finanzas y Director de Finanzas: SOLO fechas de límite de pago de los servicios.
+   * - ADMIN, CEO y Director: Pueden ver TODAS las actividades (incluyendo límites de pago, reuniones e inauguraciones).
+   * - Director de RH y RH: Entrevistas y Capacitaciones.
+   * - Reclutador: Solo Entrevistas.
+   * - Capacitador: Solo Capacitaciones.
+   * - Director de Supervisor y Supervisor: Supervisiones y Reportes.
+   * - Monitoreo / Monitorista: Solo Reportes.
+   */
+  const allowedEventTypes = useMemo(() => {
+    // 1. Finanzas y Director de Finanzas: sólo fechas de límite de pago de los servicios
+    if (isFinanzas) {
+      return ["limite_pago"];
     }
 
-    // 2. Reclutador: solo entrevistas
+    // 2. ADMIN, CEO y Director: acceso a todas las actividades
+    if (isExecutive) {
+      return ["entrevista", "visita_supervision", "capacitacion", "reporte", "reunion", "inauguracion", "limite_pago"];
+    }
+
+    // 3. Reclutador: solo entrevistas
     if (userRole.includes("reclutador") || userRole.includes("reclutamiento")) {
       return ["entrevista"];
     }
 
-    // 3. Capacitador: solo capacitaciones
+    // 4. Capacitador: solo capacitaciones
     if (userRole.includes("capacitador") || (userRole.includes("capacitacion") && !userRole.includes("director"))) {
       return ["capacitacion"];
     }
 
-    // 4. Director de RH y RH: entrevistas y capacitaciones
+    // 5. Director de RH y RH: entrevistas y capacitaciones
     if (
       userRole === "rh" ||
       userRole === "recursos humanos" ||
@@ -213,7 +278,7 @@ export default function Agenda() {
       return ["entrevista", "capacitacion"];
     }
 
-    // 5. Director de Supervisiones y Supervisor: supervisiones y reportes
+    // 6. Director de Supervisiones y Supervisor: supervisiones y reportes
     if (
       userRole.includes("supervisor") ||
       userRole.includes("supervision") ||
@@ -222,18 +287,18 @@ export default function Agenda() {
       return ["visita_supervision", "reporte"];
     }
 
-    // 6. Monitoreo / Monitorista: solo reportes
+    // 7. Monitoreo / Monitorista: solo reportes
     if (userRole.includes("monitoreo") || userRole.includes("monitorista")) {
       return ["reporte"];
     }
 
     // Por defecto para cualquier otro usuario autorizado
     return ["entrevista", "visita_supervision", "capacitacion", "reporte"];
-  }, [userRole]);
+  }, [userRole, isFinanzas, isExecutive]);
 
-  const canCreate = can("agenda", "create");
-  const canEdit = can("agenda", "edit");
-  const canDelete = can("agenda", "delete");
+  const canCreate = !isFinanzas && (can("agenda", "create") || isExecutive);
+  const canEdit = can("agenda", "edit") || isExecutive;
+  const canDelete = can("agenda", "delete") || isExecutive;
 
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -280,10 +345,11 @@ export default function Agenda() {
   async function loadData() {
     setLoading(true);
     try {
-      const [seds, servs, users] = await Promise.all([
+      const [seds, servs, users, cobrosList] = await Promise.all([
         sercoApi.entities.Sede.list().catch(() => []),
         sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
-        sercoApi.entities.User.list().catch(() => [])
+        sercoApi.entities.User.list().catch(() => []),
+        sercoApi.entities.Cobro.filter(sedeFilter).catch(() => []),
       ]);
       setSedes(seds || []);
       setServices(servs || []);
@@ -308,7 +374,34 @@ export default function Agenda() {
         loadedEvents = localStored ? JSON.parse(localStored) : [];
       }
 
-      setEvents(loadedEvents);
+      // Generar eventos de fechas límite de pago de servicios a partir de cobros
+      const paymentDeadlineEvents = (cobrosList || [])
+        .filter((c) => c && c.fecha_limite_pago)
+        .map((c) => {
+          const isPagado = (c.estado || "").toLowerCase() === "pagado";
+          const montoNum = Number(c.monto || 0);
+          const montoFormatted = montoNum.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+          return {
+            id: `cobro_limite_${c.id}`,
+            cobro_id: c.id,
+            tipo: "limite_pago",
+            titulo: `Límite Pago: ${c.servicio_nombre || "Servicio"} (${montoFormatted})`,
+            fecha: c.fecha_limite_pago,
+            hora_inicio: "18:00",
+            hora_fin: null,
+            sede_id: c.sede_id || null,
+            servicio_id: c.servicio_id || null,
+            servicio_nombre: c.servicio_nombre || "Servicio",
+            monto: c.monto,
+            mes: c.mes,
+            estado_cobro: c.estado || "pendiente",
+            estado: isPagado ? "completada" : "programada",
+            notas: `Límite de pago para ${c.servicio_nombre || "Servicio"} · Periodo: ${c.mes || "N/A"} · Monto: ${montoFormatted} · Estatus: ${c.estado || "pendiente"}`,
+            is_system_cobro: true,
+          };
+        });
+
+      setEvents([...loadedEvents, ...paymentDeadlineEvents]);
     } catch (err) {
       console.error("Error al cargar agenda:", err);
     } finally {
@@ -433,6 +526,12 @@ export default function Agenda() {
           const matchReportType = (ev.tipo_reporte || "").toLowerCase().includes(q);
           const matchReportDesc = (ev.descripcion_reporte || "").toLowerCase().includes(q);
           const matchNotes = (ev.notas || "").toLowerCase().includes(q);
+          const matchReunionTema = (ev.tema_reunion || "").toLowerCase().includes(q);
+          const matchReunionPart = (ev.participantes_reunion || "").toLowerCase().includes(q);
+          const matchReunionLugar = (ev.lugar_reunion || "").toLowerCase().includes(q);
+          const matchInaugElem = (ev.elementos_requeridos || "").toLowerCase().includes(q);
+          const matchInaugDet = (ev.detalles_inauguracion || "").toLowerCase().includes(q);
+          const matchMes = (ev.mes || "").toLowerCase().includes(q);
 
           if (
             !matchTitle && 
@@ -443,7 +542,13 @@ export default function Agenda() {
             !matchPuesto && 
             !matchReportType && 
             !matchReportDesc && 
-            !matchNotes
+            !matchNotes &&
+            !matchReunionTema &&
+            !matchReunionPart &&
+            !matchReunionLugar &&
+            !matchInaugElem &&
+            !matchInaugDet &&
+            !matchMes
           ) {
             return false;
           }
@@ -465,9 +570,23 @@ export default function Agenda() {
     const visitas = filteredEvents.filter((e) => e.tipo === "visita_supervision").length;
     const capacitaciones = filteredEvents.filter((e) => e.tipo === "capacitacion").length;
     const reportes = filteredEvents.filter((e) => e.tipo === "reporte").length;
+    const reuniones = filteredEvents.filter((e) => e.tipo === "reunion").length;
+    const inauguraciones = filteredEvents.filter((e) => e.tipo === "inauguracion").length;
+    const limitesPago = filteredEvents.filter((e) => e.tipo === "limite_pago").length;
     const completadas = filteredEvents.filter((e) => e.estado === "completada").length;
     const pendientes = filteredEvents.filter((e) => e.estado === "programada").length;
-    return { total, entrevistas, visitas, capacitaciones, reportes, completadas, pendientes };
+    return { 
+      total, 
+      entrevistas, 
+      visitas, 
+      capacitaciones, 
+      reportes, 
+      reuniones, 
+      inauguraciones, 
+      limitesPago, 
+      completadas, 
+      pendientes 
+    };
   }, [filteredEvents]);
 
   // Navegación de mes
@@ -627,6 +746,12 @@ export default function Agenda() {
         autoTitle = `Capacitación: ${form.tema_capacitacion || "General"} en ${form.servicio_nombre || "Servicio"}`;
       } else if (form.tipo === "reporte") {
         autoTitle = `Reporte: ${form.tipo_reporte || "Incidencia"} - ${form.servicio_nombre || "General"}`;
+      } else if (form.tipo === "reunion") {
+        autoTitle = `Reunión: ${form.tema_reunion || form.titulo || "Reunión de Trabajo"}`;
+      } else if (form.tipo === "inauguracion") {
+        autoTitle = `Inauguración: ${form.servicio_nombre || "Nuevo Servicio"}`;
+      } else if (form.tipo === "limite_pago") {
+        autoTitle = `Límite de Pago: ${form.servicio_nombre || "Servicio"}`;
       }
     }
 
@@ -640,6 +765,14 @@ export default function Agenda() {
     }
     if (form.tipo === "reporte" && !form.descripcion_reporte?.trim() && !form.notas?.trim()) {
       setFormError("Por favor describe brevemente los detalles del reporte o incidencia.");
+      return;
+    }
+    if (form.tipo === "reunion" && !form.tema_reunion?.trim() && !form.titulo?.trim()) {
+      setFormError("Por favor ingresa el tema o asunto de la reunión.");
+      return;
+    }
+    if (form.tipo === "inauguracion" && !form.servicio_id && !form.servicio_nombre?.trim()) {
+      setFormError("Por favor indica el servicio a inaugurar.");
       return;
     }
 
@@ -668,6 +801,13 @@ export default function Agenda() {
         asistentes_estimados: form.asistentes_estimados || null,
         tipo_reporte: form.tipo_reporte || null,
         descripcion_reporte: form.descripcion_reporte || null,
+        tema_reunion: form.tema_reunion || null,
+        participantes_reunion: form.participantes_reunion || null,
+        lugar_reunion: form.lugar_reunion || null,
+        enlace_reunion: form.enlace_reunion || null,
+        fecha_arranque: form.fecha_arranque || null,
+        elementos_requeridos: form.elementos_requeridos || null,
+        detalles_inauguracion: form.detalles_inauguracion || null,
         fotos_evidencia: Array.isArray(form.fotos_evidencia) ? form.fotos_evidencia : [],
         estado: form.estado || "programada",
         notas: form.notas || null,
@@ -714,6 +854,9 @@ export default function Agenda() {
       if (allowedEventTypes[0] === "entrevista") return "Agendar Entrevista";
       if (allowedEventTypes[0] === "capacitacion") return "Agendar Capacitación";
       if (allowedEventTypes[0] === "visita_supervision") return "Agendar Supervisión";
+      if (allowedEventTypes[0] === "reunion") return "Agendar Reunión";
+      if (allowedEventTypes[0] === "inauguracion") return "Agendar Inauguración";
+      if (allowedEventTypes[0] === "limite_pago") return "Límites de Pago";
     }
     if (allowedEventTypes.includes("reporte") && allowedEventTypes.includes("visita_supervision") && allowedEventTypes.length === 2) {
       return "Agendar Supervisión / Reporte";
@@ -825,6 +968,48 @@ export default function Agenda() {
           </Card>
         )}
 
+        {allowedEventTypes.includes("reunion") && (
+          <Card className="cursor-pointer hover:border-indigo-300 transition-colors" onClick={() => setTypeFilter("reunion")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.reuniones}</div>
+                <p className="text-xs text-muted-foreground font-medium">Reuniones</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {allowedEventTypes.includes("inauguracion") && (
+          <Card className="cursor-pointer hover:border-teal-300 transition-colors" onClick={() => setTypeFilter("inauguracion")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-600 flex items-center justify-center shrink-0">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.inauguraciones}</div>
+                <p className="text-xs text-muted-foreground font-medium">Inauguraciones</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {allowedEventTypes.includes("limite_pago") && (
+          <Card className="cursor-pointer hover:border-rose-300 transition-colors" onClick={() => setTypeFilter("limite_pago")}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-foreground">{stats.limitesPago}</div>
+                <p className="text-xs text-muted-foreground font-medium">Límites de Pago</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setTypeFilter("todos")}>
           <CardContent className="p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -873,6 +1058,15 @@ export default function Agenda() {
                     )}
                     {allowedEventTypes.includes("reporte") && (
                       <SelectItem value="reporte">🟠 Reportes</SelectItem>
+                    )}
+                    {allowedEventTypes.includes("reunion") && (
+                      <SelectItem value="reunion">🔵 Reuniones</SelectItem>
+                    )}
+                    {allowedEventTypes.includes("inauguracion") && (
+                      <SelectItem value="inauguracion">🟢 Inauguraciones</SelectItem>
+                    )}
+                    {allowedEventTypes.includes("limite_pago") && (
+                      <SelectItem value="limite_pago">🔴 Límites de Pago</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -1063,13 +1257,7 @@ export default function Agenda() {
                       key={ev.id}
                       onClick={(e) => openEdit(ev, e)}
                       className={`p-3.5 rounded-lg border bg-card hover:bg-muted/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 border-l-4 cursor-pointer shadow-xs ${
-                        ev.tipo === "entrevista"
-                          ? "border-l-purple-500"
-                          : ev.tipo === "visita_supervision"
-                          ? "border-l-blue-500"
-                          : ev.tipo === "capacitacion"
-                          ? "border-l-emerald-500"
-                          : "border-l-amber-500"
+                        typeConfig.borderLeftClass || "border-l-primary"
                       }`}
                     >
                       <div className="space-y-1.5 flex-1 min-w-0">
@@ -1093,6 +1281,8 @@ export default function Agenda() {
                           >
                             {ev.tipo === "reporte"
                               ? (ev.estado === "completada" ? "Atendido / Resuelto" : ev.estado === "cancelada" ? "Descartado" : "Abierto / Pendiente")
+                              : ev.tipo === "limite_pago"
+                              ? (ev.estado === "completada" ? "Pagado" : "Pendiente de Pago")
                               : ev.estado}
                           </span>
                         </div>
@@ -1161,6 +1351,57 @@ export default function Agenda() {
                             </>
                           )}
 
+                          {ev.tipo === "reunion" && (
+                            <>
+                              {ev.tema_reunion && (
+                                <span className="font-medium text-foreground">
+                                  Tema: <strong>{ev.tema_reunion}</strong>
+                                </span>
+                              )}
+                              {ev.lugar_reunion && (
+                                <span className="flex items-center gap-1 text-indigo-600">
+                                  <MapPin className="w-3 h-3" /> {ev.lugar_reunion}
+                                </span>
+                              )}
+                              {ev.participantes_reunion && (
+                                <span className="line-clamp-1">Convocados: <strong>{ev.participantes_reunion}</strong></span>
+                              )}
+                            </>
+                          )}
+
+                          {ev.tipo === "inauguracion" && (
+                            <>
+                              {ev.servicio_nombre && (
+                                <span className="font-medium text-foreground flex items-center gap-1">
+                                  <Building2 className="w-3 h-3 text-teal-600" /> {ev.servicio_nombre}
+                                </span>
+                              )}
+                              {ev.elementos_requeridos && (
+                                <span>Plantilla: <strong>{ev.elementos_requeridos}</strong></span>
+                              )}
+                              {ev.detalles_inauguracion && (
+                                <span className="italic line-clamp-1">{ev.detalles_inauguracion}</span>
+                              )}
+                            </>
+                          )}
+
+                          {ev.tipo === "limite_pago" && (
+                            <>
+                              {ev.servicio_nombre && (
+                                <span className="font-medium text-foreground flex items-center gap-1">
+                                  <Building2 className="w-3 h-3 text-rose-600" /> {ev.servicio_nombre}
+                                </span>
+                              )}
+                              {ev.monto && (
+                                <span className="font-bold text-rose-600 flex items-center gap-0.5">
+                                  <DollarSign className="w-3 h-3" />
+                                  {Number(ev.monto).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+                                </span>
+                              )}
+                              {ev.mes && <span>Periodo: {ev.mes}</span>}
+                            </>
+                          )}
+
                           {ev.responsable_nombre && (
                             <span className="text-muted-foreground border-l pl-2">
                               Responsable: <strong className="text-foreground">{ev.responsable_nombre}</strong>
@@ -1214,7 +1455,7 @@ export default function Agenda() {
 
                       {/* Botones de acción rápida */}
                       <div className="flex items-center gap-1.5 shrink-0 self-end md:self-center" onClick={(e) => e.stopPropagation()}>
-                        {canEdit && (
+                        {canEdit && !ev.is_system_cobro && (
                           ev.estado === "programada" ? (
                             <Button
                               variant="outline"
@@ -1245,13 +1486,13 @@ export default function Agenda() {
                             size="icon"
                             className="h-8 w-8 text-muted-foreground hover:text-primary"
                             onClick={(e) => openEdit(ev, e)}
-                            title="Editar"
+                            title={ev.is_system_cobro ? "Ver detalles" : "Editar"}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            {ev.is_system_cobro ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                           </Button>
                         )}
 
-                        {canDelete && (
+                        {canDelete && !ev.is_system_cobro && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1282,8 +1523,20 @@ export default function Agenda() {
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-primary" />
               {editingEvent 
-                ? (canEdit ? (form.tipo === "reporte" ? "Editar Reporte" : "Editar Cita / Evento") : "Detalles del Evento") 
-                : (form.tipo === "reporte" ? "Levantar Nuevo Reporte Operativo" : "Agendar Nuevo Evento")}
+                ? (form.tipo === "limite_pago"
+                    ? "Detalles de Fecha Límite de Pago"
+                    : canEdit 
+                    ? (form.tipo === "reporte" ? "Editar Reporte Operativo" : form.tipo === "reunion" ? "Editar Reunión" : form.tipo === "inauguracion" ? "Editar Inauguración" : "Editar Evento") 
+                    : "Detalles del Registro") 
+                : (form.tipo === "reporte" 
+                    ? "Levantar Nuevo Reporte Operativo" 
+                    : form.tipo === "reunion" 
+                    ? "Agendar Nueva Reunión" 
+                    : form.tipo === "inauguracion" 
+                    ? "Agendar Inauguración de Servicio" 
+                    : form.tipo === "limite_pago"
+                    ? "Fecha Límite de Pago"
+                    : "Agendar Nuevo Evento")}
             </DialogTitle>
             <DialogDescription className="text-xs">
               Completa los datos del registro según el área operativa correspondiente.
@@ -1310,6 +1563,12 @@ export default function Agenda() {
                       ? "bg-purple-100 text-purple-900 border-purple-500 shadow-xs dark:bg-purple-950 dark:text-purple-200"
                       : allowedEventTypes[0] === "capacitacion"
                       ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
+                      : allowedEventTypes[0] === "reunion"
+                      ? "bg-indigo-100 text-indigo-900 border-indigo-500 shadow-xs dark:bg-indigo-950 dark:text-indigo-200"
+                      : allowedEventTypes[0] === "inauguracion"
+                      ? "bg-teal-100 text-teal-900 border-teal-500 shadow-xs dark:bg-teal-950 dark:text-teal-200"
+                      : allowedEventTypes[0] === "limite_pago"
+                      ? "bg-rose-100 text-rose-900 border-rose-500 shadow-xs dark:bg-rose-950 dark:text-rose-200"
                       : "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
                   }`}>
                     {React.createElement(EVENT_TYPES[allowedEventTypes[0]]?.icon || AlertTriangle, { className: "w-4 h-4" })}
@@ -1317,7 +1576,7 @@ export default function Agenda() {
                   </div>
                 </div>
               ) : (
-                <div className={`grid grid-cols-2 sm:grid-cols-${Math.min(allowedEventTypes.length, 4)} gap-2 mt-1.5`}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-1.5">
                   {allowedEventTypes.map((t) => {
                     const config = EVENT_TYPES[t];
                     const IconC = config.icon;
@@ -1336,6 +1595,12 @@ export default function Agenda() {
                               ? "bg-blue-100 text-blue-900 border-blue-500 shadow-xs dark:bg-blue-950 dark:text-blue-200"
                               : config.id === "capacitacion"
                               ? "bg-emerald-100 text-emerald-900 border-emerald-500 shadow-xs dark:bg-emerald-950 dark:text-emerald-200"
+                              : config.id === "reunion"
+                              ? "bg-indigo-100 text-indigo-900 border-indigo-500 shadow-xs dark:bg-indigo-950 dark:text-indigo-200"
+                              : config.id === "inauguracion"
+                              ? "bg-teal-100 text-teal-900 border-teal-500 shadow-xs dark:bg-teal-950 dark:text-teal-200"
+                              : config.id === "limite_pago"
+                              ? "bg-rose-100 text-rose-900 border-rose-500 shadow-xs dark:bg-rose-950 dark:text-rose-200"
                               : "bg-amber-100 text-amber-900 border-amber-500 shadow-xs dark:bg-amber-950 dark:text-amber-200"
                             : "bg-muted/40 hover:bg-muted text-muted-foreground"
                         }`}
@@ -1587,6 +1852,203 @@ export default function Agenda() {
               </div>
             )}
 
+            {/* 5. REUNIÓN */}
+            {form.tipo === "reunion" && (
+              <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-200/70 space-y-3">
+                <h4 className="text-xs font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-indigo-600" /> Datos de la Reunión
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Tema o Asunto de la Reunión *</Label>
+                    <Input
+                      placeholder="Ej. Junta directiva mensual, Revisión operativa con cliente, Planeación de presupuesto..."
+                      value={form.tema_reunion || ""}
+                      onChange={(e) => setForm({ ...form, tema_reunion: e.target.value })}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Lugar o Modalidad</Label>
+                    <Input
+                      placeholder="Ej. Sala de juntas, Virtual / Meet, Instalaciones del cliente..."
+                      value={form.lugar_reunion || ""}
+                      onChange={(e) => setForm({ ...form, lugar_reunion: e.target.value })}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Enlace Virtual (Opcional)</Label>
+                    <Input
+                      placeholder="Ej. meet.google.com/xyz o Teams..."
+                      value={form.enlace_reunion || ""}
+                      onChange={(e) => setForm({ ...form, enlace_reunion: e.target.value })}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Participantes Convocados</Label>
+                    <Input
+                      placeholder="Ej. Dirección General, Operaciones, Finanzas, Representante de Cliente..."
+                      value={form.participantes_reunion || ""}
+                      onChange={(e) => setForm({ ...form, participantes_reunion: e.target.value })}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Servicio Relacionado (Opcional)</Label>
+                    <Select
+                      value={form.servicio_id || "ninguno"}
+                      onValueChange={(val) => {
+                        if (val === "ninguno") {
+                          setForm({ ...form, servicio_id: "", servicio_nombre: "" });
+                        } else {
+                          const s = services.find((x) => x.id === val);
+                          setForm({ ...form, servicio_id: val, servicio_nombre: s?.nombre || "" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="Selecciona un servicio si aplica..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ninguno">Ninguno / General de la Empresa</SelectItem>
+                        {services.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 6. INAUGURACIÓN DE SERVICIO */}
+            {form.tipo === "inauguracion" && (
+              <div className="p-3.5 bg-teal-50/50 dark:bg-teal-950/20 rounded-xl border border-teal-200/70 space-y-3">
+                <h4 className="text-xs font-bold text-teal-900 dark:text-teal-300 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-teal-600" /> Datos de la Inauguración de Servicio
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Servicio a Inaugurar *</Label>
+                    <Select
+                      value={form.servicio_id || "nuevo"}
+                      onValueChange={(val) => {
+                        if (val === "nuevo") {
+                          setForm({ ...form, servicio_id: "" });
+                        } else {
+                          const s = services.find((x) => x.id === val);
+                          setForm({ ...form, servicio_id: val, servicio_nombre: s?.nombre || "" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="Selecciona servicio existente o ingresa nuevo..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nuevo">➕ Escribir nombre de nuevo servicio</SelectItem>
+                        {services.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {(!form.servicio_id || form.servicio_id === "") && (
+                      <Input
+                        placeholder="Nombre del nuevo servicio por inaugurar..."
+                        value={form.servicio_nombre || ""}
+                        onChange={(e) => setForm({ ...form, servicio_nombre: e.target.value })}
+                        className="h-8 text-xs mt-2"
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Plantilla / Elementos Asignados</Label>
+                    <Input
+                      placeholder="Ej. 6 guardias 24x24 + 1 jefe de turno"
+                      value={form.elementos_requeridos || ""}
+                      onChange={(e) => setForm({ ...form, elementos_requeridos: e.target.value })}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs">Sede Asignada</Label>
+                    <Select
+                      value={form.sede_id || defaultSedeId || "none"}
+                      onValueChange={(val) => setForm({ ...form, sede_id: val === "none" ? "" : val })}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1">
+                        <SelectValue placeholder="Sede" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin sede específica</SelectItem>
+                        {sedes.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Detalles y Consignas de Arranque</Label>
+                    <Textarea
+                      rows={2}
+                      placeholder="Protocolos de apertura, entrega de uniformes, radios, rondineros, presentación con cliente..."
+                      value={form.detalles_inauguracion || ""}
+                      onChange={(e) => setForm({ ...form, detalles_inauguracion: e.target.value })}
+                      className="text-xs mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 7. LÍMITE DE PAGO */}
+            {form.tipo === "limite_pago" && (
+              <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-200/70 space-y-3">
+                <h4 className="text-xs font-bold text-rose-900 dark:text-rose-300 flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-rose-600" /> Información de Fecha Límite de Pago
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Servicio:</span>
+                    <span className="font-semibold text-foreground">{form.servicio_nombre || "Servicio general"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Monto de Factura:</span>
+                    <span className="font-bold text-rose-600 text-sm">
+                      {form.monto ? Number(form.monto).toLocaleString("es-MX", { style: "currency", currency: "MXN" }) : "N/A"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Periodo / Mes:</span>
+                    <span className="font-semibold text-foreground">{form.mes || "N/A"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Estatus de Cobranza:</span>
+                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      form.estado_cobro === "pagado"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}>
+                      {form.estado_cobro || form.estado}
+                    </span>
+                  </div>
+                </div>
+                {form.is_system_cobro && (
+                  <p className="text-[11px] text-muted-foreground bg-rose-100/50 dark:bg-rose-950/40 p-2 rounded">
+                    ℹ️ Esta fecha de límite de pago está sincronizada automáticamente con la cartera del módulo de Facturas.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* SECCIÓN DE FOTOGRAFÍAS DE EVIDENCIA (PARA CAPACITACIÓN Y REPORTES) */}
             {(form.tipo === "capacitacion" || form.tipo === "reporte") && (
               <div className="p-3.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
@@ -1690,7 +2152,18 @@ export default function Agenda() {
             )}
 
             {/* FECHA Y HORARIOS */}
-            {form.tipo === "entrevista" || form.tipo === "reporte" ? (
+            {form.tipo === "limite_pago" ? (
+              <div>
+                <Label className="text-xs">Fecha Límite de Pago *</Label>
+                <Input
+                  type="date"
+                  value={form.fecha}
+                  onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                  className="h-8 text-xs mt-1"
+                  disabled={form.is_system_cobro}
+                />
+              </div>
+            ) : form.tipo === "entrevista" || form.tipo === "reporte" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">
@@ -1719,7 +2192,13 @@ export default function Agenda() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <Label className="text-xs">Fecha del Evento *</Label>
+                  <Label className="text-xs">
+                    {form.tipo === "reunion" 
+                      ? "Fecha de la Reunión *" 
+                      : form.tipo === "inauguracion" 
+                      ? "Fecha de Arranque / Inauguración *" 
+                      : "Fecha del Evento *"}
+                  </Label>
                   <Input
                     type="date"
                     value={form.fecha}
@@ -1820,15 +2299,21 @@ export default function Agenda() {
 
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => setModalOpen(false)} disabled={saving}>
-              {editingEvent && !canEdit ? "Cerrar" : "Cancelar"}
+              {editingEvent && (!canEdit || editingEvent?.is_system_cobro) ? "Cerrar" : "Cancelar"}
             </Button>
-            {(!editingEvent || canEdit) && (
+            {(!editingEvent || canEdit) && !editingEvent?.is_system_cobro && (
               <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 font-semibold">
                 {saving 
                   ? "Guardando..." 
                   : editingEvent 
                   ? "Guardar Cambios" 
-                  : (form.tipo === "reporte" ? "Guardar Reporte" : "Agendar Evento")}
+                  : (form.tipo === "reporte" 
+                      ? "Guardar Reporte" 
+                      : form.tipo === "reunion" 
+                      ? "Agendar Reunión" 
+                      : form.tipo === "inauguracion" 
+                      ? "Agendar Inauguración" 
+                      : "Agendar Evento")}
               </Button>
             )}
           </DialogFooter>

@@ -18,6 +18,7 @@ import {
 
 const flatNavItems = [
   { to: "/", label: "Inicio", icon: Home, module: "inicio" },
+  { to: "/agenda", label: "Agenda", icon: CalendarDays, module: "agenda" },
   { to: "/overview", label: "Overview", icon: LayoutGrid, module: "overview" },
 ];
 
@@ -30,7 +31,6 @@ const navigationSections = [
       { to: "/servicios/plantilla", label: "Plantilla", icon: Clock, module: "turnos" },
       { to: "/asistencias", label: "Asistencias", icon: Calendar, module: "asistencias" },
       { to: "/empleados", label: "Empleados", icon: Users, module: "empleados" },
-      { to: "/agenda", label: "Agenda", icon: CalendarDays, module: "agenda" },
       { to: "/atencion", label: "Atención a Clientes", icon: Headphones, module: "atencion" },
     ]
   },
@@ -168,7 +168,22 @@ export default function Layout() {
   });
 
   const renderFlatNavItems = (onNavigate) => {
-    const visibleItems = flatNavItems.filter((item) => !item.module || canView(item.module));
+    const isFinanzasUser = userRole.includes("finanz");
+    const isExecutiveUser =
+      userRole === "admin" ||
+      userRole === "administrador" ||
+      userRole === "super administrador" ||
+      userRole === "ceo" ||
+      userRole === "director" ||
+      userRole === "director general" ||
+      userRole === "director_general" ||
+      userRole.includes("director general") ||
+      userRole === "gerente general";
+
+    const visibleItems = flatNavItems.filter((item) => {
+      if (item.module === "agenda" && (isFinanzasUser || isExecutiveUser)) return true;
+      return !item.module || canView(item.module);
+    });
     return visibleItems.map((item) => {
       const Icon = item.icon;
       return (
