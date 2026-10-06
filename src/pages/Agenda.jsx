@@ -356,24 +356,11 @@ export default function Agenda() {
       setServices(servs || []);
       setUsersList(users || []);
 
-      // Cargar eventos (con persistencia híbrida: Supabase con fallback a localStorage)
-      let loadedEvents = [];
-      try {
-        const { data: dbEvents, error: dbErr } = await supabase
-          .from("agenda")
-          .select("*")
-          .order("fecha", { ascending: true });
-        
-        if (!dbErr && Array.isArray(dbEvents)) {
-          loadedEvents = dbEvents;
-        } else {
-          const localStored = localStorage.getItem("serco_agenda_local_events");
-          loadedEvents = localStored ? JSON.parse(localStored) : [];
-        }
-      } catch {
-        const localStored = localStorage.getItem("serco_agenda_local_events");
-        loadedEvents = localStored ? JSON.parse(localStored) : [];
-      }
+      const { data: loadedEvents, error: eventsError } = await supabase
+        .from("agenda")
+        .select("*")
+        .order("fecha", { ascending: true });
+      if (eventsError) throw eventsError;
 
       // Generar eventos de fechas límite de pago de servicios a partir de cobros
       const paymentDeadlineEvents = (cobrosList || [])
@@ -405,6 +392,7 @@ export default function Agenda() {
       setEvents([...loadedEvents, ...paymentDeadlineEvents]);
     } catch (err) {
       console.error("Error al cargar agenda:", err);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -415,20 +403,7 @@ export default function Agenda() {
     const query = isEdit && eventId
       ? supabase.from("agenda").update(eventData).eq("id", eventId)
       : supabase.from("agenda").insert(eventData);
-    let { data, error } = await query.select().maybeSingle();
-
-    if (error && ["fotos_evidencia", "tipo_reporte", "descripcion_reporte"]
-      .some((column) => error.message?.includes(column))) {
-      const fallbackData = { ...eventData };
-      delete fallbackData.fotos_evidencia;
-      delete fallbackData.tipo_reporte;
-      delete fallbackData.descripcion_reporte;
-
-      const fallbackQuery = isEdit && eventId
-        ? supabase.from("agenda").update(fallbackData).eq("id", eventId)
-        : supabase.from("agenda").insert(fallbackData);
-      ({ data, error } = await fallbackQuery.select().maybeSingle());
-    }
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) throw error;
     if (!data) throw new Error("Supabase no devolvió el evento guardado.");
@@ -443,20 +418,9 @@ export default function Agenda() {
   }
 
   async function removeEvent(eventId) {
-    try {
-      await supabase.from("agenda").delete().eq("id", eventId);
-    } catch {
-      // ignore
-    }
-    setEvents((prev) => {
-      const updated = prev.filter((e) => e.id !== eventId);
-      try {
-        localStorage.setItem("serco_agenda_local_events", JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
+    const { error } = await supabase.from("agenda").delete().eq("id", eventId);
+    if (error) throw error;
+    setEvents((prev) => prev.filter((event) => event.id !== eventId));
   }
 
   // Filtrado de Eventos respetando rigurosamente los permisos por Rol
