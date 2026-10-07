@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
@@ -209,6 +210,7 @@ const emptyEventForm = {
 };
 
 export default function Agenda() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { canView, can } = usePermissions();
   const { sedeFilter, defaultSedeId } = useSedeScope();
@@ -675,6 +677,24 @@ export default function Agenda() {
     });
     setModalOpen(true);
   };
+  useEffect(() => {
+    const eventoId = searchParams.get("evento");
+    if (!eventoId || loading) return;
+    const evento = events.find((item) => item.id === eventoId);
+    if (
+      !evento ||
+      !allowedEventTypes.includes(evento.tipo) ||
+      (sedeFilter?.sede_id && evento.sede_id && evento.sede_id !== sedeFilter.sede_id)
+    ) return;
+
+    setCurrentDate(new Date(`${evento.fecha}T12:00:00`));
+    setTypeFilter(evento.tipo);
+    setViewMode("calendario");
+    openEdit(evento);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("evento");
+    setSearchParams(nextParams, { replace: true });
+  }, [allowedEventTypes, events, loading, openEdit, searchParams, sedeFilter, setSearchParams]);
 
   // Guardar evento
   async function handleSave() {

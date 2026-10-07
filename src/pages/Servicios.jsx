@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { getServicioCobroConfig, setServicioCobroConfig } from "@/pages/Cobros";
 import { Plus, Pencil, Trash2, Search, } from "lucide-react";
@@ -177,6 +178,7 @@ const emptyForm = {
 };
 
 export default function Servicios() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
   const { toast } = useToast();
@@ -284,6 +286,18 @@ export default function Servicios() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const servicioId = searchParams.get("registro");
+    if (!servicioId || loading) return;
+    const servicio = items.find((item) => item.id === servicioId);
+    if (!servicio) return;
+
+    setViewItem(servicio);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("registro");
+    setSearchParams(nextParams, { replace: true });
+  }, [items, loading, searchParams, setSearchParams]);
 
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import {
   Plus,
@@ -69,6 +70,7 @@ const emptyForm = {
 };
 
 export default function Inventario() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { sedeFilter, defaultSedeId, userSedeIds } = useSedeScope();
   const { canView, can, isAdmin } = usePermissions();
@@ -591,6 +593,20 @@ export default function Inventario() {
       return true;
     });
   }, [solicitudes, userSedeIds, canViewAllSolicitudes, user, solicitudSearch]);
+
+  useEffect(() => {
+    const solicitudId = searchParams.get("solicitud");
+    if (!solicitudId || loading) return;
+    const solicitud = visibleSolicitudes.find((item) => item.id === solicitudId);
+    if (!solicitud) return;
+
+    setActiveCategoryTab("Solicitudes");
+    setSolicitudesTab(isCompraSolicitud(solicitud) ? "compras" : "pedidos");
+    setSelectedSolicitud(solicitud);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("solicitud");
+    setSearchParams(nextParams, { replace: true });
+  }, [isCompraSolicitud, loading, searchParams, setSearchParams, visibleSolicitudes]);
 
   const pedidosList = useMemo(() => {
     return (visibleSolicitudes || []).filter((s) => !isCompraSolicitud(s));

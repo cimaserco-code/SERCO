@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { Users, Briefcase, Package, FileText, Home, Menu, X, Clock, Shield, ChevronDown, Building2, ShieldCheck, DollarSign, Calendar, CalendarDays, LogOut, TrendingDown, LayoutGrid, Megaphone, Calculator, Headphones } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -80,43 +80,6 @@ export default function Layout() {
   const [profileError, setProfileError] = useState("");
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-
-  // Inventario Requests Notifications
-  const [unnotifiedRequests, setUnnotifiedRequests] = useState([]);
-  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
-
-  React.useEffect(() => {
-    if (user?.id) {
-      sercoApi.entities.SolicitudInventario.list()
-        .then((sols) => {
-          const mySols = (sols || []).filter(
-            (s) =>
-              s.solicitante_id === user.id &&
-              (s.estado === "aprobado" || s.estado === "rechazado")
-          );
-          if (mySols.length > 0) {
-            const ackIds = JSON.parse(localStorage.getItem("ack_requests") || "[]");
-            const newUnnotified = mySols.filter((s) => !ackIds.includes(s.id));
-            if (newUnnotified.length > 0) {
-              setUnnotifiedRequests(newUnnotified);
-              setNotificationModalOpen(true);
-            }
-          }
-        })
-        .catch((err) => console.error("Error fetching solicitudes notifications:", err));
-    }
-  }, [user?.id]);
-
-  const acknowledgeNotifications = () => {
-    const ackIds = JSON.parse(localStorage.getItem("ack_requests") || "[]");
-    unnotifiedRequests.forEach((s) => {
-      if (!ackIds.includes(s.id)) {
-        ackIds.push(s.id);
-      }
-    });
-    localStorage.setItem("ack_requests", JSON.stringify(ackIds));
-    setNotificationModalOpen(false);
-  };
 
   const openProfile = () => {
     setProfileForm({
@@ -553,47 +516,6 @@ export default function Layout() {
         </DialogContent>
       </Dialog>
 
-      {/* Solicitudes de Inventario Alertas */}
-      <Dialog open={notificationModalOpen} onOpenChange={(v) => !v && acknowledgeNotifications()}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              <Package className="w-5 h-5 text-primary" />
-              Notificación de Inventario
-            </DialogTitle>
-            <DialogDescription>
-              Tus siguientes solicitudes de inventario han sido procesadas:
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 my-2 max-h-[300px] overflow-y-auto">
-            {unnotifiedRequests.map((sol) => (
-              <div key={sol.id} className="p-3 border rounded-lg bg-slate-50 dark:bg-slate-900/50 flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-sm">{sol.item_nombre}</span>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    sol.estado === "aprobado" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                  }`}>
-                    {sol.estado === "aprobado" ? "Aprobado" : "Rechazado"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Cantidad: <span className="font-medium text-foreground">{sol.cantidad}</span>
-                </p>
-                {sol.comentarios && (
-                  <p className="text-xs text-muted-foreground italic mt-1">
-                    "{sol.comentarios}"
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-          <DialogFooter className="mt-4">
-            <Button onClick={acknowledgeNotifications} className="w-full">
-              Entendido
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

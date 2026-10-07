@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Shirt, Calendar, Building2, Phone, Mail, MapPin, CreditCard, Briefcase, UserCheck, User } from "lucide-react";
@@ -261,6 +262,7 @@ export default function Empleados() {
   const userRole = (user?.role || "").toLowerCase();
   const isAdmin = userRole === "admin" || userRole === "administrador" || userRole === "super administrador" || isSuperAdmin;
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [allEmployees, setAllEmployees] = useState([]);
   const [sedes, setSedes] = useState([]);
@@ -485,6 +487,20 @@ export default function Empleados() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const empleadoId = searchParams.get("registro");
+    if (!empleadoId || loading) return;
+    const empleado = items.find((item) => item.id === empleadoId);
+    if (!empleado) return;
+
+    const estaDeBaja = empleado.fecha_baja && (!empleado.fecha_reingreso || empleado.fecha_baja > empleado.fecha_reingreso);
+    setActiveTab(estaDeBaja ? "bajas" : "activos");
+    setViewEmpleado(empleado);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("registro");
+    setSearchParams(nextParams, { replace: true });
+  }, [items, loading, searchParams, setSearchParams]);
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 

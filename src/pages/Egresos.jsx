@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { Plus, Search, ChevronLeft, ChevronRight, Smartphone, Car, Fuel } from "lucide-react";
 import {
@@ -64,6 +65,7 @@ function parseSaldoMetadata(saldo) {
 }
 
 export default function Egresos() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { sedeFilter, defaultSedeId } = useSedeScope();
   const { canView, can } = usePermissions();
   const { toast } = useToast();
@@ -94,6 +96,7 @@ export default function Egresos() {
   const [recargas, setRecargas] = useState([]);
   const [recargaModalOpen, setRecargaModalOpen] = useState(false);
   const [recargaEditing, setRecargaEditing] = useState(null);
+  const [notificationRecord, setNotificationRecord] = useState(null);
   const [recargaForm, setRecargaForm] = useState({ monto: "50", montoPersonalizado: "", fecha: "" });
   const [recargaSaving, setRecargaSaving] = useState(false);
 
@@ -140,6 +143,32 @@ export default function Egresos() {
     loadGasolina();
     loadAutomoviles();
   }, [currentMonth, sedeFilter]);
+
+  useEffect(() => {
+    const egresoId = searchParams.get("egreso");
+    const recargaId = searchParams.get("recarga");
+    if (egresoId) {
+      if (loading) return;
+      const egreso = items.find((item) => item.id === egresoId);
+      if (!egreso) return;
+      setActiveTab("egresos");
+      setNotificationRecord({ tipo: "egreso", registro: egreso });
+    } else if (recargaId) {
+      if (saldoLoading) return;
+      const recarga = recargas.find((item) => item.id === recargaId);
+      if (!recarga) return;
+      const saldo = saldos.find((item) => item.id === recarga.saldo_id);
+      setActiveTab("saldos");
+      setNotificationRecord({ tipo: "recarga", registro: recarga, saldo });
+    } else {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("egreso");
+    nextParams.delete("recarga");
+    setSearchParams(nextParams, { replace: true });
+  }, [items, loading, recargas, recargaModalOpen, saldoLoading, saldos, searchParams, setSearchParams]);
 
   // ── Egresos ──
   async function loadEgresos() {
@@ -1475,6 +1504,29 @@ export default function Egresos() {
         description="Los movimientos asociados conservarán su información histórica."
         onConfirm={handleAutomovilDelete}
       />
+      <Dialog open={!!notificationRecord} onOpenChange={(open) => !open && setNotificationRecord(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{notificationRecord?.tipo === "recarga" ? "Recarga de celular" : "Egreso mensual"}</DialogTitle>
+            <DialogDescription>Registro relacionado con la notificación.</DialogDescription>
+          </DialogHeader>
+          {notificationRecord?.tipo === "recarga" ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Celular</dt><dd>{notificationRecord.saldo?.nombre || notificationRecord.saldo?.numero_telefono || "—"}</dd>
+              <dt className="text-muted-foreground">Monto</dt><dd>${Number(notificationRecord.registro.monto || 0).toLocaleString("es-MX")}</dd>
+              <dt className="text-muted-foreground">Fecha</dt><dd>{notificationRecord.registro.fecha || "—"}</dd>
+            </dl>
+          ) : (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Concepto</dt><dd>{notificationRecord?.registro?.concepto || "—"}</dd>
+              <dt className="text-muted-foreground">Monto</dt><dd>${Number(notificationRecord?.registro?.monto || 0).toLocaleString("es-MX")}</dd>
+              <dt className="text-muted-foreground">Vencimiento</dt><dd>{notificationRecord?.registro?.fecha || "—"}</dd>
+              <dt className="text-muted-foreground">Descripción</dt><dd>{notificationRecord?.registro?.descripcion || "—"}</dd>
+            </dl>
+          )}
+          <DialogFooter><Button variant="outline" onClick={() => setNotificationRecord(null)}>Cerrar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
