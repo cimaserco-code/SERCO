@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard, Download } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard, Download, Tag, Receipt, PackagePlus } from "lucide-react";
+import {
+  getStoredFacturasExtras,
+  getFacturasExtrasByServicio,
+  saveFacturaExtra,
+  deleteFacturaExtra,
+  toggleEstadoFacturaExtra,
+  syncFacturasExtrasWithRemote,
+} from "@/lib/facturasExtras";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -524,6 +532,109 @@ export default function Cobros() {
     } finally {
       setSavingBank(false);
     }
+  };
+
+  // Estado de Facturas Extras (cargos independientes fuera de la mensualidad)
+  const [facturasExtrasAll, setFacturasExtrasAll] = useState(() => getStoredFacturasExtras());
+  const [extrasModalOpen, setExtrasModalOpen] = useState(false);
+  const [selectedExtraServicio, setSelectedExtraServicio] = useState(null);
+  const [newExtraForm, setNewExtraForm] = useState({
+    concepto: "",
+    monto_base: "",
+    calcular_iva: true,
+    fecha: new Date().toISOString().slice(0, 10),
+    estado: "pendiente",
+    metodo_pago: "transferencia",
+    notas: "",
+  });
+  const [savingExtra, setSavingExtra] = useState(false);
+
+  useEffect(() => {
+    syncFacturasExtrasWithRemote();
+    const handleExtrasUpdated = () => {
+      setFacturasExtrasAll(getStoredFacturasExtras());
+    };
+    window.addEventListener("serco_facturas_extras_updated", handleExtrasUpdated);
+    return () => {
+      window.removeEventListener("serco_facturas_extras_updated", handleExtrasUpdated);
+    };
+  }, []);
+
+  const handleOpenExtrasModal = (item) => {
+    setSelectedExtraServicio({
+      id: item.servicio_id,
+      nombre: item.servicio_nombre,
+      sede_id: item.sede_id,
+      cobro_id: item.id,
+      mes: item.mes || currentMonth,
+    });
+    setNewExtraForm({
+      concepto: "",
+      monto_base: "",
+      calcular_iva: true,
+      fecha: new Date().toISOString().slice(0, 10),
+      estado: "pendiente",
+      metodo_pago: "transferencia",
+      notas: "",
+    });
+    setExtrasModalOpen(true);
+  };
+
+  const handleSaveExtra = async (e) => {
+    if (e) e.preventDefault();
+    if (!newExtraForm.concepto?.trim() || !newExtraForm.monto_base) {
+      toast({
+        title: "Campos requeridos",
+        description: "Por favor indica el concepto y monto de la factura extra.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSavingExtra(true);
+    try {
+      await saveFacturaExtra({
+        ...newExtraForm,
+        servicio_id: selectedExtraServicio?.id,
+        servicio_nombre: selectedExtraServicio?.nombre,
+        sede_id: selectedExtraServicio?.sede_id,
+        cobro_id: selectedExtraServicio?.cobro_id,
+        mes: selectedExtraServicio?.mes,
+      });
+      toast({
+        title: "Factura Extra Guardada",
+        description: `Se registró el cargo extra de ${newExtraForm.concepto} para ${selectedExtraServicio?.nombre}.`,
+      });
+      setNewExtraForm({
+        concepto: "",
+        monto_base: "",
+        calcular_iva: true,
+        fecha: new Date().toISOString().slice(0, 10),
+        estado: "pendiente",
+        metodo_pago: "transferencia",
+        notas: "",
+      });
+      setFacturasExtrasAll(getStoredFacturasExtras());
+    } finally {
+      setSavingExtra(false);
+    }
+  };
+
+  const handleDeleteExtra = async (extraId) => {
+    await deleteFacturaExtra(extraId);
+    setFacturasExtrasAll(getStoredFacturasExtras());
+    toast({
+      title: "Factura Extra Eliminada",
+      description: "El cargo extra fue removido exitosamente.",
+    });
+  };
+
+  const handleToggleExtraEstado = async (extraId, nuevoEstado) => {
+    await toggleEstadoFacturaExtra(extraId, nuevoEstado);
+    setFacturasExtrasAll(getStoredFacturasExtras());
+    toast({
+      title: "Estado Actualizado",
+      description: `Factura extra marcada como ${nuevoEstado}.`,
+    });
   };
 
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -1438,6 +1549,14 @@ export default function Cobros() {
               filtered.map((item) => {
                 const meta = getCobroMeta(item.id);
                 const info = getCobroPartesInfo(item, meta);
+                const itemExtras = facturasExtrasAll.filter(
+                  (x) => x.servicio_id === item.servicio_id && (!x.mes || x.mes === item.mes)
+                );
+                const itemExtrasCount = itemExtras.length;
+                const itemExtrasTotal = itemExtras.reduce(
+                  (sum, x) => sum + (Number(x.monto_total || x.monto || 0)),
+                  0
+                );
                 return (
                   <TableRow 
                     key={item.id} 
@@ -1455,6 +1574,20 @@ export default function Cobros() {
                         {meta?.metodo_pago && (
                           <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] px-1.5 py-0 capitalize">
                             {meta.metodo_pago}
+                          </Badge>
+                        )}
+                        {itemExtrasCount > 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border-indigo-200 text-[10px] px-1.5 py-0 font-semibold cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenExtrasModal(item);
+                            }}
+                            title={`Este servicio tiene ${itemExtrasCount} factura(s) extra(s) por un total de $${Math.round(itemExtrasTotal).toLocaleString("es-MX")} (cobro independiente no sumado a la mensualidad)`}
+                          >
+                            <Tag className="w-2.5 h-2.5 mr-0.5 inline" />
+                            +{itemExtrasCount} Extra (${Math.round(itemExtrasTotal).toLocaleString("es-MX")})
                           </Badge>
                         )}
                       </div>
@@ -1531,6 +1664,28 @@ export default function Cobros() {
                         >
                           <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
                           Pagos
+                        </Button>
+                      )}
+
+                      {/* Botón Facturas Extras */}
+                      {can("cobros", "edit") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={cn(
+                            "h-7 text-xs font-semibold gap-1",
+                            itemExtrasCount > 0
+                              ? "border-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700"
+                              : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenExtrasModal(item);
+                          }}
+                          title="Gestionar facturas extras independientes para este servicio (materiales, refrigerador, etc.)"
+                        >
+                          <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                          Extras {itemExtrasCount > 0 ? `(${itemExtrasCount})` : ""}
                         </Button>
                       )}
                       </div>
@@ -2295,6 +2450,219 @@ export default function Cobros() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
             >
               {savingBank ? "Guardando..." : "Guardar Cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL DE FACTURAS EXTRAS DEL SERVICIO ══════════════════ */}
+      <Dialog open={extrasModalOpen} onOpenChange={setExtrasModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">
+                  Facturas Extras — {selectedExtraServicio?.nombre}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  Cargos adicionales por materiales, refrigeradores, equipo o reparaciones.{" "}
+                  <strong className="text-foreground">NO se suman a la mensualidad base</strong> del servicio.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Listado de Facturas Extras del Servicio */}
+          <div className="space-y-4 py-2">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Receipt className="w-3.5 h-3.5 text-indigo-600" /> Facturas Extras Registradas
+                </span>
+                {(() => {
+                  const extrasServ = facturasExtrasAll.filter(
+                    (x) => x.servicio_id === selectedExtraServicio?.id && (!x.mes || x.mes === selectedExtraServicio?.mes)
+                  );
+                  const total = extrasServ.reduce((sum, x) => sum + (Number(x.monto_total || x.monto || 0)), 0);
+                  return (
+                    <Badge variant="outline" className="font-semibold text-xs border-indigo-200 text-indigo-700 bg-indigo-50/50">
+                      Total Extras: ${Math.round(total).toLocaleString("es-MX")}
+                    </Badge>
+                  );
+                })()}
+              </div>
+
+              {(() => {
+                const extrasServ = facturasExtrasAll.filter(
+                  (x) => x.servicio_id === selectedExtraServicio?.id && (!x.mes || x.mes === selectedExtraServicio?.mes)
+                );
+                if (extrasServ.length === 0) {
+                  return (
+                    <div className="p-4 rounded-lg border border-dashed text-center text-xs text-muted-foreground bg-muted/20">
+                      No hay facturas extras registradas para este servicio en este periodo.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="border rounded-lg overflow-hidden divide-y text-xs">
+                    {extrasServ.map((fe) => (
+                      <div key={fe.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-card hover:bg-muted/30">
+                        <div className="space-y-1">
+                          <div className="font-semibold text-foreground flex items-center gap-2">
+                            <span>{fe.concepto}</span>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] px-1.5 py-0 font-bold",
+                                fe.estado === "pagado"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                  : "bg-amber-50 text-amber-700 border-amber-300"
+                              )}
+                            >
+                              {fe.estado === "pagado" ? "Pagado" : "Pendiente"}
+                            </Badge>
+                          </div>
+                          <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-[11px]">
+                            <span>Fecha: {fe.fecha || "—"}</span>
+                            <span>Base: ${Number(fe.monto_base || 0).toLocaleString("es-MX")}</span>
+                            <span>IVA: ${Number(fe.iva || 0).toLocaleString("es-MX")}</span>
+                            {fe.notas && <span className="italic">"{fe.notas}"</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-bold text-sm text-foreground mr-1">
+                            ${Number(fe.monto_total || fe.monto || 0).toLocaleString("es-MX")}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] px-2 font-medium"
+                            onClick={() => handleToggleExtraEstado(fe.id, fe.estado === "pagado" ? "pendiente" : "pagado")}
+                          >
+                            {fe.estado === "pagado" ? "Marcar Pendiente" : "Marcar Pagado"}
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                            onClick={() => handleDeleteExtra(fe.id)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Formulario para Agregar Factura Extra */}
+            <form onSubmit={handleSaveExtra} className="p-3.5 rounded-xl border bg-muted/30 space-y-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5 text-indigo-600" /> Nueva Factura Extra
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2 space-y-1">
+                  <Label className="text-xs">Concepto de la Factura Extra *</Label>
+                  <Input
+                    required
+                    placeholder="Ej. Refrigerador para caseta, Reparación de chapa, Insumos adicionales..."
+                    value={newExtraForm.concepto}
+                    onChange={(e) => setNewExtraForm({ ...newExtraForm, concepto: e.target.value })}
+                    className="h-8 text-xs bg-background"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Monto Base ($) *</Label>
+                  <Input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="0.00"
+                    value={newExtraForm.monto_base}
+                    onChange={(e) => setNewExtraForm({ ...newExtraForm, monto_base: e.target.value })}
+                    className="h-8 text-xs bg-background"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Fecha de Emisión</Label>
+                  <Input
+                    type="date"
+                    value={newExtraForm.fecha}
+                    onChange={(e) => setNewExtraForm({ ...newExtraForm, fecha: e.target.value })}
+                    className="h-8 text-xs bg-background"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg border bg-background">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-semibold">Calcular IVA (16%)</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      {newExtraForm.calcular_iva
+                        ? `IVA: $${Math.round((Number(newExtraForm.monto_base || 0) * 0.16)).toLocaleString("es-MX")} | Total: $${Math.round((Number(newExtraForm.monto_base || 0) * 1.16)).toLocaleString("es-MX")}`
+                        : "Sin desglose de IVA"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={newExtraForm.calcular_iva}
+                    onCheckedChange={(v) => setNewExtraForm({ ...newExtraForm, calcular_iva: v })}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Estado Inicial</Label>
+                  <Select
+                    value={newExtraForm.estado}
+                    onValueChange={(v) => setNewExtraForm({ ...newExtraForm, estado: v })}
+                  >
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pendiente">Pendiente de Pago</SelectItem>
+                      <SelectItem value="pagado">Pagado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="sm:col-span-2 space-y-1">
+                  <Label className="text-xs">Notas Adicionales (Opcional)</Label>
+                  <Input
+                    placeholder="Detalles sobre entrega de material, justificación del cobro..."
+                    value={newExtraForm.notas}
+                    onChange={(e) => setNewExtraForm({ ...newExtraForm, notas: e.target.value })}
+                    className="h-8 text-xs bg-background"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={savingExtra}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {savingExtra ? "Guardando..." : "Guardar Factura Extra"}
+                </Button>
+              </div>
+            </form>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setExtrasModalOpen(false)}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

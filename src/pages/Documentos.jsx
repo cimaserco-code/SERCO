@@ -50,6 +50,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import { formatNombreNatural } from "@/lib/userNameFormatting";
 import { resolveEmpleadoNumero } from "@/lib/empleadoNumero";
+import {
+  getStoredEmpleadoMeta,
+  setStoredEmpleadoMeta,
+  enrichEmpleadosListWithMeta,
+} from "@/lib/empleadoMetadata";
 import { generateContractPDF } from "@/lib/contratoTemplate";
 import { generateFichaTecnicaPDF } from "@/lib/fichaTecnicaTemplate";
 import { generateGafetePDF } from "@/lib/gafeteTemplate";
@@ -128,6 +133,16 @@ export default function Documentos() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const handleMetaUpdated = () => {
+      setEmpleados((prev) => enrichEmpleadosListWithMeta(prev));
+    };
+    window.addEventListener("serco_empleados_metadata_updated", handleMetaUpdated);
+    return () => {
+      window.removeEventListener("serco_empleados_metadata_updated", handleMetaUpdated);
+    };
+  }, []);
+
   async function loadData() {
     setLoading(true);
     try {
@@ -135,7 +150,8 @@ export default function Documentos() {
         sercoApi.entities.Empleado.filter(sedeFilter, "nombre_completo"),
         sercoApi.entities.Sede.list(),
       ]);
-      const employeesWithNumero = (emps || []).map((emp) => ({
+      const enrichedEmps = enrichEmpleadosListWithMeta(emps || []);
+      const employeesWithNumero = enrichedEmps.map((emp) => ({
         ...emp,
         numero_empleado: resolveEmpleadoNumero(emp),
       }));
@@ -236,6 +252,7 @@ export default function Documentos() {
 
   function handleSelectFichaEmployee(emp) {
     setSelectedFichaEmpId(emp.id);
+    const meta = getStoredEmpleadoMeta(emp.id);
     const hasReingreso = Boolean(
       emp.fecha_reingreso && (!emp.fecha_baja || emp.fecha_reingreso >= emp.fecha_baja)
     );
@@ -253,9 +270,10 @@ export default function Documentos() {
       dias_capacitacion:
         [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") ||
         "3 días inducción RH",
-      experiencia: emp.experiencia || "",
+      experiencia: emp.experiencia || meta.experiencia || "",
       observaciones:
         emp.observaciones ||
+        meta.observaciones ||
         (isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : ""),
     });
     setFichaComboboxOpen(false);
@@ -273,22 +291,22 @@ export default function Documentos() {
     }
     setGeneratingPdf(true);
     try {
-      // Guardar observaciones y experiencia en la base de datos para que no se pierdan
-      try {
-        const updatePayload = {
-          observaciones: fichaForm.observaciones || null,
-          experiencia: fichaForm.experiencia || null,
-        };
-        await sercoApi.entities.Empleado.update(emp.id, updatePayload);
-        // Actualizar el estado local en la lista de empleados
-        setEmpleados((prev) =>
-          prev.map((e) => (e.id === emp.id ? { ...e, ...updatePayload } : e))
-        );
-        emp.observaciones = fichaForm.observaciones;
-        emp.experiencia = fichaForm.experiencia;
-      } catch (errDb) {
-        console.warn("No se pudo persistir observaciones/experiencia directamente en el empleado:", errDb);
-      }
+      // Guardar observaciones y experiencia de forma persistente (localStorage y Supabase)
+      await setStoredEmpleadoMeta(emp.id, {
+        experiencia: fichaForm.experiencia,
+        observaciones: fichaForm.observaciones,
+      });
+
+      // Actualizar el estado local en la lista de empleados
+      setEmpleados((prev) =>
+        prev.map((e) =>
+          e.id === emp.id
+            ? { ...e, experiencia: fichaForm.experiencia, observaciones: fichaForm.observaciones }
+            : e
+        )
+      );
+      emp.observaciones = fichaForm.observaciones;
+      emp.experiencia = fichaForm.experiencia;
 
       const sedeObj = sedes.find((s) => s.id === (emp.sede_id || defaultSedeId));
       const result = await generateFichaTecnicaPDF(

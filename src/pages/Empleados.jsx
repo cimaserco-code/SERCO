@@ -41,6 +41,12 @@ import {
   setStoredEmpleadoNumero,
   syncAndAssignEmpleadoNumeros,
 } from "@/lib/empleadoNumero";
+import {
+  getStoredEmpleadoMeta,
+  setStoredEmpleadoMeta,
+  enrichEmpleadoWithMeta,
+  enrichEmpleadosListWithMeta,
+} from "@/lib/empleadoMetadata";
 
 export function formatProperName(text) {
   return formatPersonName(text);
@@ -459,6 +465,18 @@ export default function Empleados() {
 
   useEffect(() => { load(); }, [sedeFilter]);
 
+  useEffect(() => {
+    const handleMetaUpdated = () => {
+      setItems((prev) => enrichEmpleadosListWithMeta(prev));
+      setAllEmployees((prev) => enrichEmpleadosListWithMeta(prev));
+      setViewEmpleado((prev) => (prev ? enrichEmpleadoWithMeta(prev) : null));
+    };
+    window.addEventListener("serco_empleados_metadata_updated", handleMetaUpdated);
+    return () => {
+      window.removeEventListener("serco_empleados_metadata_updated", handleMetaUpdated);
+    };
+  }, []);
+
   async function load() {
     setLoading(true);
     try {
@@ -470,7 +488,7 @@ export default function Empleados() {
         sercoApi.entities.InventarioVariante.list().catch(() => []),
       ]);
       // Sincronizar y asignar números reales positivos a todos los empleados de la empresa (van de 1 en 1)
-      const syncedAll = syncAndAssignEmpleadoNumeros(allEmps || []);
+      const syncedAll = enrichEmpleadosListWithMeta(syncAndAssignEmpleadoNumeros(allEmps || []));
       setAllEmployees(syncedAll);
 
       // Filtrar por sede seleccionada si aplica
@@ -496,7 +514,7 @@ export default function Empleados() {
 
     const estaDeBaja = empleado.fecha_baja && (!empleado.fecha_reingreso || empleado.fecha_baja > empleado.fecha_reingreso);
     setActiveTab(estaDeBaja ? "bajas" : "activos");
-    setViewEmpleado(empleado);
+    setViewEmpleado(enrichEmpleadoWithMeta(empleado));
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("registro");
     setSearchParams(nextParams, { replace: true });
@@ -749,14 +767,16 @@ export default function Empleados() {
   }
 
   function openEdit(item) {
-    setEditing(item);
-    setPhotoPreview(item.foto_url || "");
+    const meta = getStoredEmpleadoMeta(item?.id);
+    const enrichedItem = enrichEmpleadoWithMeta(item);
+    setEditing(enrichedItem);
+    setPhotoPreview(enrichedItem.foto_url || "");
     setPhotoBlob(null);
     setPhotoChanged(false);
-    const parsed = parseExistingNombre(item);
+    const parsed = parseExistingNombre(enrichedItem);
     const pool = allEmployees.length > 0 ? allEmployees : items;
-    const empNum = resolveEmpleadoNumero(item) || getNextEmpleadoNumero(pool, item.id);
-    const parsedUnis = parseUniformes(item.uniformes);
+    const empNum = resolveEmpleadoNumero(enrichedItem) || getNextEmpleadoNumero(pool, enrichedItem.id);
+    const parsedUnis = parseUniformes(enrichedItem.uniformes);
     setUniformesList(parsedUnis);
     setNewUniformeItem("");
     setNewUniformeTalla("Unitalla");
@@ -764,26 +784,28 @@ export default function Empleados() {
     setNewUniformeFecha(getLocalDateString());
     setForm({ 
       ...emptyForm, 
-      ...item, 
+      ...enrichedItem, 
       numero_empleado: empNum,
-      foto_url: item.foto_url || "",
-      nombres: item.nombres || parsed.nombres || "",
-      apellido_paterno: item.apellido_paterno || parsed.apellido_paterno || "",
-      apellido_materno: item.apellido_materno || parsed.apellido_materno || "",
-      turno: item.turno || "matutino",
-      sueldo: item.sueldo ?? "",
-      clabe_bancaria: item.clabe_bancaria || "",
-      banco: item.banco || "",
-      beneficiario: item.beneficiario || "",
-      carta_militar: item.carta_militar || "No",
-      referencia: item.referencia || "",
-      referencia_telefono: item.referencia_telefono || "",
-      actas_administrativas: String(item.actas_administrativas ?? 0),
-      fecha_baja: item.fecha_baja || "",
-      motivo_baja: item.motivo_baja || "",
-      uniformes: item.uniformes || "",
-      hospedaje: !!item.hospedaje,
-      seguro: !!item.seguro
+      foto_url: enrichedItem.foto_url || "",
+      nombres: enrichedItem.nombres || parsed.nombres || "",
+      apellido_paterno: enrichedItem.apellido_paterno || parsed.apellido_paterno || "",
+      apellido_materno: enrichedItem.apellido_materno || parsed.apellido_materno || "",
+      experiencia: enrichedItem.experiencia || meta.experiencia || "",
+      observaciones: enrichedItem.observaciones || meta.observaciones || "",
+      turno: enrichedItem.turno || "matutino",
+      sueldo: enrichedItem.sueldo ?? "",
+      clabe_bancaria: enrichedItem.clabe_bancaria || "",
+      banco: enrichedItem.banco || "",
+      beneficiario: enrichedItem.beneficiario || "",
+      carta_militar: enrichedItem.carta_militar || "No",
+      referencia: enrichedItem.referencia || "",
+      referencia_telefono: enrichedItem.referencia_telefono || "",
+      actas_administrativas: String(enrichedItem.actas_administrativas ?? 0),
+      fecha_baja: enrichedItem.fecha_baja || "",
+      motivo_baja: enrichedItem.motivo_baja || "",
+      uniformes: enrichedItem.uniformes || "",
+      hospedaje: !!enrichedItem.hospedaje,
+      seguro: !!enrichedItem.seguro
     });
     setSaveError("");
     setServiceComboboxOpen(false);
@@ -1041,6 +1063,10 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         if (cleanNumeroEmpleado) {
           setStoredEmpleadoNumero(editing.id, cleanNumeroEmpleado);
         }
+        await setStoredEmpleadoMeta(editing.id, {
+          experiencia: form.experiencia,
+          observaciones: form.observaciones,
+        });
         try {
           await sercoApi.entities.Empleado.update(editing.id, cleanPayload);
         } catch (err) {
@@ -1085,8 +1111,14 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             throw err;
           }
         }
-        if (createdRecord?.id && cleanNumeroEmpleado) {
-          setStoredEmpleadoNumero(createdRecord.id, cleanNumeroEmpleado);
+        if (createdRecord?.id) {
+          if (cleanNumeroEmpleado) {
+            setStoredEmpleadoNumero(createdRecord.id, cleanNumeroEmpleado);
+          }
+          await setStoredEmpleadoMeta(createdRecord.id, {
+            experiencia: form.experiencia,
+            observaciones: form.observaciones,
+          });
         }
       }
 
@@ -1449,37 +1481,38 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
   async function _handleOpenEmployeeFicha(emp) {
     if (!emp) return;
+    const enrichedEmp = enrichEmpleadoWithMeta(emp);
     setFichaPreview(null);
     setFichaPreviewOpen(true);
     setGeneratingFicha(true);
     const hasReingreso = Boolean(
-      emp.fecha_reingreso && (!emp.fecha_baja || emp.fecha_reingreso >= emp.fecha_baja)
+      enrichedEmp.fecha_reingreso && (!enrichedEmp.fecha_baja || enrichedEmp.fecha_reingreso >= enrichedEmp.fecha_baja)
     );
     const isBaja = Boolean(
-      emp.fecha_baja && (!emp.fecha_reingreso || emp.fecha_baja > emp.fecha_reingreso)
+      enrichedEmp.fecha_baja && (!enrichedEmp.fecha_reingreso || enrichedEmp.fecha_baja > enrichedEmp.fecha_reingreso)
     );
-    const sedeObj = sedes.find((sede) => sede.id === (emp.sede_id || defaultSedeId));
+    const sedeObj = sedes.find((sede) => sede.id === (enrichedEmp.sede_id || defaultSedeId));
     const fechaEfectiva = isBaja
-      ? emp.fecha_baja
-      : (hasReingreso ? emp.fecha_reingreso : emp.fecha_ingreso);
+      ? enrichedEmp.fecha_baja
+      : (hasReingreso ? enrichedEmp.fecha_reingreso : enrichedEmp.fecha_ingreso);
 
     try {
       const result = await generateFichaTecnicaPDF(
-        emp,
+        enrichedEmp,
         {
           tipo_movimiento: isBaja ? "BAJA" : "ALTA",
           fecha_movimiento: fechaEfectiva || new Date().toISOString().slice(0, 10),
-          servicio_capacita: emp.servicio_ubicacion || "",
-          dias_capacitacion: [emp.dia_capacitacion, emp.dia_capacitacion_2].filter(Boolean).join(" y ") || "3 días inducción RH",
-          experiencia: emp.experiencia || "",
-          observaciones: emp.observaciones || (isBaja && emp.motivo_baja ? `Motivo de baja: ${emp.motivo_baja}` : ""),
+          servicio_capacita: enrichedEmp.servicio_ubicacion || "",
+          dias_capacitacion: [enrichedEmp.dia_capacitacion, enrichedEmp.dia_capacitacion_2].filter(Boolean).join(" y ") || "3 días inducción RH",
+          experiencia: enrichedEmp.experiencia || "",
+          observaciones: enrichedEmp.observaciones || (isBaja && enrichedEmp.motivo_baja ? `Motivo de baja: ${enrichedEmp.motivo_baja}` : ""),
           sede_nombre: sedeObj?.nombre || "Monterrey",
         },
         { returnDoc: true }
       );
       setFichaPreview({
         ...result,
-        title: `Ficha Técnica (${isBaja ? "BAJA" : "ALTA"}) - ${formatUserDisplayName(emp.nombre_completo, user?.role)}`,
+        title: `Ficha Técnica (${isBaja ? "BAJA" : "ALTA"}) - ${formatUserDisplayName(enrichedEmp.nombre_completo, user?.role)}`,
       });
     } catch (error) {
       console.error("Error al generar ficha técnica:", error);
