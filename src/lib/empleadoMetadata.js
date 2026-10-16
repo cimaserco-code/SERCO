@@ -44,14 +44,23 @@ export function getStoredEmpleadoMeta(empId) {
  * Asigna y persiste experiencia y observaciones para un empleado específico.
  * Guarda en almacenamiento local e intenta persistir en Supabase.
  */
-export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones }) {
+export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones, comentarios }) {
   if (!empId) return;
   const map = getStoredEmpleadosMetadata();
   const current = map[empId] || {};
   
+  const obsVal = observaciones !== undefined
+    ? (observaciones || "")
+    : (comentarios !== undefined ? (comentarios || "") : (current.observaciones || current.comentarios || ""));
+
+  const expVal = experiencia !== undefined
+    ? (experiencia || "")
+    : (current.experiencia || "");
+
   const newMeta = {
-    experiencia: experiencia !== undefined ? (experiencia || "") : (current.experiencia || ""),
-    observaciones: observaciones !== undefined ? (observaciones || "") : (current.observaciones || ""),
+    experiencia: expVal,
+    observaciones: obsVal,
+    comentarios: obsVal,
     updated_at: new Date().toISOString(),
   };
   
@@ -62,8 +71,8 @@ export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones 
   try {
     if (sercoApi?.entities?.Empleado?.update) {
       const payload = {};
-      if (newMeta.experiencia) payload.experiencia = newMeta.experiencia;
-      if (newMeta.observaciones) payload.observaciones = newMeta.observaciones;
+      if (newMeta.experiencia !== undefined) payload.experiencia = newMeta.experiencia;
+      if (newMeta.observaciones !== undefined) payload.observaciones = newMeta.observaciones;
       if (Object.keys(payload).length > 0) {
         await sercoApi.entities.Empleado.update(empId, payload);
       }
@@ -75,16 +84,21 @@ export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones 
 }
 
 /**
- * Resuelve y enriquece un empleado con su experiencia y observaciones,
+ * Resuelve y enriquece un empleado con su experiencia y observaciones/comentarios,
  * dando prioridad a los datos de la base de datos si existen, o al almacenamiento local.
  */
 export function enrichEmpleadoWithMeta(emp) {
   if (!emp) return emp;
   const stored = getStoredEmpleadoMeta(emp.id);
+  const exp = emp.experiencia != null && emp.experiencia !== "" ? emp.experiencia : stored.experiencia;
+  const obs = emp.observaciones != null && emp.observaciones !== ""
+    ? emp.observaciones
+    : (emp.comentarios != null && emp.comentarios !== "" ? emp.comentarios : (stored.observaciones || stored.comentarios || ""));
   return {
     ...emp,
-    experiencia: emp.experiencia != null && emp.experiencia !== "" ? emp.experiencia : stored.experiencia,
-    observaciones: emp.observaciones != null && emp.observaciones !== "" ? emp.observaciones : stored.observaciones,
+    experiencia: exp || "",
+    observaciones: obs || "",
+    comentarios: obs || "",
   };
 }
 
@@ -97,10 +111,15 @@ export function enrichEmpleadosListWithMeta(list) {
   return list.map((emp) => {
     if (!emp) return emp;
     const stored = map[emp.id] || {};
+    const exp = emp.experiencia != null && emp.experiencia !== "" ? emp.experiencia : (stored.experiencia || "");
+    const obs = emp.observaciones != null && emp.observaciones !== ""
+      ? emp.observaciones
+      : (emp.comentarios != null && emp.comentarios !== "" ? emp.comentarios : (stored.observaciones || stored.comentarios || ""));
     return {
       ...emp,
-      experiencia: emp.experiencia != null && emp.experiencia !== "" ? emp.experiencia : (stored.experiencia || ""),
-      observaciones: emp.observaciones != null && emp.observaciones !== "" ? emp.observaciones : (stored.observaciones || ""),
+      experiencia: exp,
+      observaciones: obs,
+      comentarios: obs,
     };
   });
 }

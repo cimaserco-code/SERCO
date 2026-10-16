@@ -107,7 +107,7 @@ export default function Asistencias() {
 
   // Estados para Generador de QR
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [selectedQrServiceId, setSelectedQrServiceId] = useState("all");
+  const [selectedQrServiceId, setSelectedQrServiceId] = useState("oficina");
   const [qrDownloading, setQrDownloading] = useState(false);
   const [previewQrDataUrl, setPreviewQrDataUrl] = useState(null);
 
@@ -291,7 +291,14 @@ export default function Asistencias() {
   // Previsualización interactiva de QR en el modal
   useEffect(() => {
     if (!qrModalOpen) return;
-    const servToPreview = selectedQrServiceId === "all" ? servicios[0] : servicios.find((s) => s.id === selectedQrServiceId);
+    let servToPreview = null;
+    if (selectedQrServiceId === "oficina") {
+      servToPreview = { id: "oficina", nombre: "Oficina" };
+    } else if (selectedQrServiceId === "all") {
+      servToPreview = { id: "oficina", nombre: "Oficina" };
+    } else {
+      servToPreview = servicios.find((s) => s.id === selectedQrServiceId) || { id: "oficina", nombre: "Oficina" };
+    }
     if (!servToPreview) {
       setPreviewQrDataUrl(null);
       return;
@@ -307,18 +314,35 @@ export default function Asistencias() {
     try {
       setQrDownloading(true);
       let targetServices = [];
-      if (selectedQrServiceId === "all") {
-        targetServices = servicios.length > 0 ? servicios : [{ id: "gral", nombre: "Servicio General SERCO" }];
+      if (selectedQrServiceId === "oficina") {
+        targetServices = [{
+          id: "oficina",
+          nombre: "Oficina",
+          sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
+        }];
+      } else if (selectedQrServiceId === "all") {
+        const oficinaItem = {
+          id: "oficina",
+          nombre: "Oficina",
+          sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
+        };
+        targetServices = [oficinaItem, ...servicios];
       } else {
         const found = servicios.find((s) => s.id === selectedQrServiceId);
         if (found) {
           targetServices = [found];
+        } else {
+          targetServices = [{
+            id: "oficina",
+            nombre: "Oficina",
+            sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
+          }];
         }
       }
 
       const servicesWithSedes = targetServices.map((s) => ({
         ...s,
-        sede_nombre: sedeNombre(s.sede_id),
+        sede_nombre: s.sede_nombre || sedeNombre(s.sede_id) || "SERCO Seguridad Privada",
       }));
 
       const doc = await generateQRAttendanceCardsSheet(servicesWithSedes, window.location.origin);
@@ -329,7 +353,9 @@ export default function Asistencias() {
       doc.save(filename);
       toast({
         title: "PDF Generado con Éxito",
-        description: "Se ha descargado la hoja carta con 4 tarjetas de asistencia listas para recortar.",
+        description: selectedQrServiceId === "all"
+          ? "Se han descargado las tarjetas de asistencia para todos los servicios incluyendo Oficina."
+          : `Se ha descargado la hoja carta con 4 tarjetas de asistencia para ${targetServices[0]?.nombre || "el servicio seleccionado"}.`,
       });
       setQrModalOpen(false);
     } catch (err) {
@@ -814,7 +840,7 @@ export default function Asistencias() {
           <Button
             variant="outline"
             onClick={() => {
-              setSelectedQrServiceId("all");
+              setSelectedQrServiceId("oficina");
               setQrModalOpen(true);
             }}
             className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950 font-medium text-xs sm:text-sm h-9 shadow-sm"
@@ -1318,22 +1344,31 @@ export default function Asistencias() {
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Seleccionar Servicio:</Label>
+              <Label className="text-xs font-semibold">Seleccionar Servicio para Imprimir:</Label>
               <select
                 value={selectedQrServiceId}
                 onChange={(e) => setSelectedQrServiceId(e.target.value)}
                 className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="all">-- Todos los servicios de esta sede ({servicios.length}) --</option>
-                {servicios.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nombre} {s.sede_id ? `(${sedeNombre(s.sede_id)})` : ""}
-                  </option>
-                ))}
+                <optgroup label="Instalaciones Internas / Administrativas">
+                  <option value="oficina">🏢 Oficina (Oficinas Centrales SERCO)</option>
+                </optgroup>
+                <optgroup label="Servicios Operativos / Clientes">
+                  {servicios.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nombre} {s.sede_id ? `(${sedeNombre(s.sede_id)})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Impresión Masiva">
+                  <option value="all">📑 Todos los servicios de esta sede ({servicios.length + 1} en total)</option>
+                </optgroup>
               </select>
               <p className="text-[11px] text-muted-foreground">
                 {selectedQrServiceId === "all"
-                  ? "Se generarán hojas carta con 4 servicios diferentes por página."
+                  ? "Se generarán hojas carta con 4 servicios diferentes por página (incluyendo Oficina)."
+                  : selectedQrServiceId === "oficina"
+                  ? "Se generará 1 hoja carta con 4 tarjetas idénticas de OFICINA para recortar y colocar en checador o recepción."
                   : "Se generará 1 hoja carta con 4 tarjetas idénticas del servicio para recortar y colocar en caseta."}
               </p>
             </div>
@@ -1359,8 +1394,10 @@ export default function Asistencias() {
                 <div className="border border-slate-200 dark:border-slate-800 rounded p-1.5 bg-slate-50 dark:bg-slate-900">
                   <span className="text-[8px] text-muted-foreground uppercase font-bold block">Puesto / Servicio:</span>
                   <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase line-clamp-2">
-                    {selectedQrServiceId === "all"
-                      ? servicios[0]?.nombre || "SERVICIOS SERCO"
+                    {selectedQrServiceId === "oficina"
+                      ? "OFICINA (OFICINAS CENTRALES)"
+                      : selectedQrServiceId === "all"
+                      ? "OFICINA Y SERVICIOS SERCO"
                       : servicios.find((s) => s.id === selectedQrServiceId)?.nombre || "SERVICIO SERCO"}
                   </span>
                 </div>

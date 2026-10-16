@@ -100,7 +100,49 @@ export default function RegistroAsistenciaQR() {
         if (!servicioIdParam) {
           const { data: servs } = await supabase.from("servicios").select("id, nombre, sede_id, estado");
           const activeServs = (servs || []).filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido");
-          setAllServices(activeServs);
+          setAllServices([
+            { id: "oficina", nombre: "Oficina (Oficinas Centrales SERCO)" },
+            ...activeServs,
+          ]);
+          setLoading(false);
+          return;
+        }
+
+        const isOficina = servicioIdParam.toLowerCase() === "oficina";
+
+        // Si es Oficina, cargar empleados asignados a oficina o puestos administrativos
+        if (isOficina) {
+          setService({
+            id: "oficina",
+            nombre: servicioNombreParam || "Oficina",
+          });
+
+          const { data: allEmps } = await supabase
+            .from("empleados")
+            .select("id, nombre_completo, servicio_ubicacion, puesto, sede_id, fecha_baja, fecha_reingreso")
+            .order("nombre_completo", { ascending: true });
+
+          const today = new Date().toISOString().slice(0, 10);
+          const activeEmps = (allEmps || []).filter((e) => {
+            return !e.fecha_baja || (e.fecha_reingreso && e.fecha_reingreso >= e.fecha_baja) || e.fecha_baja > today;
+          });
+
+          const oficinaEmps = activeEmps.filter((e) => {
+            const serv = (e.servicio_ubicacion || "").toLowerCase();
+            const puesto = (e.puesto || "").toLowerCase();
+            return serv.includes("oficina") || puesto.includes("oficina") || puesto.includes("administrativ");
+          });
+
+          const listToUse = oficinaEmps.length > 0 ? oficinaEmps : activeEmps;
+          const guardList = listToUse.map((e) => ({
+            empleado_id: e.id,
+            nombre_completo: e.nombre_completo,
+            turno: "matutino",
+            puesto: e.puesto || "Oficina",
+            sede_id: e.sede_id || null,
+          }));
+
+          setPersonal(guardList);
           setLoading(false);
           return;
         }
@@ -381,34 +423,37 @@ export default function RegistroAsistenciaQR() {
     const horaFormateada = currentTime.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 
     try {
-      // 1. Intentar registrar vía RPC seguro
+      // 1. Intentar registrar vía RPC seguro (solo si service.id no es 'oficina')
       let rpcSuccess = false;
-      try {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc("registrar_asistencia_qr", {
-          p_empleado_id: selectedEmployee.empleado_id,
-          p_servicio_id: service.id,
-          p_fecha: todayStr,
-          p_estado: calculatedStatus,
-          p_hora: horaFormateada,
-          p_sede_id: selectedEmployee.sede_id || service.sede_id || null,
-        });
+      const isOficinaService = service.id === "oficina";
+      if (!isOficinaService) {
+        try {
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc("registrar_asistencia_qr", {
+            p_empleado_id: selectedEmployee.empleado_id,
+            p_servicio_id: service.id,
+            p_fecha: todayStr,
+            p_estado: calculatedStatus,
+            p_hora: horaFormateada,
+            p_sede_id: selectedEmployee.sede_id || service.sede_id || null,
+          });
 
-        if (!rpcErr && rpcRes) {
-          rpcSuccess = true;
-          if (rpcRes.ignored && (rpcRes.estado === "vacaciones" || rpcRes.estado === "descanso")) {
-            setSubmissionResult({
-              success: true,
-              ignored: true,
-              guardName: selectedEmployee.nombre_completo,
-              status: rpcRes.estado,
-              message: rpcRes.message || "Se conservó tu estado programado.",
-              time: horaFormateada,
-            });
-            return;
+          if (!rpcErr && rpcRes) {
+            rpcSuccess = true;
+            if (rpcRes.ignored && (rpcRes.estado === "vacaciones" || rpcRes.estado === "descanso")) {
+              setSubmissionResult({
+                success: true,
+                ignored: true,
+                guardName: selectedEmployee.nombre_completo,
+                status: rpcRes.estado,
+                message: rpcRes.message || "Se conservó tu estado programado.",
+                time: horaFormateada,
+              });
+              return;
+            }
           }
+        } catch (rpcErr) {
+          console.warn("RPC falló, intentando upsert directo:", rpcErr);
         }
-      } catch (rpcErr) {
-        console.warn("RPC falló, intentando upsert directo:", rpcErr);
       }
 
       // 2. Fallback upsert directo

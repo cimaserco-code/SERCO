@@ -306,6 +306,24 @@ export default function Empleados() {
   // IMSS Baja Alert
   const [imssAlertEmpleado, setImssAlertEmpleado] = useState(null);
 
+  // Alerta de Persona Duplicada por CURP
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicateTargetEmp, setDuplicateTargetEmp] = useState(null);
+
+  // Detección automática en tiempo real de CURP repetido en el sistema
+  const duplicateCurpEmployee = useMemo(() => {
+    const rawCurp = (form.curp || "").trim().toUpperCase();
+    if (!rawCurp || rawCurp.length < 8) return null;
+    const pool = allEmployees.length > 0 ? allEmployees : items;
+    return (
+      pool.find((e) => {
+        if (editing && e.id === editing.id) return false;
+        const otherCurp = (e.curp || "").trim().toUpperCase();
+        return otherCurp && otherCurp === rawCurp;
+      }) || null
+    );
+  }, [form.curp, editing, allEmployees, items]);
+
   // Foto del Empleado (Ultraligera ~25KB en Storage)
   const [photoPreview, setPhotoPreview] = useState("");
   const [photoBlob, setPhotoBlob] = useState(null);
@@ -919,13 +937,20 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
   return diffDays >= 0 ? `${diffDays} días` : "—";
 }
   
-  async function handleSave() {
+  async function handleSave(overrideDuplicate = false) {
     console.log("ENTRÓ A GUARDAR", form);
 
     setSaving(true);
     setSaveError("");
 
     try {
+      // Validación preventiva: Alerta si el CURP ya existe en el sistema en otro empleado
+      if (!overrideDuplicate && duplicateCurpEmployee) {
+        setDuplicateTargetEmp(duplicateCurpEmployee);
+        setDuplicateConfirmOpen(true);
+        setSaving(false);
+        return;
+      }
       // Format names properly (Title Case: Capitalize first letter, lowercase rest)
       const cleanNombres = formatProperName(form.nombres || "");
       const cleanPaterno = formatProperName(form.apellido_paterno || "");
@@ -1056,6 +1081,8 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       // Omit 'turno' from the payload so Supabase does not fail with PGRST204 ("Could not find the 'turno' column").
       const { turno: _unusedTurno, ...cleanPayload } = payload;
 
+      let createdRecord = null;
+
       if (editing) {
         if (cleanPayload.fecha_baja && !editing.fecha_baja) {
           cleanPayload.usuario_baja = currentUserName;
@@ -1064,8 +1091,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           setStoredEmpleadoNumero(editing.id, cleanNumeroEmpleado);
         }
         await setStoredEmpleadoMeta(editing.id, {
-          experiencia: form.experiencia,
-          observaciones: form.observaciones,
+          experiencia: form.experiencia ? form.experiencia.trim() : "",
+          observaciones: form.observaciones ? form.observaciones.trim() : "",
+          comentarios: form.observaciones ? form.observaciones.trim() : "",
         });
         try {
           await sercoApi.entities.Empleado.update(editing.id, cleanPayload);
@@ -1091,7 +1119,6 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         }
       } else {
         cleanPayload.usuario_alta = currentUserName;
-        let createdRecord = null;
         try {
           createdRecord = await sercoApi.entities.Empleado.create(cleanPayload);
         } catch (err) {
@@ -1116,8 +1143,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             setStoredEmpleadoNumero(createdRecord.id, cleanNumeroEmpleado);
           }
           await setStoredEmpleadoMeta(createdRecord.id, {
-            experiencia: form.experiencia,
-            observaciones: form.observaciones,
+            experiencia: form.experiencia ? form.experiencia.trim() : "",
+            observaciones: form.observaciones ? form.observaciones.trim() : "",
+            comentarios: form.observaciones ? form.observaciones.trim() : "",
           });
         }
       }
@@ -1279,6 +1307,16 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
       setModalOpen(false);
       await load();
+
+      if (viewEmpleado && (viewEmpleado.id === editing?.id || viewEmpleado.id === createdRecord?.id)) {
+        setViewEmpleado(enrichEmpleadoWithMeta({
+          ...viewEmpleado,
+          ...cleanPayload,
+          experiencia: form.experiencia ? form.experiencia.trim() : "",
+          observaciones: form.observaciones ? form.observaciones.trim() : "",
+          comentarios: form.observaciones ? form.observaciones.trim() : "",
+        }));
+      }
 
     } catch (error) {
       console.error("ERROR COMPLETO:", JSON.stringify(error, null, 2));
@@ -1624,7 +1662,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     <TableRow
                       key={item.id}
                       className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
-                      onClick={() => setViewEmpleado(item)}
+                      onClick={() => setViewEmpleado(enrichEmpleadoWithMeta(item))}
                     >
                       <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                         {item.numero_empleado ? (
@@ -1737,7 +1775,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       <TableRow
                         key={item.id}
                         className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
-                        onClick={() => setViewEmpleado(item)}
+                        onClick={() => setViewEmpleado(enrichEmpleadoWithMeta(item))}
                       >
                         <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                           {item.numero_empleado ? (
@@ -2094,17 +2132,48 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </div>
 
               <div>
-                <Label>CURP</Label>
+                <div className="flex items-center justify-between mb-1">
+                  <Label className={duplicateCurpEmployee ? "text-amber-800 dark:text-amber-300 font-bold" : ""}>
+                    CURP
+                  </Label>
+                  {duplicateCurpEmployee && (
+                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 font-bold gap-1 animate-pulse">
+                      <AlertTriangle className="w-3 h-3 text-amber-600" /> Persona Repetida
+                    </Badge>
+                  )}
+                </div>
 
                 <Input
-                  value={form.curp}
+                  value={form.curp || ""}
+                  placeholder="18 caracteres alfanuméricos"
+                  className={duplicateCurpEmployee ? "border-amber-500 focus-visible:ring-amber-500 bg-amber-50/40 dark:bg-amber-950/20 font-mono tracking-wider font-semibold" : "font-mono"}
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      curp: e.target.value,
+                      curp: e.target.value.toUpperCase().replace(/\s/g, ""),
                     })
                   }
                 />
+
+                {duplicateCurpEmployee && (
+                  <div className="mt-1.5 p-2.5 rounded-lg bg-amber-50 border border-amber-300 dark:bg-amber-950/40 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Alerta: Este CURP ya está registrado en el sistema</span>
+                    </div>
+                    <div className="text-[11px] leading-tight text-amber-800 dark:text-amber-300">
+                      Pertenece a: <strong>{duplicateCurpEmployee.nombre_completo}</strong>
+                      {duplicateCurpEmployee.numero_empleado && ` (#${duplicateCurpEmployee.numero_empleado})`}
+                      {" • "}
+                      <span className={duplicateCurpEmployee.fecha_baja ? "text-rose-700 dark:text-rose-400 font-bold" : "text-emerald-700 dark:text-emerald-400 font-bold"}>
+                        {duplicateCurpEmployee.fecha_baja ? "ESTADO: BAJA" : "ESTADO: ACTIVO"}
+                      </span>
+                      {duplicateCurpEmployee.servicio_ubicacion && (
+                        <span> • Servicio: {duplicateCurpEmployee.servicio_ubicacion}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -2993,17 +3062,18 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 />
               </div>
 
-              {/* OBSERVACIONES GENERALES */}
+              {/* OBSERVACIONES GENERALES / COMENTARIOS */}
               <div className="sm:col-span-2">
-                <Label>Observaciones Generales</Label>
+                <Label>Observaciones Generales / Comentarios</Label>
                 <Textarea
                   rows={2}
-                  value={form.observaciones || ""}
-                  placeholder="Observaciones de ingreso, notas operativas o de RRHH..."
+                  value={form.observaciones || form.comentarios || ""}
+                  placeholder="Observaciones de ingreso, notas operativas, comentarios de RRHH..."
                   onChange={(e) =>
                     setForm({
                       ...form,
                       observaciones: e.target.value,
+                      comentarios: e.target.value,
                     })
                   }
                 />
@@ -3354,9 +3424,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       </p>
                     </div>
                     <div className="col-span-full p-3 rounded-lg border bg-muted/30">
-                      <Label className="text-[11px] font-bold text-muted-foreground uppercase">Observaciones Generales</Label>
+                      <Label className="text-[11px] font-bold text-muted-foreground uppercase">Observaciones Generales / Comentarios</Label>
                       <p className="text-xs sm:text-sm text-foreground mt-0.5 whitespace-pre-wrap">
-                        {viewEmpleado?.observaciones || <span className="italic text-muted-foreground text-xs">Sin observaciones</span>}
+                        {viewEmpleado?.observaciones || viewEmpleado?.comentarios || <span className="italic text-muted-foreground text-xs">Sin observaciones o comentarios</span>}
                       </p>
                     </div>
                   </div>
@@ -4052,6 +4122,87 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             </Button>
             <Button onClick={handleSaveNumero} disabled={savingNumero || !newNumeroInput}>
               {savingNumero ? "Guardando..." : "Guardar Número"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL ALERTA: PERSONA DUPLICADA POR CURP ══════════════════ */}
+      <Dialog open={duplicateConfirmOpen} onOpenChange={setDuplicateConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-amber-950">
+                  Persona Repetida en el Sistema
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  El CURP ingresado ya pertenece a otro colaborador registrado.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-amber-900 space-y-1.5">
+              <div className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">
+                Colaborador ya existente con este CURP:
+              </div>
+              <div className="text-sm font-bold text-slate-900">
+                {duplicateTargetEmp?.nombre_completo}
+              </div>
+              <div className="text-xs text-muted-foreground flex flex-wrap gap-2 pt-1 items-center">
+                <span>CURP: <strong className="font-mono text-foreground">{duplicateTargetEmp?.curp}</strong></span>
+                {duplicateTargetEmp?.numero_empleado && (
+                  <span>• No. Empleado: <strong>#{duplicateTargetEmp.numero_empleado}</strong></span>
+                )}
+                {duplicateTargetEmp?.servicio_ubicacion && (
+                  <span>• Servicio: <strong>{duplicateTargetEmp.servicio_ubicacion}</strong></span>
+                )}
+              </div>
+              <div className="pt-1">
+                <Badge
+                  variant="outline"
+                  className={
+                    duplicateTargetEmp?.fecha_baja
+                      ? "bg-rose-50 text-rose-700 border-rose-300 font-bold text-[10px]"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-300 font-bold text-[10px]"
+                  }
+                >
+                  {duplicateTargetEmp?.fecha_baja ? "ESTADO ACTUAL: INACTIVO / BAJA" : "ESTADO ACTUAL: ACTIVO"}
+                </Badge>
+              </div>
+            </div>
+
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {duplicateTargetEmp?.fecha_baja ? (
+                <>Si se trata de un <strong>reingreso</strong> de esta misma persona, se recomienda cancelar y reactivar el perfil existente desde la pestaña de <em>Bajas</em> para conservar su antigüedad e historial.</>
+              ) : (
+                <>Esta persona ya figura como colaborador activo. Verifica los datos antes de duplicar el registro en la base de datos.</>
+              )}
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDuplicateConfirmOpen(false)}
+            >
+              Cancelar y Revisar
+            </Button>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+              onClick={() => {
+                setDuplicateConfirmOpen(false);
+                handleSave(true);
+              }}
+            >
+              Guardar de Todos Modos
             </Button>
           </DialogFooter>
         </DialogContent>
