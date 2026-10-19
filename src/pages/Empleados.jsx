@@ -1077,9 +1077,53 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
 
       console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
 
-      // In the database table 'empleados', 'turno' belongs to AsignacionTurno (Plantilla) rather than empleados table.
-      // Omit 'turno' from the payload so Supabase does not fail with PGRST204 ("Could not find the 'turno' column").
-      const { turno: _unusedTurno, ...cleanPayload } = payload;
+      // En la base de datos Supabase, 'turno' y 'comentarios' no pertenecen a la tabla 'empleados'.
+      // Omitirlos del payload para evitar error PGRST204 ("Could not find column in schema cache").
+      const { turno: _unusedTurno, comentarios: _unusedComentarios, ...cleanPayload } = payload;
+      delete cleanPayload.turno;
+      delete cleanPayload.comentarios;
+
+      const executeWithFallback = async (operationFn, dataPayload) => {
+        const workingPayload = { ...dataPayload };
+        delete workingPayload.turno;
+        delete workingPayload.comentarios;
+
+        try {
+          return await operationFn(workingPayload);
+        } catch (err) {
+          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
+            // Eliminar columnas opcionales o no migradas
+            const fallback = { ...workingPayload };
+            delete fallback.usuario_alta;
+            delete fallback.usuario_baja;
+            delete fallback.nombres;
+            delete fallback.apellido_paterno;
+            delete fallback.apellido_materno;
+            delete fallback.numero_empleado;
+            delete fallback.experiencia;
+            delete fallback.observaciones;
+            delete fallback.comentarios;
+
+            // Extraer y eliminar dinámicamente cualquier columna señalada por Postgres
+            const colMatch = err?.message?.match(/Could not find the '([^']+)' column/i);
+            if (colMatch && colMatch[1]) {
+              delete fallback[colMatch[1]];
+            }
+
+            try {
+              return await operationFn(fallback);
+            } catch (retryErr) {
+              const secondMatch = retryErr?.message?.match(/Could not find the '([^']+)' column/i);
+              if (secondMatch && secondMatch[1]) {
+                delete fallback[secondMatch[1]];
+                return await operationFn(fallback);
+              }
+              throw retryErr;
+            }
+          }
+          throw err;
+        }
+      };
 
       let createdRecord = null;
 
@@ -1095,49 +1139,16 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           observaciones: form.observaciones ? form.observaciones.trim() : "",
           comentarios: form.observaciones ? form.observaciones.trim() : "",
         });
-        try {
-          await sercoApi.entities.Empleado.update(editing.id, cleanPayload);
-        } catch (err) {
-          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
-            // Remove optional audit or new columns if not present in older schemas
-            const fallback = { ...cleanPayload };
-            delete fallback.usuario_alta;
-            delete fallback.usuario_baja;
-            delete fallback.nombres;
-            delete fallback.apellido_paterno;
-            delete fallback.apellido_materno;
-            delete fallback.numero_empleado;
-            delete fallback.experiencia;
-            delete fallback.observaciones;
-            await sercoApi.entities.Empleado.update(editing.id, fallback);
-          } else {
-            throw err;
-          }
-        }
+
+        await executeWithFallback((d) => sercoApi.entities.Empleado.update(editing.id, d), cleanPayload);
+
         if (cleanPayload.seguro && cleanPayload.fecha_baja && !editing.fecha_baja) {
           setImssAlertEmpleado({ ...editing, ...cleanPayload });
         }
       } else {
         cleanPayload.usuario_alta = currentUserName;
-        try {
-          createdRecord = await sercoApi.entities.Empleado.create(cleanPayload);
-        } catch (err) {
-          if (err?.message?.includes("PGRST204") || err?.message?.includes("column")) {
-            // Remove optional audit or new columns if not present in older schemas
-            const fallback = { ...cleanPayload };
-            delete fallback.usuario_alta;
-            delete fallback.usuario_baja;
-            delete fallback.nombres;
-            delete fallback.apellido_paterno;
-            delete fallback.apellido_materno;
-            delete fallback.numero_empleado;
-            delete fallback.experiencia;
-            delete fallback.observaciones;
-            createdRecord = await sercoApi.entities.Empleado.create(fallback);
-          } else {
-            throw err;
-          }
-        }
+        createdRecord = await executeWithFallback((d) => sercoApi.entities.Empleado.create(d), cleanPayload);
+
         if (createdRecord?.id) {
           if (cleanNumeroEmpleado) {
             setStoredEmpleadoNumero(createdRecord.id, cleanNumeroEmpleado);
@@ -3073,7 +3084,6 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                     setForm({
                       ...form,
                       observaciones: e.target.value,
-                      comentarios: e.target.value,
                     })
                   }
                 />
