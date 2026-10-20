@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck, Palmtree, Search, Download, QrCode } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, X, Calendar, UserCheck, Palmtree, Search, Download, QrCode, Layers, CheckSquare, Square, Building2, Eye } from "lucide-react";
 import QRCode from "qrcode";
 import { generateQRAttendanceCardsSheet } from "@/lib/qrAsistenciaTemplate";
 import {
@@ -94,6 +94,7 @@ export default function Asistencias() {
   const { sedeFilter, activeSedeId, availableSedes } = useSedeScope();
   const [employees, setEmployees] = useState([]);
   const [sedes, setSedes] = useState([]);
+  const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
   const [servicios, setServicios] = useState([]);
   const [asistencias, setAsistencias] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +108,10 @@ export default function Asistencias() {
 
   // Estados para Generador de QR
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrPrintMode, setQrPrintMode] = useState("todos"); // "todos" | "seleccion"
+  const [selectedQrServiceIds, setSelectedQrServiceIds] = useState(["oficina"]);
+  const [qrSearchTerm, setQrSearchTerm] = useState("");
+  const [qrPreviewServiceId, setQrPreviewServiceId] = useState("oficina");
   const [selectedQrServiceId, setSelectedQrServiceId] = useState("oficina");
   const [qrDownloading, setQrDownloading] = useState(false);
   const [previewQrDataUrl, setPreviewQrDataUrl] = useState(null);
@@ -288,74 +293,109 @@ export default function Asistencias() {
     }
   }
 
+  // Lista unificada de servicios disponibles para códigos QR (incluye Oficina Central)
+  const availableQrServices = useMemo(() => {
+    const oficinaItem = {
+      id: "oficina",
+      nombre: "Oficina (Oficinas Centrales)",
+      shortName: "Oficina",
+      sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
+      isOficina: true,
+    };
+    const sItems = (servicios || []).map((s) => ({
+      ...s,
+      shortName: s.nombre,
+      sede_nombre: s.sede_nombre || sedeNombre(s.sede_id) || "SERCO Seguridad Privada",
+    }));
+    return [oficinaItem, ...sItems];
+  }, [servicios, activeSedeId, sedes]);
+
   // Previsualización interactiva de QR en el modal
   useEffect(() => {
     if (!qrModalOpen) return;
-    let servToPreview = null;
-    if (selectedQrServiceId === "oficina") {
-      servToPreview = { id: "oficina", nombre: "Oficina" };
-    } else if (selectedQrServiceId === "all") {
-      servToPreview = { id: "oficina", nombre: "Oficina" };
-    } else {
-      servToPreview = servicios.find((s) => s.id === selectedQrServiceId) || { id: "oficina", nombre: "Oficina" };
+    let servToPreview = availableQrServices.find((s) => s.id === qrPreviewServiceId);
+    if (!servToPreview) {
+      if (qrPrintMode === "seleccion" && selectedQrServiceIds.length > 0) {
+        servToPreview = availableQrServices.find((s) => selectedQrServiceIds.includes(s.id));
+      }
+    }
+    if (!servToPreview) {
+      servToPreview = availableQrServices[0];
     }
     if (!servToPreview) {
       setPreviewQrDataUrl(null);
       return;
     }
-    const qrUrl = `${window.location.origin}/registro-asistencia?servicio_id=${encodeURIComponent(servToPreview.id)}&servicio_nombre=${encodeURIComponent(servToPreview.nombre)}`;
+    const servName = servToPreview.shortName || servToPreview.nombre;
+    const qrUrl = `${window.location.origin}/registro-asistencia?servicio_id=${encodeURIComponent(servToPreview.id)}&servicio_nombre=${encodeURIComponent(servName)}`;
     QRCode.toDataURL(qrUrl, { margin: 1, width: 250, color: { dark: "#0f172a", light: "#ffffff" } })
       .then((url) => setPreviewQrDataUrl(url))
       .catch(() => setPreviewQrDataUrl(null));
-  }, [qrModalOpen, selectedQrServiceId, servicios]);
+  }, [qrModalOpen, qrPreviewServiceId, selectedQrServiceIds, qrPrintMode, availableQrServices]);
+
+  // Selección individual o múltiple de servicios
+  const handleToggleSelectQrService = (id) => {
+    setSelectedQrServiceIds((prev) => {
+      const exists = prev.includes(id);
+      return exists ? prev.filter((item) => item !== id) : [...prev, id];
+    });
+    setQrPreviewServiceId(id);
+  };
+
+  const handleSelectAllQrServices = () => {
+    setSelectedQrServiceIds(availableQrServices.map((s) => s.id));
+  };
+
+  const handleDeselectAllQrServices = () => {
+    setSelectedQrServiceIds([]);
+  };
+
+  const handleSelectOnlyOficina = () => {
+    setSelectedQrServiceIds(["oficina"]);
+    setQrPreviewServiceId("oficina");
+  };
 
   // Descarga del PDF de tarjetas QR en tamaño carta (4 por hoja)
   const handleDownloadQrCards = async () => {
     try {
       setQrDownloading(true);
       let targetServices = [];
-      if (selectedQrServiceId === "oficina") {
-        targetServices = [{
-          id: "oficina",
-          nombre: "Oficina",
-          sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
-        }];
-      } else if (selectedQrServiceId === "all") {
-        const oficinaItem = {
-          id: "oficina",
-          nombre: "Oficina",
-          sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
-        };
-        targetServices = [oficinaItem, ...servicios];
+      if (qrPrintMode === "todos") {
+        targetServices = availableQrServices;
       } else {
-        const found = servicios.find((s) => s.id === selectedQrServiceId);
-        if (found) {
-          targetServices = [found];
-        } else {
-          targetServices = [{
-            id: "oficina",
-            nombre: "Oficina",
-            sede_nombre: activeSedeId ? sedeNombre(activeSedeId) : "Oficinas Centrales SERCO",
-          }];
-        }
+        targetServices = availableQrServices.filter((s) => selectedQrServiceIds.includes(s.id));
+      }
+
+      if (targetServices.length === 0) {
+        toast({
+          title: "Sin servicios seleccionados",
+          description: "Por favor selecciona al menos un servicio para imprimir sus tarjetas QR.",
+          variant: "destructive",
+        });
+        return;
       }
 
       const servicesWithSedes = targetServices.map((s) => ({
-        ...s,
-        sede_nombre: s.sede_nombre || sedeNombre(s.sede_id) || "SERCO Seguridad Privada",
+        id: s.id,
+        nombre: s.shortName || s.nombre,
+        sede_nombre: s.sede_nombre,
       }));
 
       const doc = await generateQRAttendanceCardsSheet(servicesWithSedes, window.location.origin);
-      const filename = selectedQrServiceId === "all"
+      const filename = qrPrintMode === "todos"
         ? `tarjetas_asistencia_qr_todos_${new Date().toISOString().slice(0, 10)}.pdf`
-        : `tarjetas_asistencia_qr_${(targetServices[0]?.nombre || "servicio").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+        : targetServices.length === 1
+        ? `tarjetas_asistencia_qr_${(targetServices[0]?.shortName || targetServices[0]?.nombre || "servicio").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`
+        : `tarjetas_asistencia_qr_${targetServices.length}_servicios_${new Date().toISOString().slice(0, 10)}.pdf`;
 
       doc.save(filename);
       toast({
         title: "PDF Generado con Éxito",
-        description: selectedQrServiceId === "all"
-          ? "Se han descargado las tarjetas de asistencia para todos los servicios incluyendo Oficina."
-          : `Se ha descargado la hoja carta con 4 tarjetas de asistencia para ${targetServices[0]?.nombre || "el servicio seleccionado"}.`,
+        description: qrPrintMode === "todos"
+          ? `Se descargaron las tarjetas de todos los servicios (${targetServices.length}) incluyendo Oficina.`
+          : targetServices.length === 1
+          ? `Se descargó la hoja con 4 tarjetas de "${targetServices[0]?.shortName || targetServices[0]?.nombre}".`
+          : `Se descargó el PDF con las tarjetas de los ${targetServices.length} servicios seleccionados.`,
       });
       setQrModalOpen(false);
     } catch (err) {
@@ -705,7 +745,6 @@ export default function Asistencias() {
   }, {});
 
   const selectedVacationEmp = employees.find(e => e.id === vacacionesForm.empleado_id);
-  const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
   const exportToExcel = () => {
     if (!employees || employees.length === 0) {
       toast({
@@ -1343,42 +1382,190 @@ export default function Asistencias() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Seleccionar Servicio para Imprimir:</Label>
-              <select
-                value={selectedQrServiceId}
-                onChange={(e) => setSelectedQrServiceId(e.target.value)}
-                className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500"
-              >
-                <optgroup label="Instalaciones Internas / Administrativas">
-                  <option value="oficina">🏢 Oficina (Oficinas Centrales SERCO)</option>
-                </optgroup>
-                <optgroup label="Servicios Operativos / Clientes">
-                  {servicios.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nombre} {s.sede_id ? `(${sedeNombre(s.sede_id)})` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Impresión Masiva">
-                  <option value="all">📑 Todos los servicios de esta sede ({servicios.length + 1} en total)</option>
-                </optgroup>
-              </select>
-              <p className="text-[11px] text-muted-foreground">
-                {selectedQrServiceId === "all"
-                  ? "Se generarán hojas carta con 4 servicios diferentes por página (incluyendo Oficina)."
-                  : selectedQrServiceId === "oficina"
-                  ? "Se generará 1 hoja carta con 4 tarjetas idénticas de OFICINA para recortar y colocar en checador o recepción."
-                  : "Se generará 1 hoja carta con 4 tarjetas idénticas del servicio para recortar y colocar en caseta."}
-              </p>
+            {/* Selector de Modo: Todos vs Selección Personalizada */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Modalidad de Impresión:
+              </Label>
+              <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border">
+                <button
+                  type="button"
+                  onClick={() => setQrPrintMode("todos")}
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                    qrPrintMode === "todos"
+                      ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Layers className="w-4 h-4 shrink-0" />
+                  <span>Todos ({availableQrServices.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQrPrintMode("seleccion");
+                    if (selectedQrServiceIds.length === 0) {
+                      setSelectedQrServiceIds(availableQrServices.map((s) => s.id));
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                    qrPrintMode === "seleccion"
+                      ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <CheckSquare className="w-4 h-4 shrink-0" />
+                  <span>Selección ({selectedQrServiceIds.length})</span>
+                </button>
+              </div>
             </div>
+
+            {/* Contenido según el modo */}
+            {qrPrintMode === "todos" ? (
+              <div className="bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/60 rounded-xl p-3 text-xs text-indigo-900 dark:text-indigo-200 space-y-1">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Impresión Masiva Completa
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Se incluirán <strong>todos los {availableQrServices.length} servicios</strong> activos más las <strong>Oficinas Centrales SERCO</strong>, organizados en hojas tamaño carta con 4 tarjetas por hoja listas para recortar.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5 bg-slate-50 dark:bg-slate-900/60 border rounded-xl p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Marca qué servicios sí deseas imprimir:
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectAllQrServices}
+                      className="h-6 px-2 text-[10px] font-medium"
+                    >
+                      Marcar todos
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDeselectAllQrServices}
+                      className="h-6 px-2 text-[10px] font-medium"
+                    >
+                      Desmarcar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSelectOnlyOficina}
+                      className="h-6 px-2 text-[10px] font-medium"
+                    >
+                      🏢 Solo Oficina
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Buscador de servicios */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted-foreground" />
+                  <Input
+                    placeholder="Filtrar por nombre de servicio..."
+                    value={qrSearchTerm}
+                    onChange={(e) => setQrSearchTerm(e.target.value)}
+                    className="pl-8 h-7 text-xs bg-white dark:bg-slate-950"
+                  />
+                </div>
+
+                {/* Lista de Checkboxes scrollable */}
+                <div className="max-h-44 overflow-y-auto border rounded-lg divide-y bg-white dark:bg-slate-950">
+                  {availableQrServices
+                    .filter((s) => {
+                      if (!qrSearchTerm) return true;
+                      const term = qrSearchTerm.toLowerCase();
+                      return (
+                        s.nombre.toLowerCase().includes(term) ||
+                        (s.shortName && s.shortName.toLowerCase().includes(term)) ||
+                        (s.sede_nombre && s.sede_nombre.toLowerCase().includes(term))
+                      );
+                    })
+                    .map((s) => {
+                      const isSelected = selectedQrServiceIds.includes(s.id);
+                      return (
+                        <div
+                          key={s.id}
+                          onClick={() => handleToggleSelectQrService(s.id)}
+                          className={`flex items-center justify-between px-3 py-1.5 cursor-pointer text-xs transition-colors select-none ${
+                            isSelected
+                              ? "bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // Manejado por div onClick
+                              className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-indigo-500 pointer-events-none"
+                            />
+                            <div className="truncate">
+                              <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1.5">
+                                {s.isOficina ? "🏢 " : "🛡️ "}
+                                {s.shortName || s.nombre}
+                              </span>
+                              {s.sede_nombre && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({s.sede_nombre})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setQrPreviewServiceId(s.id);
+                            }}
+                            title="Previsualizar esta tarjeta"
+                            className="h-6 w-6 text-muted-foreground hover:text-indigo-600 shrink-0"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
+                  <span>
+                    Seleccionados: <strong>{selectedQrServiceIds.length}</strong> de {availableQrServices.length}
+                  </span>
+                  <span>
+                    {selectedQrServiceIds.length === 1
+                      ? "Se generará 1 hoja carta con 4 tarjetas idénticas."
+                      : selectedQrServiceIds.length > 1
+                      ? `Se generarán tarjetas para ${selectedQrServiceIds.length} servicios.`
+                      : "Ningún servicio marcado."}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Vista Previa de la Tarjeta */}
             <div className="border rounded-xl p-3 bg-slate-50 dark:bg-slate-900/50 space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-                <span>Vista Previa de Tarjeta (1/4 Carta):</span>
+                <span>
+                  Vista Previa (
+                  {availableQrServices.find((s) => s.id === qrPreviewServiceId)?.shortName || "Oficina"}
+                  ):
+                </span>
                 <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-200">
-                  Formato Recortable
+                  Formato Carta (4 Tarjetas)
                 </Badge>
               </div>
 
@@ -1394,11 +1581,9 @@ export default function Asistencias() {
                 <div className="border border-slate-200 dark:border-slate-800 rounded p-1.5 bg-slate-50 dark:bg-slate-900">
                   <span className="text-[8px] text-muted-foreground uppercase font-bold block">Puesto / Servicio:</span>
                   <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase line-clamp-2">
-                    {selectedQrServiceId === "oficina"
-                      ? "OFICINA (OFICINAS CENTRALES)"
-                      : selectedQrServiceId === "all"
-                      ? "OFICINA Y SERVICIOS SERCO"
-                      : servicios.find((s) => s.id === selectedQrServiceId)?.nombre || "SERVICIO SERCO"}
+                    {availableQrServices.find((s) => s.id === qrPreviewServiceId)?.shortName ||
+                      availableQrServices.find((s) => s.id === qrPreviewServiceId)?.nombre ||
+                      "OFICINA"}
                   </span>
                 </div>
 
@@ -1427,14 +1612,23 @@ export default function Asistencias() {
             </Button>
             <Button
               onClick={handleDownloadQrCards}
-              disabled={qrDownloading || servicios.length === 0}
+              disabled={
+                qrDownloading ||
+                availableQrServices.length === 0 ||
+                (qrPrintMode === "seleccion" && selectedQrServiceIds.length === 0)
+              }
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs sm:text-sm"
             >
               {qrDownloading ? (
                 <>Generando PDF...</>
               ) : (
                 <>
-                  <Download className="w-4 h-4 mr-1.5" /> Descargar Hoja Carta (4 Tarjetas)
+                  <Download className="w-4 h-4 mr-1.5" />
+                  {qrPrintMode === "todos"
+                    ? `Descargar Todos (${availableQrServices.length})`
+                    : selectedQrServiceIds.length === 1
+                    ? "Descargar 1 Hoja (4 Tarjetas)"
+                    : `Descargar Selección (${selectedQrServiceIds.length})`}
                 </>
               )}
             </Button>

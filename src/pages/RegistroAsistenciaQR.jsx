@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import {
   Camera, CheckCircle2, AlertTriangle, Clock, Shield, Search, RefreshCw,
-  UserCheck, ArrowLeft, Building2, UserX, AlertCircle, Sun, Moon
+  UserCheck, ArrowLeft, Building2, UserX, AlertCircle, Sun, Moon, Sparkles, Calendar
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,114 @@ function evaluateAttendanceState(turno, date = new Date()) {
       return totalMinutes <= eveningLimit ? "asistió" : "retraso";
     }
   }
+}
+
+/**
+ * Determina si un re-registro califica como Turno Extra (siguiente turno)
+ * o si es un registro redundante dentro del mismo turno.
+ *
+ * Regla SERCO:
+ * - Turno Matutino: 07:00 AM (inicia ~07:00).
+ * - Turno Vespertino / Nocturno: 19:00 hrs (07:00 PM).
+ * - Si un guardia ya se registró a las 7:00 AM y vuelve a escanear a las 8:00 AM o durante
+ *   su mismo turno: NO cuenta como extra (evita duplicados y mantiene su asistencia matutina).
+ * - Si vuelve a registrarse en el siguiente turno (a partir de las 18:00 / 19:00 hrs para matutinos,
+ *   o a partir de las 06:00 / 07:00 AM para nocturnos): califica como Turno Extra ("extra").
+ */
+function evaluateSecondRegistration({ employeeTurno, existingRecord, currentTime = new Date() }) {
+  const currentHour = currentTime.getHours();
+
+  // Intentar obtener la hora del registro previo si está almacenada en BD
+  let previousHour = null;
+  if (existingRecord?.hora) {
+    const match = existingRecord.hora.match(/(\d{1,2}):(\d{2})/);
+    if (match) previousHour = parseInt(match[1], 10);
+  } else if (existingRecord?.created_at) {
+    const prevDate = new Date(existingRecord.created_at);
+    if (!isNaN(prevDate.getTime())) {
+      previousHour = prevDate.getHours();
+    }
+  }
+
+  const normalizedTurno = (employeeTurno || "").trim().toLowerCase();
+  const isMatutinoBase =
+    normalizedTurno.includes("matutino") ||
+    (previousHour !== null && previousHour >= 5 && previousHour < 15);
+  const isVespertinoBase =
+    normalizedTurno.includes("vespertino") ||
+    normalizedTurno.includes("nocturno") ||
+    (previousHour !== null && (previousHour >= 18 || previousHour < 5));
+
+  // Caso 1: Turno Base Matutino (7:00 AM)
+  if (isMatutinoBase) {
+    // El siguiente turno (turno extra/doblete) inicia a las 19:00 hrs (7:00 PM).
+    // Se habilita recepción a partir de las 18:00 hrs (6:00 PM).
+    if (currentHour >= 18) {
+      return {
+        isNextShift: true,
+        targetState: "extra",
+        shiftName: "Vespertino (19:00 hrs)",
+        message: "Registro válido para Turno Extra (siguiente turno vespertino / nocturno).",
+      };
+    } else {
+      return {
+        isNextShift: false,
+        targetState: null,
+        shiftName: "Matutino",
+        message: "Tu asistencia para el turno matutino ya fue registrada hoy. Para registrar Turno Extra (doblete), debes escanear al presentarte al siguiente turno (a partir de las 7:00 PM / 19:00 hrs).",
+      };
+    }
+  }
+
+  // Caso 2: Turno Base Vespertino/Nocturno (7:00 PM)
+  if (isVespertinoBase) {
+    // El siguiente turno inicia a las 07:00 AM.
+    // Se habilita recepción entre las 06:00 AM y 14:00 hrs.
+    if (currentHour >= 6 && currentHour < 15) {
+      return {
+        isNextShift: true,
+        targetState: "extra",
+        shiftName: "Matutino (07:00 hrs)",
+        message: "Registro válido para Turno Extra (siguiente turno matutino).",
+      };
+    } else {
+      return {
+        isNextShift: false,
+        targetState: null,
+        shiftName: "Vespertino",
+        message: "Tu asistencia para el turno vespertino ya fue registrada. Para registrar Turno Extra, debes escanear al presentarte al siguiente turno (a partir de las 7:00 AM).",
+      };
+    }
+  }
+
+  // Caso 3: Cubredescansos u otros horarios (verificar diferencia de horas o cruce a noche)
+  if (previousHour !== null) {
+    const diffHours = Math.abs(currentHour - previousHour);
+    if (diffHours >= 8) {
+      return {
+        isNextShift: true,
+        targetState: "extra",
+        shiftName: "Turno Siguiente",
+        message: "Registro válido para Turno Extra (segundo turno transcurridas más de 8 horas).",
+      };
+    }
+  }
+
+  if (currentHour >= 18) {
+    return {
+      isNextShift: true,
+      targetState: "extra",
+      shiftName: "Vespertino (19:00 hrs)",
+      message: "Registro válido para Turno Extra (Turno de las 19:00 hrs).",
+    };
+  }
+
+  return {
+    isNextShift: false,
+    targetState: null,
+    shiftName: "Mismo turno",
+    message: "Ya cuentas con asistencia registrada para este turno. El Turno Extra aplica únicamente al ingresar al siguiente turno.",
+  };
 }
 
 export default function RegistroAsistenciaQR() {
@@ -239,7 +347,7 @@ export default function RegistroAsistenciaQR() {
     loadServiceData();
   }, [servicioIdParam, servicioNombreParam]);
 
-  // Verificar si el empleado seleccionado ya tiene registro hoy (especialmente Vacaciones o Descanso)
+  // Verificar si el empleado seleccionado ya tiene registro hoy
   useEffect(() => {
     async function checkExistingRecord() {
       if (!selectedEmployee?.empleado_id) {
@@ -251,7 +359,7 @@ export default function RegistroAsistenciaQR() {
       try {
         const { data, error } = await supabase
           .from("asistencias")
-          .select("id, empleado_id, fecha, estado, sede_id")
+          .select("*")
           .eq("empleado_id", selectedEmployee.empleado_id)
           .eq("fecha", todayStr)
           .maybeSingle();
@@ -271,6 +379,94 @@ export default function RegistroAsistenciaQR() {
 
     checkExistingRecord();
   }, [selectedEmployee, todayStr]);
+
+  // Evaluación de turno y validación de Turno Extra (Doblete)
+  const attendanceStatusInfo = useMemo(() => {
+    if (!selectedEmployee) return null;
+    if (!existingRecord?.estado) {
+      return {
+        type: "new",
+        canRegister: true,
+        targetState: evaluatedStatus || "asistió",
+        message: evaluatedStatus === "asistió" ? "A TIEMPO (ASISTIÓ)" : "DESPUÉS DE HORA (RETRASO)",
+      };
+    }
+
+    const state = existingRecord.estado;
+
+    if (state === "vacaciones") {
+      return {
+        type: "vacaciones",
+        canRegister: false,
+        targetState: null,
+        message: "Vacaciones Programadas. Tu asistencia está protegida y no se sobreescribirá.",
+      };
+    }
+
+    if (state === "extra" || state === "descanso_extra") {
+      return {
+        type: "already_extra",
+        canRegister: false,
+        targetState: null,
+        message: "Ya registraste tu Turno Extra de hoy. Ambos turnos se encuentran debidamente asentados.",
+      };
+    }
+
+    if (state === "descanso") {
+      return {
+        type: "descanso",
+        canRegister: true,
+        targetState: "descanso_laborado",
+        message: "Día de descanso asignado. Al confirmar tu asistencia se registrará como Descanso Laborado (DL).",
+      };
+    }
+
+    if (state === "falta") {
+      return {
+        type: "falta_provisional",
+        canRegister: true,
+        targetState: evaluatedStatus || "asistió",
+        message: `Estado provisional FALTA. Al registrarte cambiará a: ${evaluatedStatus === "asistió" ? "A TIEMPO (ASISTIÓ)" : "DESPUÉS DE HORA (RETRASO)"}`,
+      };
+    }
+
+    // Si ya registró 'asistió', 'retraso' o 'descanso_laborado'
+    if (["asistió", "retraso", "descanso_laborado"].includes(state)) {
+      const evalRes = evaluateSecondRegistration({
+        employeeTurno: selectedEmployee?.turno,
+        existingRecord,
+        currentTime,
+      });
+
+      if (evalRes.isNextShift) {
+        const nextTarget = state === "descanso_laborado" ? "descanso_extra" : "extra";
+        return {
+          type: "turno_extra_eligible",
+          canRegister: true,
+          targetState: nextTarget,
+          shiftName: evalRes.shiftName,
+          message: evalRes.message,
+        };
+      } else {
+        return {
+          type: "same_shift_duplicate",
+          canRegister: false,
+          targetState: null,
+          shiftName: evalRes.shiftName,
+          message: evalRes.message,
+        };
+      }
+    }
+
+    return {
+      type: "unknown",
+      canRegister: true,
+      targetState: evaluatedStatus || "asistió",
+      message: evaluatedStatus === "asistió" ? "A TIEMPO (ASISTIÓ)" : "DESPUÉS DE HORA (RETRASO)",
+    };
+  }, [selectedEmployee, existingRecord, evaluatedStatus, currentTime]);
+
+  const canRegister = Boolean(attendanceStatusInfo?.canRegister);
 
   // Manejo de Cámara Frontal
   const startCamera = async () => {
@@ -317,13 +513,14 @@ export default function RegistroAsistenciaQR() {
     };
   }, []);
 
-  // Iniciar cámara al seleccionar empleado (permite iniciar si no tiene registro o si está provisionalmente en 'falta')
+  // Iniciar o detener cámara según si el empleado seleccionado puede registrar asistencia
   useEffect(() => {
-    const canRegister = !existingRecord?.estado || existingRecord?.estado === "falta";
     if (selectedEmployee && canRegister && !photoDataUrl) {
       startCamera();
+    } else if (!canRegister) {
+      stopCamera();
     }
-  }, [selectedEmployee, existingRecord]);
+  }, [selectedEmployee, canRegister, photoDataUrl]);
 
   // Tomar instantánea en memoria (Canvas)
   const capturePhoto = () => {
@@ -398,29 +595,20 @@ export default function RegistroAsistenciaQR() {
       return;
     }
 
-    // Regla: si ya tiene vacaciones o descanso asignado, proteger el registro
-    if (existingRecord?.estado === "vacaciones" || existingRecord?.estado === "descanso") {
+    // Validación: si no está habilitado para registro (duplicado en mismo turno, vacaciones, etc.)
+    if (!attendanceStatusInfo?.canRegister) {
       toast({
-        title: "Registro protegido",
-        description: `Tienes programado ${existingRecord.estado.toUpperCase()} hoy. Tu estado no fue modificado.`,
+        title: "Registro no disponible",
+        description: attendanceStatusInfo?.message || "No es posible registrar asistencia en este momento.",
+        variant: "destructive",
       });
-      setSubmissionResult({
-        success: true,
-        ignored: true,
-        guardName: selectedEmployee.nombre_completo,
-        status: existingRecord.estado,
-        message: `Tienes asignado ${existingRecord.estado.toUpperCase()} el día de hoy. El registro se ha conservado sin alteraciones.`,
-        time: currentTime.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-      });
-      // Limpiar foto inmediatamente por privacidad
-      setPhotoDataUrl(null);
-      stopCamera();
       return;
     }
 
     setSubmitting(true);
-    const calculatedStatus = evaluatedStatus || "asistió";
+    const calculatedStatus = attendanceStatusInfo.targetState || evaluatedStatus || "asistió";
     const horaFormateada = currentTime.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+    const isExtraResult = calculatedStatus === "extra" || calculatedStatus === "descanso_extra";
 
     try {
       // 1. Intentar registrar vía RPC seguro (solo si service.id no es 'oficina')
@@ -438,8 +626,12 @@ export default function RegistroAsistenciaQR() {
           });
 
           if (!rpcErr && rpcRes) {
-            rpcSuccess = true;
-            if (rpcRes.ignored && (rpcRes.estado === "vacaciones" || rpcRes.estado === "descanso")) {
+            if (rpcRes.success && !rpcRes.ignored) {
+              rpcSuccess = true;
+            } else if (rpcRes.ignored && isExtraResult) {
+              // Si la versión antigua del RPC lo marcó como already_registered pero aquí calificó para Turno Extra, forzar upsert
+              rpcSuccess = false;
+            } else if (rpcRes.ignored) {
               setSubmissionResult({
                 success: true,
                 ignored: true,
@@ -476,6 +668,7 @@ export default function RegistroAsistenciaQR() {
       setSubmissionResult({
         success: true,
         ignored: false,
+        isExtra: isExtraResult,
         guardName: selectedEmployee.nombre_completo,
         status: calculatedStatus,
         serviceName: service.nombre,
@@ -485,8 +678,10 @@ export default function RegistroAsistenciaQR() {
       });
 
       toast({
-        title: "¡Asistencia Registrada!",
-        description: `Registrado como: ${calculatedStatus.toUpperCase()}`,
+        title: isExtraResult ? "¡Turno Extra Confirmado!" : "¡Asistencia Registrada!",
+        description: isExtraResult
+          ? "Se ha registrado exitosamente tu segundo turno (Turno Extra / Doblete)."
+          : `Registrado como: ${calculatedStatus.toUpperCase()}`,
       });
     } catch (err) {
       console.error("Error al registrar asistencia:", err);
@@ -542,10 +737,20 @@ export default function RegistroAsistenciaQR() {
           <Card className="bg-slate-900 border-slate-800 text-slate-100 shadow-2xl">
             <CardHeader className="text-center pb-2">
               <div className="mx-auto w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center mb-3">
-                <CheckCircle2 className="w-10 h-10 text-emerald-400 animate-in zoom-in-50 duration-300" />
+                {submissionResult.isExtra ? (
+                  <Sparkles className="w-10 h-10 text-purple-400 animate-in zoom-in-50 duration-300" />
+                ) : (
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 animate-in zoom-in-50 duration-300" />
+                )}
               </div>
-              <CardTitle className="text-xl font-bold text-white">¡Asistencia Confirmada!</CardTitle>
-              <p className="text-xs text-slate-400 mt-1">El registro se ha procesado exitosamente en el sistema</p>
+              <CardTitle className="text-xl font-bold text-white">
+                {submissionResult.isExtra ? "¡Turno Extra Confirmado!" : "¡Asistencia Confirmada!"}
+              </CardTitle>
+              <p className="text-xs text-slate-400 mt-1">
+                {submissionResult.isExtra
+                  ? "Tu segundo turno laboral (doblete) se ha registrado exitosamente en el sistema"
+                  : "El registro se ha procesado exitosamente en el sistema"}
+              </p>
             </CardHeader>
 
             <CardContent className="space-y-4 pt-2">
@@ -566,14 +771,20 @@ export default function RegistroAsistenciaQR() {
                   <span className="text-slate-400">Estado aplicado:</span>
                   <Badge
                     className={
-                      submissionResult.status === "asistió"
+                      submissionResult.status === "extra" || submissionResult.status === "descanso_extra"
+                        ? "bg-purple-600 text-white font-bold"
+                        : submissionResult.status === "asistió"
                         ? "bg-emerald-600 text-white font-bold"
                         : submissionResult.status === "retraso"
                         ? "bg-amber-600 text-white font-bold"
                         : "bg-teal-600 text-white font-bold"
                     }
                   >
-                    {submissionResult.status.toUpperCase()}
+                    {submissionResult.status === "extra"
+                      ? "TURNO EXTRA (E)"
+                      : submissionResult.status === "descanso_extra"
+                      ? "DESCANSO + EXTRA (DLE)"
+                      : submissionResult.status.toUpperCase()}
                   </Badge>
                 </div>
               </div>
@@ -714,25 +925,74 @@ export default function RegistroAsistenciaQR() {
                     </div>
                     <div className="text-sm font-bold text-white">{selectedEmployee.nombre_completo}</div>
 
-                    {/* Alertas de Vacaciones o Descanso */}
+                    {/* Alertas de Vacaciones, Descanso o Turno Extra */}
                     {checkingExisting ? (
                       <div className="text-[11px] text-slate-500 italic">Verificando estatus programado...</div>
-                    ) : existingRecord?.estado === "vacaciones" || existingRecord?.estado === "descanso" ? (
+                    ) : attendanceStatusInfo?.type === "vacaciones" ? (
                       <div className="bg-teal-950/50 border border-teal-800/80 p-2.5 rounded-lg text-xs text-teal-300 flex items-start gap-2 mt-2">
                         <AlertCircle className="w-4 h-4 shrink-0 text-teal-400 mt-0.5" />
                         <div>
-                          <strong className="block font-semibold">
-                            {existingRecord.estado === "vacaciones" ? "Vacaciones Programadas" : "Día de Descanso"}
-                          </strong>
+                          <strong className="block font-semibold">Vacaciones Programadas</strong>
                           Tienes este día asignado en plantilla. Tu asistencia está protegida y no se sobreescribirá.
                         </div>
                       </div>
-                    ) : existingRecord?.estado === "asistió" || existingRecord?.estado === "retraso" ? (
-                      <div className="bg-sky-950/40 border border-sky-800/60 p-2.5 rounded-lg text-xs text-sky-300 flex items-center justify-between mt-2">
-                        <span>Ya registraste asistencia hoy:</span>
-                        <Badge className="bg-sky-600 text-white font-bold">{existingRecord.estado.toUpperCase()}</Badge>
+                    ) : attendanceStatusInfo?.type === "descanso" ? (
+                      <div className="bg-sky-950/40 border border-sky-800/60 p-2.5 rounded-lg text-xs text-sky-300 flex items-start gap-2 mt-2">
+                        <Calendar className="w-4 h-4 shrink-0 text-sky-400 mt-0.5" />
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <strong className="font-semibold">Día de Descanso Asignado</strong>
+                            <Badge className="bg-sky-600 text-white font-bold text-[10px]">DL (DESCANSO LAB.)</Badge>
+                          </div>
+                          <p className="mt-1 text-[11px] text-sky-200">
+                            Al confirmar tu asistencia se registrará como <strong>Descanso Laborado (DL)</strong>.
+                          </p>
+                        </div>
                       </div>
-                    ) : existingRecord?.estado === "falta" ? (
+                    ) : attendanceStatusInfo?.type === "already_extra" ? (
+                      <div className="bg-purple-950/40 border border-purple-800/60 p-2.5 rounded-lg text-xs text-purple-300 flex items-start gap-2 mt-2">
+                        <Sparkles className="w-4 h-4 shrink-0 text-purple-400 mt-0.5" />
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <strong className="font-semibold">Turno Extra Ya Registrado</strong>
+                            <Badge className="bg-purple-600 text-white font-bold text-[10px]">EXTRA (E)</Badge>
+                          </div>
+                          <p className="mt-1 text-[11px] text-purple-200">
+                            Ya completaste tu registro de turno regular y tu Turno Extra de hoy. Ambos turnos están asentados.
+                          </p>
+                        </div>
+                      </div>
+                    ) : attendanceStatusInfo?.type === "turno_extra_eligible" ? (
+                      <div className="bg-purple-950/70 border border-purple-500/80 p-3 rounded-lg text-xs text-purple-200 space-y-2 mt-2 shadow-lg shadow-purple-950/40 animate-in fade-in">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-bold text-white">
+                            <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
+                            <span>TURNO EXTRA DETECTADO (DOBLETE)</span>
+                          </div>
+                          <Badge className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] px-2 py-0.5">
+                            EXTRA (E)
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-purple-200 leading-snug">
+                          Asistencia previa ({existingRecord?.estado?.toUpperCase()}) confirmada. Al confirmar ahora en tu siguiente turno ({attendanceStatusInfo.shiftName}), se registrará como <strong>Turno Extra (E)</strong>.
+                        </p>
+                      </div>
+                    ) : attendanceStatusInfo?.type === "same_shift_duplicate" ? (
+                      <div className="bg-amber-950/50 border border-amber-800/80 p-3 rounded-lg text-xs text-amber-200 space-y-1.5 mt-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                            <AlertCircle className="w-4 h-4 text-amber-400" />
+                            <span>ASISTENCIA YA REGISTRADA HOY</span>
+                          </div>
+                          <Badge className="bg-amber-600 text-white font-bold text-[10px]">
+                            {existingRecord?.estado?.toUpperCase()}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-amber-200/90 leading-snug">
+                          {attendanceStatusInfo.message}
+                        </p>
+                      </div>
+                    ) : attendanceStatusInfo?.type === "falta_provisional" ? (
                       <div className="space-y-1.5 pt-1 border-t border-slate-900 text-xs mt-2">
                         <div className="flex items-center justify-between">
                           <span className="text-rose-400 font-medium">Estado provisional:</span>
@@ -764,8 +1024,32 @@ export default function RegistroAsistenciaQR() {
               </CardContent>
             </Card>
 
+            {/* Aviso si el registro está completado o bloqueado por duplicado de mismo turno */}
+            {selectedEmployee && !canRegister && (
+              <Card className="bg-slate-900 border-slate-800 text-slate-100 shadow-xl">
+                <CardContent className="pt-6 pb-6 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-800/90 border border-slate-700 flex items-center justify-center mx-auto text-amber-400">
+                    <UserCheck className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-white">Estatus Verificado</h3>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                      {attendanceStatusInfo?.message || "No se requieren registros adicionales para este elemento en este turno."}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleResetForNext}
+                    variant="outline"
+                    className="border-slate-700 bg-slate-800 text-white hover:bg-slate-700 text-xs h-9"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Registrar a otro elemento
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
             {/* PASO 2: Toma de Fotografía de Verificación */}
-            {selectedEmployee && (
+            {selectedEmployee && canRegister && (
               <Card className="bg-slate-900 border-slate-800 text-slate-100 shadow-xl">
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
