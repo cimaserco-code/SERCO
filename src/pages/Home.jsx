@@ -555,7 +555,7 @@ export default function Home() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Columna Izquierda: Dashboard / Métricas */}
-        <div className="col-span-12 lg:col-span-9 space-y-6">
+        <div className="col-span-12 lg:col-span-8 xl:col-span-9 space-y-6">
           {/* Comunicados Section */}
           {comunicados.length > 0 && (
             <div className="space-y-3">
@@ -602,12 +602,12 @@ export default function Home() {
                             </div>
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div 
-                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                                 title={loading ? "" : `$${sede.pagados.toLocaleString("es-MX")}`}
                               >
                                 {loading ? "—" : `$${sede.pagados.toLocaleString("es-MX")}`}
                               </div>
-                              <p className="text-xs text-muted-foreground truncate" title="Cobrado (Pagados)">Cobrado (Pagados)</p>
+                              <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Cobrado (Pagados)">Cobrado (Pagados)</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -618,12 +618,12 @@ export default function Home() {
                             </div>
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div 
-                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                                 title={loading ? "" : `$${sede.pendientes.toLocaleString("es-MX")}`}
                               >
                                 {loading ? "—" : `$${sede.pendientes.toLocaleString("es-MX")}`}
                               </div>
-                              <p className="text-xs text-muted-foreground truncate" title="Pendiente de Cobro">Pendiente de Cobro</p>
+                              <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Pendiente de Cobro">Pendiente de Cobro</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -634,12 +634,12 @@ export default function Home() {
                             </div>
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div 
-                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                                 title={loading ? "" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}
                               >
                                 {loading ? "—" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}
                               </div>
-                              <p className="text-xs text-muted-foreground truncate" title="Total Facturado">Total Facturado</p>
+                              <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Total Facturado">Total Facturado</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -652,12 +652,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : String(sede.servicios)}
                           >
                             {loading ? "—" : sede.servicios}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Servicios Activos">Servicios Activos</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Servicios Activos">Servicios Activos</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -670,12 +670,12 @@ export default function Home() {
                             </div>
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div 
-                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                                 title={loading ? "" : String(sede.empleadosActivos)}
                               >
                                 {loading ? "—" : sede.empleadosActivos}
                               </div>
-                              <p className="text-xs text-muted-foreground truncate" title="Empleados Activos">Empleados Activos</p>
+                              <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Empleados Activos">Empleados Activos</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -686,12 +686,12 @@ export default function Home() {
                             </div>
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div 
-                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                                 title={loading ? "" : String(sede.empleadosAltas)}
                               >
                                 {loading ? "—" : sede.empleadosAltas}
                               </div>
-                              <p className="text-xs text-muted-foreground truncate" title="Altas del Mes">Altas del Mes</p>
+                              <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Altas del Mes">Altas del Mes</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -702,12 +702,12 @@ export default function Home() {
                             </div>
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div 
-                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                                 title={loading ? "" : String(sede.empleadosBajas)}
                               >
                                 {loading ? "—" : sede.empleadosBajas}
                               </div>
-                              <p className="text-xs text-muted-foreground truncate" title="Bajas del Personal">Bajas del Personal</p>
+                              <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Bajas del Personal">Bajas del Personal</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -733,12 +733,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}
                           >
                             {loading ? "—" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Cobrado (Pagados)">Cobrado (Pagados)</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Cobrado (Pagados)">Cobrado (Pagados)</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -750,12 +750,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : `$${stats.pendientes.toLocaleString("es-MX")}`}
                           >
                             {loading ? "—" : `$${stats.pendientes.toLocaleString("es-MX")}`}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Pendiente de Cobro">Pendiente de Cobro</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Pendiente de Cobro">Pendiente de Cobro</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -767,12 +767,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}
                           >
                             {loading ? "—" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Total Facturado">Total Facturado</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Total Facturado">Total Facturado</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -784,12 +784,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : String(stats.servicios)}
                           >
                             {loading ? "—" : stats.servicios}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Servicios Activos">Servicios Activos</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Servicios Activos">Servicios Activos</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -811,12 +811,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : String(stats.empleadosActivos)}
                           >
                             {loading ? "—" : stats.empleadosActivos}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Empleados Activos">Empleados Activos</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Empleados Activos">Empleados Activos</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -828,12 +828,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : String(stats.empleadosAltas)}
                           >
                             {loading ? "—" : stats.empleadosAltas}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Altas del Mes">Altas del Mes</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Altas del Mes">Altas del Mes</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -845,12 +845,12 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div 
-                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground break-words"
                             title={loading ? "" : String(stats.empleadosBajas)}
                           >
                             {loading ? "—" : stats.empleadosBajas}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate" title="Bajas del Personal">Bajas del Personal</p>
+                          <p className="text-xs text-muted-foreground break-words leading-tight mt-0.5" title="Bajas del Personal">Bajas del Personal</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -862,7 +862,7 @@ export default function Home() {
         </div>
 
         {/* Columna Derecha: Alertas */}
-        <div className="col-span-12 lg:col-span-3">
+        <div className="col-span-12 lg:col-span-4 xl:col-span-3">
           <NotificationCenter
             userId={user?.id}
             legacyNotifications={notifications}

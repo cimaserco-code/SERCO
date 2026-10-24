@@ -46,34 +46,33 @@ function NoticeRow({ notification, onOpen, onRead, onAttend }) {
   const isReminder = notification.categoria === "recordatorio";
 
   return (
-    <article className={`rounded-md border border-l-4 p-3 ${notification.leida ? "border-l-muted-foreground/30 bg-card" : "border-l-primary bg-primary/[0.035]"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">{notification.titulo}</h3>
-            {!notification.leida && <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">No leída</span>}
-            {isRequiredAction && <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Acción {notification.estado}</span>}
-            {isReminder && <span className="rounded-sm bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Recordatorio</span>}
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{notification.mensaje}</p>
+    <article className={`rounded-md border border-l-4 p-3 overflow-hidden break-words transition-colors ${notification.leida ? "border-l-muted-foreground/30 bg-card" : "border-l-primary bg-primary/[0.035]"}`}>
+      <div className="space-y-1.5 min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <h3 className="text-sm font-semibold text-foreground break-words">{notification.titulo}</h3>
+          {!notification.leida && <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary shrink-0">No leída</span>}
+          {isRequiredAction && <span className="rounded-sm bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 shrink-0">Acción {notification.estado}</span>}
+          {isReminder && <span className="rounded-sm bg-sky-100 dark:bg-sky-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800 dark:text-sky-300 shrink-0">Recordatorio</span>}
         </div>
-        <time className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground" dateTime={notification.created_at}>
-          <Clock className="h-3 w-3" />{formatDate(notification.fecha_programada || notification.created_at)}
+        <p className="text-xs leading-relaxed text-muted-foreground break-words">{notification.mensaje}</p>
+        <time className="flex items-center gap-1 text-[10px] text-muted-foreground pt-0.5 break-words" dateTime={notification.created_at}>
+          <Clock className="h-3 w-3 shrink-0" />
+          <span>{formatDate(notification.fecha_programada || notification.created_at)}</span>
         </time>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5 border-t pt-2">
         <button type="button" onClick={() => onOpen(notification)} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-          Abrir registro <ExternalLink className="h-3 w-3" />
+          Abrir registro <ExternalLink className="h-3 w-3 shrink-0" />
         </button>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {!notification.leida && (
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onRead(notification)}>
-              <Check className="mr-1 h-3.5 w-3.5" />Marcar leída
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => onRead(notification)}>
+              <Check className="mr-1 h-3 w-3" />Marcar leída
             </Button>
           )}
           {isRequiredAction && notification.estado === "pendiente" && (
-            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => onAttend(notification)}>
-              <CheckCheck className="mr-1 h-3.5 w-3.5" />Atendida
+            <Button variant="outline" size="sm" className="h-6 px-2 text-xs font-medium text-amber-800 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50" onClick={() => onAttend(notification)}>
+              <CheckCheck className="mr-1 h-3 w-3" />Atendida
             </Button>
           )}
         </div>
@@ -176,7 +175,7 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
 
   return (
     <>
-      <Card className="h-full">
+      <Card className="h-full overflow-hidden shadow-sm">
         <CardHeader className="cursor-pointer border-b pb-3 transition-colors hover:bg-muted/40" onClick={() => setOpen(true)}>
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -186,27 +185,40 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
             <span className="text-xs text-primary">Ver todas</span>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+        <CardContent className="space-y-3 p-3.5 sm:p-4">
+          <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground break-words leading-tight">
             <span>{unreadCount} no leídas</span>
             <span aria-hidden="true">·</span>
             <span>{notifications.length - unreadCount} leídas</span>
             <span aria-hidden="true">·</span>
-            <span>{requiredCount} acciones pendientes</span>
+            <span>{requiredCount} pendientes</span>
             <span aria-hidden="true">·</span>
-            <span>{reminderCount} recordatorios</span>
+            <span>{reminderCount} avisos</span>
           </div>
-          <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+          <div className="max-h-[520px] space-y-2 overflow-y-auto overflow-x-hidden pr-1">
             {loading ? <p className="py-6 text-center text-sm text-muted-foreground">Cargando notificaciones...</p> : (
               <>
                 {notifications.slice(0, 5).map(renderNotice)}
                 {visibleLegacy.slice(0, 3).map((item) => (
-                  <article key={item.id} className="rounded-md border border-l-4 border-l-blue-500 p-3">
+                  <article key={item.id} className="rounded-md border border-l-4 border-l-blue-500 p-3 overflow-hidden break-words bg-card/60">
                     <div className="flex items-start justify-between gap-2">
-                      <div><h3 className="text-sm font-semibold">{item.title}</h3><p className="mt-1 text-xs text-muted-foreground">{item.description}</p></div>
-                      <button type="button" title="Descartar aviso" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => onDismissLegacy(item.id)}>Descartar</button>
+                      <div className="min-w-0 flex-1 break-words">
+                        <h3 className="text-sm font-semibold break-words">{item.title}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground break-words leading-relaxed">{item.description}</p>
+                      </div>
+                      <button 
+                        type="button" 
+                        title="Descartar aviso" 
+                        className="shrink-0 text-xs text-muted-foreground hover:text-foreground font-medium underline sm:no-underline hover:underline ml-1" 
+                        onClick={() => onDismissLegacy(item.id)}
+                      >
+                        Descartar
+                      </button>
                     </div>
-                    <p className="mt-2 text-[10px] text-muted-foreground">{item.hora || item.categoria}</p>
+                    {item.autor && <p className="mt-1.5 text-[11px] text-muted-foreground font-medium break-words">Por: {item.autor}</p>}
+                    <p className="mt-1 text-[10px] text-muted-foreground flex items-center gap-1 break-words">
+                      <Clock className="w-3 h-3 shrink-0" /> {item.hora || item.categoria}
+                    </p>
                   </article>
                 ))}
                 {!notifications.length && !visibleLegacy.length && <p className="py-8 text-center text-sm text-muted-foreground">No hay notificaciones.</p>}
@@ -242,12 +254,25 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
               <p className="py-10 text-center text-sm text-muted-foreground">No hay notificaciones en esta vista.</p>
             )}
             {visibleLegacy.map((item) => (
-              <article key={item.id} className="rounded-md border border-l-4 border-l-blue-500 p-3">
+              <article key={item.id} className="rounded-md border border-l-4 border-l-blue-500 p-3 overflow-hidden break-words bg-card/60">
                 <div className="flex items-start justify-between gap-2">
-                  <div><h3 className="text-sm font-semibold">{item.title}</h3><p className="mt-1 text-xs text-muted-foreground">{item.description}</p></div>
-                  <button type="button" title="Descartar aviso" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => onDismissLegacy(item.id)}>Descartar</button>
+                  <div className="min-w-0 flex-1 break-words">
+                    <h3 className="text-sm font-semibold break-words">{item.title}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground break-words leading-relaxed">{item.description}</p>
+                  </div>
+                  <button 
+                    type="button" 
+                    title="Descartar aviso" 
+                    className="shrink-0 text-xs text-muted-foreground hover:text-foreground font-medium underline sm:no-underline hover:underline ml-1" 
+                    onClick={() => onDismissLegacy(item.id)}
+                  >
+                    Descartar
+                  </button>
                 </div>
-                <p className="mt-2 text-[10px] text-muted-foreground">{item.hora || item.categoria}</p>
+                {item.autor && <p className="mt-1.5 text-[11px] text-muted-foreground font-medium break-words">Por: {item.autor}</p>}
+                <p className="mt-1 text-[10px] text-muted-foreground flex items-center gap-1 break-words">
+                  <Clock className="w-3 h-3 shrink-0" /> {item.hora || item.categoria}
+                </p>
               </article>
             ))}
             {dismissedLegacy.length > 0 && <Button variant="ghost" size="sm" onClick={onRestoreLegacy}><RotateCcw className="mr-1 h-3.5 w-3.5" />Restaurar avisos anteriores ({dismissedLegacy.length})</Button>}
