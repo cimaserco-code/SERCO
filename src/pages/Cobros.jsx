@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard, Download, Tag, Receipt, PackagePlus } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard, Download, Tag, Receipt, PackagePlus, RotateCcw } from "lucide-react";
 import {
   getStoredFacturasExtras,
   getFacturasExtrasByServicio,
@@ -57,6 +57,14 @@ function getDiasMesParaFrecuencia(mesString, frecuencia) {
   if (frecuencia !== "quincenal" || !mesString) return getDiasMesFactura(mesString);
   const [year, month] = mesString.split("-").map(Number);
   return new Date(year, month, 0).getDate();
+}
+
+export function isCobroExcluido(c) {
+  if (!c) return false;
+  if (c.estado === "excluido") return true;
+  if (c.excluida === true) return true;
+  const meta = getCobroMeta(c.id);
+  return Boolean(meta?.excluida);
 }
 
 export function getCobroMeta(id) {
@@ -486,6 +494,8 @@ export default function Cobros() {
   const [kpiMode, setKpiMode] = useState("total");
   const [deleteId, setDeleteId] = useState(null);
   const [excludeId, setExcludeId] = useState(null);
+  const [excludedItems, setExcludedItems] = useState([]);
+  const [excluidasModalOpen, setExcluidasModalOpen] = useState(false);
 
   // Estado del modal de registro de pago (abono parcial o pago completo)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -756,14 +766,30 @@ export default function Cobros() {
           .map((s) => (s.nombre || "").trim().toLowerCase())
       );
 
-      const filteredCobros = nextCobros.filter((c) => {
-        if (getCobroMeta(c.id)?.excluida) return false;
+      // Sincronizar automáticamente exclusiones previas de localStorage hacia Supabase
+      nextCobros.forEach((c) => {
+        const meta = getCobroMeta(c.id);
+        if (meta?.excluida && c.estado !== "excluido") {
+          sercoApi.entities.Cobro.update(c.id, { estado: "excluido" }).catch(() => {});
+        }
+      });
+
+      const activeCobros = nextCobros.filter((c) => {
+        if (isCobroExcluido(c)) return false;
         if (c.servicio_id && suspendedServiceIds.has(c.servicio_id)) return false;
         if (c.servicio_nombre && suspendedServiceNames.has((c.servicio_nombre || "").trim().toLowerCase())) return false;
         return true;
       });
 
-      setItems(filteredCobros);
+      const excluidosCobros = nextCobros.filter((c) => {
+        if (!isCobroExcluido(c)) return false;
+        if (c.servicio_id && suspendedServiceIds.has(c.servicio_id)) return false;
+        if (c.servicio_nombre && suspendedServiceNames.has((c.servicio_nombre || "").trim().toLowerCase())) return false;
+        return true;
+      });
+
+      setItems(activeCobros);
+      setExcludedItems(excluidosCobros);
       setServicios(allServicios.filter((s) => (s.estado || "activo").toLowerCase() !== "suspendido"));
       setSedes(allSedes);
     } catch (e) {
@@ -796,7 +822,8 @@ export default function Cobros() {
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
-  const monthlyItems = items.filter((item) => item.mes === currentMonth && !getCobroMeta(item.id)?.excluida);
+  const monthlyItems = items.filter((item) => item.mes === currentMonth && !isCobroExcluido(item));
+  const monthlyExcluded = excludedItems.filter((item) => item.mes === currentMonth);
 
   const filtered = monthlyItems.filter((item) => {
     const txt = search.toLowerCase();
@@ -993,11 +1020,44 @@ export default function Cobros() {
 
   async function handleExclude() {
     if (!excludeId) return;
+    try {
+      // 1. Persistir en la base de datos (Supabase) para que sea global para todos los perfiles
+      await sercoApi.entities.Cobro.update(excludeId, {
+        estado: "excluido",
+      });
+    } catch (err) {
+      console.warn("No se pudo actualizar estado 'excluido' en DB:", err);
+    }
+    // 2. Mantener en metadata local
     const meta = getCobroMeta(excludeId) || {};
     setCobroMeta(excludeId, { ...meta, excluida: true });
     setExcludeId(null);
     setModalOpen(false);
     setEditing(null);
+    toast({
+      title: "Factura Excluida",
+      description: "La factura ha sido excluida globalmente para todos los perfiles.",
+    });
+    await load();
+  }
+
+  async function handleRestoreCobro(id) {
+    if (!id) return;
+    try {
+      await sercoApi.entities.Cobro.update(id, {
+        estado: "pendiente",
+      });
+    } catch (err) {
+      console.warn("No se pudo restaurar estado en DB:", err);
+    }
+    const meta = getCobroMeta(id) || {};
+    const nextMeta = { ...meta };
+    delete nextMeta.excluida;
+    setCobroMeta(id, nextMeta);
+    toast({
+      title: "Factura Restaurada",
+      description: "La factura vuelve a estar activa para todos los perfiles.",
+    });
     await load();
   }
 
@@ -1514,6 +1574,19 @@ export default function Cobros() {
               <span>Datos Bancarios</span>
             </Button>
           )}
+          {monthlyExcluded.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExcluidasModalOpen(true)}
+              className="gap-2 text-xs font-semibold h-9 border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 shadow-2xs"
+              title="Ver facturas que fueron excluidas este mes"
+            >
+              <EyeOff className="w-4 h-4 text-amber-600" />
+              <span>Excluidas ({monthlyExcluded.length})</span>
+            </Button>
+          )}
+
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -2685,6 +2758,55 @@ export default function Cobros() {
         loadingLabel="Excluyendo..."
         onConfirm={handleExclude}
       />
+
+      {/* Modal de Facturas Excluidas */}
+      <Dialog open={excluidasModalOpen} onOpenChange={setExcluidasModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <EyeOff className="w-5 h-5 text-amber-600" />
+              Facturas Excluidas del Mes ({formatMes(currentMonth)})
+            </DialogTitle>
+            <DialogDescription>
+              Estas facturas fueron excluidas globalmente. No se muestran en la tabla principal ni se suman a los reportes. Puedes reactivarlas en cualquier momento.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto divide-y rounded-md border mt-2">
+            {monthlyExcluded.length === 0 ? (
+              <p className="p-4 text-center text-sm text-muted-foreground">
+                No hay facturas excluidas en este mes.
+              </p>
+            ) : (
+              monthlyExcluded.map((exc) => (
+                <div key={exc.id} className="flex items-center justify-between p-3 hover:bg-muted/50 text-sm">
+                  <div>
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">{exc.servicio_nombre || "Servicio sin nombre"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Monto base: ${Number(exc.monto || 0).toLocaleString("es-MX")} • Periodo: {exc.mes}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-1.5 h-8 text-xs font-semibold"
+                    onClick={() => handleRestoreCobro(exc.id)}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                    Restaurar
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setExcluidasModalOpen(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -236,9 +236,10 @@ export function ClientPortalProvider({ children }) {
       // 1. Cobros for this service (enriquecidos con metadata de método de pago)
       const rawCobros = (cobrosData || []).filter(
         (c) =>
-          c.servicio_id === selectedServicio.id ||
+          c.estado !== "excluido" &&
+          (c.servicio_id === selectedServicio.id ||
           (c.servicio_nombre &&
-            c.servicio_nombre.toLowerCase() === selectedServicio.nombre.toLowerCase())
+            c.servicio_nombre.toLowerCase() === selectedServicio.nombre.toLowerCase()))
       );
 
       const servCobros = rawCobros.map((c) => {
