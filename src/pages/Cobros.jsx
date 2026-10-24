@@ -653,7 +653,18 @@ export default function Cobros() {
     return `${today.getFullYear()}-${mm}`;
   });
 
-  useEffect(() => { load(); }, [currentMonth, sedeFilter]);
+  useEffect(() => {
+    load();
+    const unsubscribe = sercoApi.entities.Cobro.subscribe(() => {
+      load();
+    });
+    const handleFocus = () => load();
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      if (unsubscribe) unsubscribe();
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [currentMonth, sedeFilter]);
 
   async function load() {
     setLoading(true);
