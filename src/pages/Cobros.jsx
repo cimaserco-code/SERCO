@@ -61,8 +61,8 @@ function getDiasMesParaFrecuencia(mesString, frecuencia) {
 
 export function isCobroExcluido(c) {
   if (!c) return false;
+  if (c.excluida === true || c.excluida === "true") return true;
   if (c.estado === "excluido") return true;
-  if (c.excluida === true) return true;
   const meta = getCobroMeta(c.id);
   return Boolean(meta?.excluida);
 }
@@ -780,8 +780,10 @@ export default function Cobros() {
       // Sincronizar automáticamente exclusiones previas de localStorage hacia Supabase
       nextCobros.forEach((c) => {
         const meta = getCobroMeta(c.id);
-        if (meta?.excluida && c.estado !== "excluido") {
-          sercoApi.entities.Cobro.update(c.id, { estado: "excluido" }).catch(() => {});
+        if (meta?.excluida && c.excluida !== true && c.estado !== "excluido") {
+          sercoApi.entities.Cobro.update(c.id, { excluida: true }).catch(() => {
+            sercoApi.entities.Cobro.update(c.id, { estado: "excluido" }).catch(() => {});
+          });
         }
       });
 
@@ -1032,12 +1034,17 @@ export default function Cobros() {
   async function handleExclude() {
     if (!excludeId) return;
     try {
-      // 1. Persistir en la base de datos (Supabase) para que sea global para todos los perfiles
+      // 1. Persistir en la base de datos (Supabase) con la columna excluida
       await sercoApi.entities.Cobro.update(excludeId, {
-        estado: "excluido",
+        excluida: true,
       });
     } catch (err) {
-      console.warn("No se pudo actualizar estado 'excluido' en DB:", err);
+      console.warn("Intento con excluida: true falló, probando con estado 'excluido':", err);
+      try {
+        await sercoApi.entities.Cobro.update(excludeId, { estado: "excluido" });
+      } catch (err2) {
+        console.warn("No se pudo actualizar en DB:", err2);
+      }
     }
     // 2. Mantener en metadata local
     const meta = getCobroMeta(excludeId) || {};
@@ -1056,10 +1063,17 @@ export default function Cobros() {
     if (!id) return;
     try {
       await sercoApi.entities.Cobro.update(id, {
+        excluida: false,
         estado: "pendiente",
       });
     } catch (err) {
-      console.warn("No se pudo restaurar estado en DB:", err);
+      try {
+        await sercoApi.entities.Cobro.update(id, { excluida: false });
+      } catch (_) {
+        try {
+          await sercoApi.entities.Cobro.update(id, { estado: "pendiente" });
+        } catch (_) {}
+      }
     }
     const meta = getCobroMeta(id) || {};
     const nextMeta = { ...meta };
