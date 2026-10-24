@@ -592,87 +592,122 @@ export default function Home() {
                   <h3 className="text-base font-bold text-primary border-b pb-2 capitalize">
                     Sede: {sede.sedeNombre}
                   </h3>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
                     {showFinances && (
                       <>
-                        <Card>
-                          <CardContent className="p-4 flex items-center gap-3">
+                        <Card className="overflow-hidden shadow-sm">
+                          <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                             <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
                               <CheckCircle className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                              <div className="text-xl font-bold">{loading ? "—" : `$${sede.pagados.toLocaleString("es-MX")}`}</div>
-                              <p className="text-xs text-muted-foreground">Cobrado (Pagados)</p>
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div 
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                title={loading ? "" : `$${sede.pagados.toLocaleString("es-MX")}`}
+                              >
+                                {loading ? "—" : `$${sede.pagados.toLocaleString("es-MX")}`}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate" title="Cobrado (Pagados)">Cobrado (Pagados)</p>
                             </div>
                           </CardContent>
                         </Card>
-                        <Card>
-                          <CardContent className="p-4 flex items-center gap-3">
+                        <Card className="overflow-hidden shadow-sm">
+                          <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                             <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
                               <Clock className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                              <div className="text-xl font-bold">{loading ? "—" : `$${sede.pendientes.toLocaleString("es-MX")}`}</div>
-                              <p className="text-xs text-muted-foreground">Pendiente de Cobro</p>
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div 
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                title={loading ? "" : `$${sede.pendientes.toLocaleString("es-MX")}`}
+                              >
+                                {loading ? "—" : `$${sede.pendientes.toLocaleString("es-MX")}`}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate" title="Pendiente de Cobro">Pendiente de Cobro</p>
                             </div>
                           </CardContent>
                         </Card>
-                        <Card>
-                          <CardContent className="p-4 flex items-center gap-3">
+                        <Card className="overflow-hidden shadow-sm">
+                          <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                             <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
                               <DollarSign className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                              <div className="text-xl font-bold">{loading ? "—" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}</div>
-                              <p className="text-xs text-muted-foreground">Total Facturado</p>
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div 
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                title={loading ? "" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}
+                              >
+                                {loading ? "—" : `$${sede.totalFacturado.toLocaleString("es-MX")}`}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate" title="Total Facturado">Total Facturado</p>
                             </div>
                           </CardContent>
                         </Card>
                       </>
                     )}
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
                           <Briefcase className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : sede.servicios}</div>
-                          <p className="text-xs text-muted-foreground">Servicios Activos</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : String(sede.servicios)}
+                          >
+                            {loading ? "—" : sede.servicios}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Servicios Activos">Servicios Activos</p>
                         </div>
                       </CardContent>
                     </Card>
                     {showRH && (
                       <>
-                        <Card>
-                          <CardContent className="p-4 flex items-center gap-3">
+                        <Card className="overflow-hidden shadow-sm">
+                          <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                             <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center shrink-0">
                               <Users className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                              <div className="text-xl font-bold">{loading ? "—" : sede.empleadosActivos}</div>
-                              <p className="text-xs text-muted-foreground">Empleados Activos</p>
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div 
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                title={loading ? "" : String(sede.empleadosActivos)}
+                              >
+                                {loading ? "—" : sede.empleadosActivos}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate" title="Empleados Activos">Empleados Activos</p>
                             </div>
                           </CardContent>
                         </Card>
-                        <Card>
-                          <CardContent className="p-4 flex items-center gap-3">
+                        <Card className="overflow-hidden shadow-sm">
+                          <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                             <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center shrink-0">
                               <Plus className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                              <div className="text-xl font-bold">{loading ? "—" : sede.empleadosAltas}</div>
-                              <p className="text-xs text-muted-foreground">Altas del Mes</p>
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div 
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                title={loading ? "" : String(sede.empleadosAltas)}
+                              >
+                                {loading ? "—" : sede.empleadosAltas}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate" title="Altas del Mes">Altas del Mes</p>
                             </div>
                           </CardContent>
                         </Card>
-                        <Card>
-                          <CardContent className="p-4 flex items-center gap-3">
+                        <Card className="overflow-hidden shadow-sm">
+                          <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                             <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center shrink-0">
                               <AlertCircle className="w-5 h-5 text-white" />
                             </div>
-                            <div>
-                              <div className="text-xl font-bold">{loading ? "—" : sede.empleadosBajas}</div>
-                              <p className="text-xs text-muted-foreground">Bajas del Personal</p>
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div 
+                                className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                                title={loading ? "" : String(sede.empleadosBajas)}
+                              >
+                                {loading ? "—" : sede.empleadosBajas}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate" title="Bajas del Personal">Bajas del Personal</p>
                             </div>
                           </CardContent>
                         </Card>
@@ -690,51 +725,71 @@ export default function Home() {
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                     Resumen Financiero (Facturas del Mes)
                   </h3>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
                           <CheckCircle className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}</div>
-                          <p className="text-xs text-muted-foreground">Cobrado (Pagados)</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}
+                          >
+                            {loading ? "—" : `$${stats.totalCobrado.toLocaleString("es-MX")}`}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Cobrado (Pagados)">Cobrado (Pagados)</p>
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
                           <Clock className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : `$${stats.pendientes.toLocaleString("es-MX")}`}</div>
-                          <p className="text-xs text-muted-foreground">Pendiente de Cobro</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : `$${stats.pendientes.toLocaleString("es-MX")}`}
+                          >
+                            {loading ? "—" : `$${stats.pendientes.toLocaleString("es-MX")}`}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Pendiente de Cobro">Pendiente de Cobro</p>
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
                           <DollarSign className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}</div>
-                          <p className="text-xs text-muted-foreground">Total Facturado</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}
+                          >
+                            {loading ? "—" : `$${stats.totalFacturado.toLocaleString("es-MX")}`}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Total Facturado">Total Facturado</p>
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
                           <Briefcase className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : stats.servicios}</div>
-                          <p className="text-xs text-muted-foreground">Servicios Activos</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : String(stats.servicios)}
+                          >
+                            {loading ? "—" : stats.servicios}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Servicios Activos">Servicios Activos</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -748,39 +803,54 @@ export default function Home() {
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                     Estadísticas de Personal (Recursos Humanos)
                   </h3>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center shrink-0">
                           <Users className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : stats.empleadosActivos}</div>
-                          <p className="text-xs text-muted-foreground">Empleados Activos</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : String(stats.empleadosActivos)}
+                          >
+                            {loading ? "—" : stats.empleadosActivos}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Empleados Activos">Empleados Activos</p>
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center shrink-0">
                           <Plus className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : stats.empleadosAltas}</div>
-                          <p className="text-xs text-muted-foreground">Altas del Mes</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : String(stats.empleadosAltas)}
+                          >
+                            {loading ? "—" : stats.empleadosAltas}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Altas del Mes">Altas del Mes</p>
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardContent className="p-4 flex items-center gap-3">
+                    <Card className="overflow-hidden shadow-sm">
+                      <CardContent className="p-3.5 sm:p-4 flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center shrink-0">
                           <AlertCircle className="w-5 h-5 text-white" />
                         </div>
-                        <div>
-                          <div className="text-xl font-bold">{loading ? "—" : stats.empleadosBajas}</div>
-                          <p className="text-xs text-muted-foreground">Bajas del Personal</p>
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div 
+                            className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate"
+                            title={loading ? "" : String(stats.empleadosBajas)}
+                          >
+                            {loading ? "—" : stats.empleadosBajas}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate" title="Bajas del Personal">Bajas del Personal</p>
                         </div>
                       </CardContent>
                     </Card>
