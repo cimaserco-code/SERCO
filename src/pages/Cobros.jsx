@@ -62,8 +62,9 @@ function getDiasMesParaFrecuencia(mesString, frecuencia) {
 export function isCobroExcluido(c) {
   if (!c) return false;
   if (c.excluida === true || c.excluida === "true") return true;
+  if (c.metadata?.excluida === true || c.metadata?.excluida === "true") return true;
   if (c.estado === "excluido") return true;
-  const meta = getCobroMeta(c.id);
+  const meta = c.metadata || getCobroMeta(c.id);
   return Boolean(meta?.excluida);
 }
 
@@ -307,7 +308,7 @@ export function getCobroPartesInfo(cobro, meta = null) {
     };
   }
 
-  const m = meta || getCobroMeta(cobro.id) || {};
+  const m = meta || cobro?.metadata || getCobroMeta(cobro?.id) || {};
   const frecuencia = m?.frecuencia_pago || "mensual";
   const diasMes = getDiasMesParaFrecuencia(cobro.mes, frecuencia);
   const montoBase = Number(cobro.monto) || 0;
@@ -765,7 +766,28 @@ export default function Cobros() {
         nextCobros = await sercoApi.entities.Cobro.filter(cobroQuery, "-created_date");
       }
 
-      // Excluir cobros pertenecientes a servicios suspendidos
+      // Sincronizar automáticamente exclusiones previas y metadata hacia Supabase
+      nextCobros.forEach((c) => {
+        const localMeta = getCobroMeta(c.id);
+        const remoteMeta = c.metadata && typeof c.metadata === "object" ? c.metadata : null;
+
+        // Si Supabase ya tiene metadata, actualizar localmente para alinearse
+        if (remoteMeta && Object.keys(remoteMeta).length > 0) {
+          setCobroMeta(c.id, { ...localMeta, ...remoteMeta });
+        } else if (localMeta && Object.keys(localMeta).length > 0) {
+          // Si localmente tenemos datos pero Supabase aún no los tiene, sincronizarlos a la nube
+          sercoApi.entities.Cobro.update(c.id, { metadata: localMeta }).catch(() => {});
+        }
+
+        if (localMeta?.excluida && c.excluida !== true && c.estado !== "excluido") {
+          sercoApi.entities.Cobro.update(c.id, { excluida: true }).catch(() => {
+            sercoApi.entities.Cobro.update(c.id, { estado: "excluido" }).catch(() => {});
+          });
+        }
+      });
+
+      // Excluir cobros de servicios eliminados o suspendidos
+      const validServiceIds = new Set(allServicios.map((s) => s.id));
       const suspendedServiceIds = new Set(
         allServicios
           .filter((s) => (s.estado || "").toLowerCase() === "suspendido")
@@ -777,18 +799,9 @@ export default function Cobros() {
           .map((s) => (s.nombre || "").trim().toLowerCase())
       );
 
-      // Sincronizar automáticamente exclusiones previas de localStorage hacia Supabase
-      nextCobros.forEach((c) => {
-        const meta = getCobroMeta(c.id);
-        if (meta?.excluida && c.excluida !== true && c.estado !== "excluido") {
-          sercoApi.entities.Cobro.update(c.id, { excluida: true }).catch(() => {
-            sercoApi.entities.Cobro.update(c.id, { estado: "excluido" }).catch(() => {});
-          });
-        }
-      });
-
       const activeCobros = nextCobros.filter((c) => {
         if (isCobroExcluido(c)) return false;
+        if (c.servicio_id && !validServiceIds.has(c.servicio_id)) return false;
         if (c.servicio_id && suspendedServiceIds.has(c.servicio_id)) return false;
         if (c.servicio_nombre && suspendedServiceNames.has((c.servicio_nombre || "").trim().toLowerCase())) return false;
         return true;
@@ -796,6 +809,7 @@ export default function Cobros() {
 
       const excluidosCobros = nextCobros.filter((c) => {
         if (!isCobroExcluido(c)) return false;
+        if (c.servicio_id && !validServiceIds.has(c.servicio_id)) return false;
         if (c.servicio_id && suspendedServiceIds.has(c.servicio_id)) return false;
         if (c.servicio_nombre && suspendedServiceNames.has((c.servicio_nombre || "").trim().toLowerCase())) return false;
         return true;
@@ -871,7 +885,7 @@ export default function Cobros() {
 
   function openEdit(item) {
     setEditing(item);
-    const meta = getCobroMeta(item.id) || {};
+    const meta = item.metadata || getCobroMeta(item.id) || {};
     const servCfg = getServicioCobroConfig(item.servicio_id) || {};
     const serv = servicios.find((s) => s.id === item.servicio_id);
     const nombreConstancia = meta.nombre_constancia || servCfg.nombre_constancia || serv?.nombre_constancia || item.nombre_constancia || "";
@@ -913,7 +927,7 @@ export default function Cobros() {
   }
 
   const handleOpenPayment = (item) => {
-    const meta = getCobroMeta(item.id) || {};
+    const meta = item.metadata || getCobroMeta(item.id) || {};
     const info = getCobroPartesInfo(item, meta);
     const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -984,20 +998,28 @@ export default function Cobros() {
       };
       setCobroMeta(paymentCobro.id, updatedMeta);
 
+      const dbUpdatePayload = {
+        estado: nuevoEstado,
+        fecha_pago: isAllPaid ? latestFechaPago : null,
+        metadata: updatedMeta,
+      };
+
       try {
-        await sercoApi.entities.Cobro.update(paymentCobro.id, {
-          estado: nuevoEstado,
-          fecha_pago: isAllPaid ? latestFechaPago : null,
-        });
+        await sercoApi.entities.Cobro.update(paymentCobro.id, dbUpdatePayload);
       } catch (dbErr) {
-        console.warn("DB update con estado", nuevoEstado, "falló, guardando en pendiente:", dbErr);
-        if (nuevoEstado === "parcial") {
+        console.warn("DB update con metadata falló, probando fallback:", dbErr);
+        const fallbackEstado = nuevoEstado === "parcial" ? "pendiente" : nuevoEstado;
+        try {
           await sercoApi.entities.Cobro.update(paymentCobro.id, {
-            estado: "pendiente",
-            fecha_pago: null,
+            estado: fallbackEstado,
+            fecha_pago: isAllPaid ? latestFechaPago : null,
+            metadata: updatedMeta,
           });
-        } else {
-          throw dbErr;
+        } catch (_) {
+          await sercoApi.entities.Cobro.update(paymentCobro.id, {
+            estado: fallbackEstado,
+            fecha_pago: isAllPaid ? latestFechaPago : null,
+          }).catch(() => {});
         }
       }
 
@@ -1033,22 +1055,27 @@ export default function Cobros() {
 
   async function handleExclude() {
     if (!excludeId) return;
+    const meta = getCobroMeta(excludeId) || {};
+    const updatedMeta = { ...meta, excluida: true };
+    setCobroMeta(excludeId, updatedMeta);
+
     try {
-      // 1. Persistir en la base de datos (Supabase) con la columna excluida
+      // 1. Persistir en Supabase con columna excluida y en metadata
       await sercoApi.entities.Cobro.update(excludeId, {
         excluida: true,
+        metadata: updatedMeta,
       });
     } catch (err) {
-      console.warn("Intento con excluida: true falló, probando con estado 'excluido':", err);
+      console.warn("Intento con excluida + metadata falló, probando con sólo excluida:", err);
       try {
-        await sercoApi.entities.Cobro.update(excludeId, { estado: "excluido" });
+        await sercoApi.entities.Cobro.update(excludeId, { excluida: true });
       } catch (err2) {
-        console.warn("No se pudo actualizar en DB:", err2);
+        try {
+          await sercoApi.entities.Cobro.update(excludeId, { estado: "excluido" });
+        } catch (_) {}
       }
     }
-    // 2. Mantener en metadata local
-    const meta = getCobroMeta(excludeId) || {};
-    setCobroMeta(excludeId, { ...meta, excluida: true });
+
     setExcludeId(null);
     setModalOpen(false);
     setEditing(null);
@@ -1061,29 +1088,37 @@ export default function Cobros() {
 
   async function handleRestoreCobro(id) {
     if (!id) return;
+    const meta = getCobroMeta(id) || {};
+    const nextMeta = { ...meta, excluida: false };
+    setCobroMeta(id, nextMeta);
+
     try {
       await sercoApi.entities.Cobro.update(id, {
         excluida: false,
         estado: "pendiente",
+        metadata: nextMeta,
       });
     } catch (err) {
       try {
-        await sercoApi.entities.Cobro.update(id, { excluida: false });
+        await sercoApi.entities.Cobro.update(id, {
+          excluida: false,
+          estado: "pendiente",
+        });
       } catch (_) {
         try {
-          await sercoApi.entities.Cobro.update(id, { estado: "pendiente" });
-        } catch (_) {}
+          await sercoApi.entities.Cobro.update(id, { excluida: false });
+        } catch (_) {
+          try {
+            await sercoApi.entities.Cobro.update(id, { estado: "pendiente" });
+          } catch (_) {}
+        }
       }
     }
-    const meta = getCobroMeta(id) || {};
-    const nextMeta = { ...meta };
-    delete nextMeta.excluida;
-    setCobroMeta(id, nextMeta);
+    await load();
     toast({
       title: "Factura Restaurada",
-      description: "La factura vuelve a estar activa para todos los perfiles.",
+      description: "La factura está nuevamente activa en el listado mensual.",
     });
-    await load();
   }
 
   // Exportar reporte de facturas para Excel con las columnas requeridas por el SAT/administración
@@ -1291,39 +1326,45 @@ export default function Cobros() {
         nombre_constancia: (form.nombre_constancia || "").trim() || null,
       };
 
+      const metaPayload = {
+        es_variable: form.es_variable,
+        costo_dia: form.costo_dia,
+        metodo_pago: form.metodo_pago,
+        nombre_constancia: (form.nombre_constancia || "").trim(),
+        calcular_iva: form.calcular_iva,
+        frecuencia_pago: form.frecuencia_pago,
+        dias_quincena: form.dias_quincena || 15,
+        dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
+        partes_pagadas: checkedParts,
+        fechas_partes: form.fechas_partes || {},
+        partes_personalizadas: form.partes_personalizadas || undefined,
+      };
+
       if (editing) {
-        try {
-          await sercoApi.entities.Cobro.update(editing.id, payload);
-        } catch (dbErr) {
-          console.warn("DB update falló con estado o columna:", finalEstado, dbErr);
-          const fallbackPayload = { ...payload };
-          if (dbErr?.message?.includes("PGRST204") || dbErr?.message?.includes("column")) {
-            delete fallbackPayload.nombre_constancia;
-          }
-          if (finalEstado === "parcial") {
-            await sercoApi.entities.Cobro.update(editing.id, {
-              ...fallbackPayload,
-              estado: "pendiente",
-              fecha_pago: null,
-            });
-          } else {
-            await sercoApi.entities.Cobro.update(editing.id, fallbackPayload);
-          }
+        setCobroMeta(editing.id, metaPayload);
+
+        const updatePayload = {
+          ...payload,
+          metadata: metaPayload,
+        };
+        delete updatePayload.nombre_constancia;
+
+        if (finalEstado === "parcial") {
+          updatePayload.estado = "pendiente";
+          updatePayload.fecha_pago = null;
         }
 
-        setCobroMeta(editing.id, {
-          es_variable: form.es_variable,
-          costo_dia: form.costo_dia,
-          metodo_pago: form.metodo_pago,
-          nombre_constancia: (form.nombre_constancia || "").trim(),
-          calcular_iva: form.calcular_iva,
-          frecuencia_pago: form.frecuencia_pago,
-          dias_quincena: form.dias_quincena || 15,
-          dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
-          partes_pagadas: checkedParts,
-          fechas_partes: form.fechas_partes || {},
-          partes_personalizadas: form.partes_personalizadas || undefined,
-        });
+        try {
+          await sercoApi.entities.Cobro.update(editing.id, updatePayload);
+        } catch (dbErr) {
+          console.warn("DB update falló con metadata o estado:", dbErr);
+          delete updatePayload.metadata;
+          try {
+            await sercoApi.entities.Cobro.update(editing.id, updatePayload);
+          } catch (dbErr2) {
+            console.error("No se pudo actualizar cobro:", dbErr2);
+          }
+        }
 
         try {
           const serviceId = editing.servicio_id;
@@ -1346,7 +1387,8 @@ export default function Cobros() {
                   const cDias = getDiasMesFactura(c.mes);
                   cMonto = Math.round(Number(form.costo_dia) * cDias);
                 }
-                setCobroMeta(c.id, {
+                const subMeta = {
+                  ...c.metadata,
                   ...getCobroMeta(c.id),
                   es_variable: form.es_variable,
                   costo_dia: form.costo_dia,
@@ -1356,10 +1398,17 @@ export default function Cobros() {
                   frecuencia_pago: form.frecuencia_pago,
                   dias_quincena: form.dias_quincena || 15,
                   dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
-                });
+                };
+                setCobroMeta(c.id, subMeta);
                 return sercoApi.entities.Cobro.update(c.id, {
                   monto: cMonto,
                   fecha_limite_pago: adjustedFechaLimite,
+                  metadata: subMeta,
+                }).catch(async () => {
+                  return sercoApi.entities.Cobro.update(c.id, {
+                    monto: cMonto,
+                    fecha_limite_pago: adjustedFechaLimite,
+                  }).catch(() => {});
                 });
               })
             );
@@ -1382,32 +1431,21 @@ export default function Cobros() {
           });
         }
       } else {
+        const createPayload = {
+          ...payload,
+          metadata: metaPayload,
+        };
+        delete createPayload.nombre_constancia;
+
         let created = null;
         try {
-          created = await sercoApi.entities.Cobro.create(payload);
+          created = await sercoApi.entities.Cobro.create(createPayload);
         } catch (dbErr) {
-          if (dbErr?.message?.includes("PGRST204") || dbErr?.message?.includes("column")) {
-            const fallbackPayload = { ...payload };
-            delete fallbackPayload.nombre_constancia;
-            created = await sercoApi.entities.Cobro.create(fallbackPayload);
-          } else {
-            throw dbErr;
-          }
+          delete createPayload.metadata;
+          created = await sercoApi.entities.Cobro.create(createPayload);
         }
         if (created?.id) {
-          setCobroMeta(created.id, {
-            es_variable: form.es_variable,
-            costo_dia: form.costo_dia,
-            metodo_pago: form.metodo_pago,
-            nombre_constancia: (form.nombre_constancia || "").trim(),
-            calcular_iva: form.calcular_iva,
-            frecuencia_pago: form.frecuencia_pago,
-            dias_quincena: form.dias_quincena || 15,
-            dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
-            partes_pagadas: checkedParts,
-            fechas_partes: form.fechas_partes || {},
-            partes_personalizadas: form.partes_personalizadas || undefined,
-          });
+          setCobroMeta(created.id, metaPayload);
         }
         toast({ title: "Factura creada con éxito" });
       }
@@ -1475,14 +1513,14 @@ export default function Cobros() {
   };
 
   const getCobroTotal = (c) => {
-    const meta = getCobroMeta(c.id);
+    const meta = c.metadata || getCobroMeta(c.id);
     const m = Number(c.monto) || 0;
     const tieneIva = meta?.calcular_iva !== undefined ? meta.calcular_iva : true;
     return tieneIva ? m * 1.16 : m;
   };
 
   const getCobroIva = (c) => {
-    const meta = getCobroMeta(c.id);
+    const meta = c.metadata || getCobroMeta(c.id);
     const m = Number(c.monto) || 0;
     const tieneIva = meta?.calcular_iva !== undefined ? meta.calcular_iva : true;
     return tieneIva ? m * 0.16 : 0;
@@ -1645,7 +1683,7 @@ export default function Cobros() {
               <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
             ) : (
               filtered.map((item) => {
-                const meta = getCobroMeta(item.id);
+                const meta = item.metadata || getCobroMeta(item.id);
                 const info = getCobroPartesInfo(item, meta);
                 const itemExtras = facturasExtrasAll.filter(
                   (x) => x.servicio_id === item.servicio_id && (!x.mes || x.mes === item.mes)

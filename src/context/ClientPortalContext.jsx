@@ -243,10 +243,10 @@ export function ClientPortalProvider({ children }) {
       );
 
       const servCobros = rawCobros.map((c) => {
-        let meta = {};
+        let meta = c.metadata && typeof c.metadata === "object" ? { ...c.metadata } : {};
         try {
           const raw = localStorage.getItem(`serco_cobro_meta_${c.id}`);
-          if (raw) meta = JSON.parse(raw);
+          if (raw) meta = { ...meta, ...JSON.parse(raw) };
         } catch {}
 
         let servCfg = {};

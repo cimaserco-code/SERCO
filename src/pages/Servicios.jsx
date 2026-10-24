@@ -265,7 +265,23 @@ export default function Servicios() {
     iconAnchor: [16, 32]
   });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const unsub = sercoApi.entities.Servicio?.subscribe?.(() => {
+      load();
+    });
+    const handleFocus = () => load();
+    window.addEventListener("focus", handleFocus);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      if (unsub) unsub();
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [sedeFilter]);
 
   async function load() {
     setLoading(true);
@@ -552,6 +568,14 @@ export default function Servicios() {
   }
 
   async function handleDelete() {
+    try {
+      const cobrosOfService = await sercoApi.entities.Cobro.filter({ servicio_id: deleteId }).catch(() => []);
+      if (cobrosOfService?.length) {
+        await Promise.allSettled(cobrosOfService.map((c) => sercoApi.entities.Cobro.delete(c.id)));
+      }
+    } catch (e) {
+      console.warn("Error limpiando cobros del servicio:", e);
+    }
     await sercoApi.entities.Servicio.delete(deleteId);
     setDeleteId(null);
     await load();
