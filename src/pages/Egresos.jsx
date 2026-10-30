@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
-import { Plus, Search, ChevronLeft, ChevronRight, Smartphone, Car, Fuel } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { getRecargaVigenciaDias, getFechaVencimientoRecarga } from "@/lib/recargasUtils";
+import { Plus, Search, ChevronLeft, ChevronRight, Smartphone, Car, Fuel, Clock } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -388,11 +390,25 @@ export default function Egresos() {
   );
   const filteredRecargas = recargas.filter((r) => r.mes === currentMonth);
   const totalSaldos = filteredRecargas.reduce((sum, r) => sum + (Number(r.monto) || 0), 0);
-  const ultimaRecarga = (saldoId) => {
+  const getSaldoRecargaInfo = (saldoId) => {
     const recharge = recargas
       .filter((recarga) => recarga.saldo_id === saldoId)
       .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))[0];
-    return recharge?.fecha || "Sin recargas";
+    if (!recharge?.fecha) return { fecha: "Sin recargas", vencimiento: null, agotado: false };
+    const vencimiento = getFechaVencimientoRecarga(recharge.fecha, recharge.monto);
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const agotado = vencimiento ? vencimiento <= hoyStr : false;
+    return {
+      fecha: recharge.fecha,
+      monto: recharge.monto,
+      vencimiento,
+      agotado,
+    };
+  };
+
+  const ultimaRecarga = (saldoId) => {
+    const info = getSaldoRecargaInfo(saldoId);
+    return info.fecha;
   };
 
   // ── Mantenimientos Filtered ──
@@ -662,6 +678,38 @@ export default function Egresos() {
         localStorage.setItem("serco_recargas_celulares_cache", JSON.stringify(list));
       } catch (cacheErr) {
         console.warn("Error guardando en caché local:", cacheErr);
+      }
+
+      // 4. Programar notificación de vencimiento de saldo para Finanzas y Admin
+      try {
+        const vigenciaDias = getRecargaVigenciaDias(finalMonto);
+        const fechaVencimiento = getFechaVencimientoRecarga(recargaForm.fecha, finalMonto);
+
+        if (fechaVencimiento) {
+          const { data: finanzasUsers } = await supabase
+            .from("profiles")
+            .select("id, role")
+            .or("role.ilike.%finanz%,role.ilike.%admin%,role.ilike.%director%");
+
+          if (finanzasUsers && finanzasUsers.length > 0) {
+            const programadaIso = new Date(fechaVencimiento + "T08:00:00").toISOString();
+            const notifRows = finanzasUsers.map((u) => ({
+              usuario_id: u.id,
+              categoria: "recordatorio",
+              tipo: "recarga_celular",
+              titulo: "Saldo de Celular por Agotarse",
+              mensaje: `El saldo de ${finalMonto} (${recargaEditing.compania || "Celular"}) para ${recargaEditing.nombre || recargaEditing.numero_telefono || "el equipo"} se agotará el ${fechaVencimiento} (${vigenciaDias} días de vigencia).`,
+              estado: "pendiente",
+              referencia_tipo: "recarga_celular",
+              referencia_id: recargaEditing.id,
+              fecha_programada: programadaIso,
+              dedupe_key: `recarga_finanzas:${recargaEditing.id}:${recargaForm.fecha}:${u.id}`,
+            }));
+            await supabase.from("notificaciones").upsert(notifRows, { onConflict: "dedupe_key" }).catch(() => {});
+          }
+        }
+      } catch (notifErr) {
+        console.warn("No se pudo registrar notificación en tabla notificaciones:", notifErr);
       }
 
       setRecargaModalOpen(false);
@@ -1005,13 +1053,30 @@ export default function Egresos() {
                               ? "border-blue-300 text-blue-700 bg-blue-50/50 dark:bg-blue-950/40 dark:text-blue-300 font-normal"
                               : s.compania === "AT&T"
                               ? "border-cyan-300 text-cyan-700 bg-cyan-50/50 dark:bg-cyan-950/40 dark:text-cyan-300 font-normal"
+                              : s.compania === "Bait"
+                              ? "border-purple-300 text-purple-700 bg-purple-50/50 dark:bg-purple-950/40 dark:text-purple-300 font-normal"
+                              : s.compania === "Oxxo"
+                              ? "border-amber-300 text-amber-700 bg-amber-50/50 dark:bg-amber-950/40 dark:text-amber-300 font-normal"
                               : "border-slate-300 text-slate-700 dark:text-slate-300 font-normal"
                           }
                         >
                           {s.compania || "—"}
                         </Badge>
                       </TableCell>
-                      <TableCell>{ultimaRecarga(s.id)}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const info = getSaldoRecargaInfo(s.id);
+                          if (!info.vencimiento) return <span className="text-muted-foreground">{info.fecha}</span>;
+                          return (
+                            <div className="flex flex-col">
+                              <span className="font-medium text-xs">{info.fecha} ({info.monto ? `${info.monto}` : ""})</span>
+                              <span className={`text-[10px] font-medium ${info.agotado ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}>
+                                {info.agotado ? `Agotado (${info.vencimiento})` : `Vence el ${info.vencimiento}`}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {can("egresos", "edit") && <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openRecarga(s); }}>Recarga</Button>}
                       </TableCell>
@@ -1271,6 +1336,8 @@ export default function Egresos() {
                     <SelectItem value="Telcel">Telcel</SelectItem>
                     <SelectItem value="AT&T">AT&T</SelectItem>
                     <SelectItem value="Movistar">Movistar</SelectItem>
+                    <SelectItem value="Bait">Bait</SelectItem>
+                    <SelectItem value="Oxxo">Oxxo (Oxxo Cel)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1358,6 +1425,23 @@ export default function Egresos() {
                 onChange={(event) => setRecargaForm({ ...recargaForm, fecha: event.target.value })}
               />
             </div>
+            {(() => {
+              const currentMonto = recargaForm.monto === "otro" ? Number(recargaForm.montoPersonalizado) : Number(recargaForm.monto);
+              if (!currentMonto || !recargaForm.fecha) return null;
+              const dias = getRecargaVigenciaDias(currentMonto);
+              const fechaVenc = getFechaVencimientoRecarga(recargaForm.fecha, currentMonto);
+              return (
+                <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-2.5 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Vigencia estimada: {dias} días</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800/90 dark:text-amber-300">
+                    Se acabará el <strong>{fechaVenc}</strong>. Se notificará a Finanzas y aparecerá en el calendario de la Agenda.
+                  </p>
+                </div>
+              );
+            })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRecargaModalOpen(false)}>Cancelar</Button>

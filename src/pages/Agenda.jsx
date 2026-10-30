@@ -53,6 +53,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
+import { getRecargaVigenciaDias, getFechaVencimientoRecarga } from "@/lib/recargasUtils";
 
 // Tipos de Eventos soportados en la Agenda SERCO
 const EVENT_TYPES = {
@@ -118,6 +119,15 @@ const EVENT_TYPES = {
     dotClass: "bg-rose-500",
     borderLeftClass: "border-l-rose-500",
     icon: DollarSign,
+  },
+  vencimiento_recarga: {
+    id: "vencimiento_recarga",
+    label: "Vencimiento de Saldo",
+    color: "amber",
+    badgeClass: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800",
+    dotClass: "bg-amber-500",
+    borderLeftClass: "border-l-amber-500",
+    icon: Phone,
   },
 };
 
@@ -202,6 +212,7 @@ const emptyEventForm = {
   mes: "",
   estado_cobro: "",
   is_system_cobro: false,
+  is_system_recarga: false,
   // Evidencias fotográficas (Capacitación y Reporte)
   fotos_evidencia: [],
   // General
@@ -248,14 +259,14 @@ export default function Agenda() {
    * - Monitoreo / Monitorista: Solo Reportes.
    */
   const allowedEventTypes = useMemo(() => {
-    // 1. Finanzas y Director de Finanzas: sólo fechas de límite de pago de los servicios
+    // 1. Finanzas y Director de Finanzas: fechas de límite de pago y vencimientos de saldo
     if (isFinanzas) {
-      return ["limite_pago"];
+      return ["limite_pago", "vencimiento_recarga"];
     }
 
     // 2. ADMIN, CEO y Director: acceso a todas las actividades
     if (isExecutive) {
-      return ["entrevista", "visita_supervision", "capacitacion", "reporte", "reunion", "inauguracion", "limite_pago"];
+      return ["entrevista", "visita_supervision", "capacitacion", "reporte", "reunion", "inauguracion", "limite_pago", "vencimiento_recarga"];
     }
 
     // 3. Reclutador: solo entrevistas
@@ -348,11 +359,12 @@ export default function Agenda() {
   async function loadData() {
     setLoading(true);
     try {
-      const [seds, servs, users, cobrosList] = await Promise.all([
+      const [seds, servs, users, cobrosList, saldosList] = await Promise.all([
         sercoApi.entities.Sede.list().catch(() => []),
         sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
         sercoApi.entities.User.list().catch(() => []),
         sercoApi.entities.Cobro.filter(sedeFilter).catch(() => []),
+        sercoApi.entities.Saldo.filter(sedeFilter).catch(() => []),
       ]);
       setSedes(seds || []);
       setServices(servs || []);
@@ -391,7 +403,35 @@ export default function Agenda() {
           };
         });
 
-      setEvents([...loadedEvents, ...paymentDeadlineEvents]);
+      // Generar eventos de vencimiento de recargas de celulares para Finanzas
+      const recargaVencimientoEvents = (saldosList || [])
+        .filter((s) => s && s.fecha && s.monto)
+        .map((s) => {
+          const vigenciaDias = getRecargaVigenciaDias(s.monto);
+          const fechaVenc = getFechaVencimientoRecarga(s.fecha, s.monto);
+          if (!fechaVenc) return null;
+          const hoyStr = new Date().toISOString().slice(0, 10);
+          const isAgotado = fechaVenc <= hoyStr;
+          const montoNum = Number(s.monto || 0);
+          return {
+            id: `recarga_vence_${s.id}_${s.fecha}`,
+            saldo_id: s.id,
+            tipo: "vencimiento_recarga",
+            titulo: `Se acabará saldo: ${s.nombre || s.numero_telefono || "Línea"} (${s.compania || "Celular"} - ${montoNum})`,
+            fecha: fechaVenc,
+            hora_inicio: "09:00",
+            hora_fin: null,
+            sede_id: s.sede_id || null,
+            servicio_nombre: s.servicio || null,
+            monto: s.monto,
+            estado: isAgotado ? "completada" : "programada",
+            notas: `Línea: ${s.numero_telefono || "S/N"} · Asignado a: ${s.nombre || "S/N"} · Servicio: ${s.servicio || "General"} · Compañía: ${s.compania || "N/A"} · Recarga de ${montoNum} el ${s.fecha} (Vigencia: ${vigenciaDias} días).`,
+            is_system_recarga: true,
+          };
+        })
+        .filter(Boolean);
+
+      setEvents([...loadedEvents, ...paymentDeadlineEvents, ...recargaVencimientoEvents]);
     } catch (err) {
       console.error("Error al cargar agenda:", err);
       setEvents([]);
@@ -1469,7 +1509,7 @@ export default function Agenda() {
 
                       {/* Botones de acción rápida */}
                       <div className="flex items-center gap-1.5 shrink-0 self-end md:self-center" onClick={(e) => e.stopPropagation()}>
-                        {canEdit && !ev.is_system_cobro && (
+                        {canEdit && !ev.is_system_cobro && !ev.is_system_recarga && (
                           ev.estado === "programada" ? (
                             <Button
                               variant="outline"
@@ -1500,13 +1540,13 @@ export default function Agenda() {
                             size="icon"
                             className="h-8 w-8 text-muted-foreground hover:text-primary"
                             onClick={(e) => openEdit(ev, e)}
-                            title={ev.is_system_cobro ? "Ver detalles" : "Editar"}
+                            title={ev.is_system_cobro || ev.is_system_recarga ? "Ver detalles" : "Editar"}
                           >
-                            {ev.is_system_cobro ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+                            {(ev.is_system_cobro || ev.is_system_recarga) ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                           </Button>
                         )}
 
-                        {canDelete && !ev.is_system_cobro && (
+                        {canDelete && !ev.is_system_cobro && !ev.is_system_recarga && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -2057,7 +2097,12 @@ export default function Agenda() {
                 </div>
                 {form.is_system_cobro && (
                   <p className="text-[11px] text-muted-foreground bg-rose-100/50 dark:bg-rose-950/40 p-2 rounded">
-                    ℹ️ Esta fecha de límite de pago está sincronizada automáticamente con la cartera del módulo de Facturas.
+                    📌 Esta fecha de límite de pago está sincronizada automáticamente con la cartera del módulo de Facturas.
+                  </p>
+                )}
+                {form.is_system_recarga && (
+                  <p className="text-[11px] text-muted-foreground bg-amber-100/50 dark:bg-amber-950/40 p-2 rounded">
+                    📱 Este evento es un aviso de vencimiento de saldo de recarga telefónica programado desde el módulo de Celulares (Egresos).
                   </p>
                 )}
               </div>
@@ -2174,7 +2219,7 @@ export default function Agenda() {
                   value={form.fecha}
                   onChange={(e) => setForm({ ...form, fecha: e.target.value })}
                   className="h-8 text-xs mt-1"
-                  disabled={form.is_system_cobro}
+                  disabled={form.is_system_cobro || form.is_system_recarga}
                 />
               </div>
             ) : form.tipo === "entrevista" || form.tipo === "reporte" ? (
@@ -2313,9 +2358,9 @@ export default function Agenda() {
 
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => setModalOpen(false)} disabled={saving}>
-              {editingEvent && (!canEdit || editingEvent?.is_system_cobro) ? "Cerrar" : "Cancelar"}
+              {editingEvent && (!canEdit || editingEvent?.is_system_cobro || editingEvent?.is_system_recarga) ? "Cerrar" : "Cancelar"}
             </Button>
-            {(!editingEvent || canEdit) && !editingEvent?.is_system_cobro && (
+            {(!editingEvent || canEdit) && !editingEvent?.is_system_cobro && !editingEvent?.is_system_recarga && (
               <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5 font-semibold">
                 {saving 
                   ? "Guardando..." 

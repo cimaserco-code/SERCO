@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, Che
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1622,6 +1623,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14 text-center">Foto</TableHead>
                   <TableHead className="cursor-pointer select-none hover:text-foreground w-16" onClick={() => handleSort("numero_empleado")}>
                     <div className="flex items-center gap-1">
                       No. {renderSortIcon("numero_empleado")}
@@ -1665,9 +1667,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedActivos.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
                 ) : (
                   sortedActivos.map((item) => (
                     <TableRow
@@ -1675,6 +1677,16 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                       onClick={() => setViewEmpleado(enrichEmpleadoWithMeta(item))}
                     >
+                      <TableCell className="text-center py-1.5 w-14">
+                        <Avatar className="h-9 w-9 mx-auto border shadow-sm">
+                          <AvatarImage src={item.foto_url} alt={item.nombre_completo} className="object-cover" />
+                          <AvatarFallback className="text-[10px] bg-muted font-bold text-muted-foreground">
+                            {item.nombre_completo
+                              ? item.nombre_completo.trim().split(/\s+/).slice(0, 2).map((n) => n[0]).join("").toUpperCase()
+                              : <User className="w-4 h-4 text-muted-foreground" />}
+                          </AvatarFallback>
+                        </Avatar>
+                      </TableCell>
                       <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                         {item.numero_empleado ? (
                           <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border">
@@ -1746,6 +1758,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14 text-center">Foto</TableHead>
                   <TableHead className="cursor-pointer select-none hover:text-foreground w-16" onClick={() => handleSort("numero_empleado")}>
                     <div className="flex items-center gap-1">
                       No. {renderSortIcon("numero_empleado")}
@@ -1776,9 +1789,9 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
                 ) : sortedBajas.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No hay registros de bajas</TableCell></TableRow>
                 ) : (
                   sortedBajas.map((item) => {
                     const est = getFiniquitoEstimation(item.fecha_ingreso, item.fecha_baja, item.sueldo);
@@ -1788,6 +1801,16 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         className={`cursor-pointer ${getServiceRowColor(item.servicio_ubicacion)}`}
                         onClick={() => setViewEmpleado(enrichEmpleadoWithMeta(item))}
                       >
+                        <TableCell className="text-center py-1.5 w-14">
+                          <Avatar className="h-9 w-9 mx-auto border shadow-sm">
+                            <AvatarImage src={item.foto_url} alt={item.nombre_completo} className="object-cover" />
+                            <AvatarFallback className="text-[10px] bg-muted font-bold text-muted-foreground">
+                              {item.nombre_completo
+                                ? item.nombre_completo.trim().split(/\s+/).slice(0, 2).map((n) => n[0]).join("").toUpperCase()
+                                : <User className="w-4 h-4 text-muted-foreground" />}
+                            </AvatarFallback>
+                          </Avatar>
+                        </TableCell>
                         <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                           {item.numero_empleado ? (
                             <Badge variant="outline" className="font-mono font-bold bg-muted/60 text-foreground border-border">

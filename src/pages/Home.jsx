@@ -10,6 +10,7 @@ import { useSedeScope } from "@/hooks/useSedeScope";
 import { usePermissions } from "@/lib/PermissionsContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
+import { getFechaVencimientoRecarga } from "@/lib/recargasUtils";
 
 export default function Home() {
   const { user } = useAuth();
@@ -190,7 +191,7 @@ export default function Home() {
     async function load() {
       setLoading(true);
       try {
-        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols, usersList, agendaEvents] = await Promise.all([
+        const [emp, serv, inv, docs, turnos, cobros, seds, coms, vacs, sols, usersList, agendaEvents, saldosList, allCobrosList] = await Promise.all([
           (canView("empleados") ? sercoApi.entities.Empleado.filter(sedeFilter) : Promise.resolve([])).catch(() => []),
           sercoApi.entities.Servicio.filter(sedeFilter).catch(() => []),
           sercoApi.entities.InventarioItem.filter(sedeFilter).catch(() => []),
@@ -202,7 +203,9 @@ export default function Home() {
           sercoApi.entities.Vacante.filter(sedeFilter).catch(() => []),
           sercoApi.entities.SolicitudInventario.list().catch(() => []),
           sercoApi.entities.User.list().catch(() => []),
-          sercoApi.entities.Agenda ? sercoApi.entities.Agenda.list().catch(() => []) : Promise.resolve([])
+          sercoApi.entities.Agenda ? sercoApi.entities.Agenda.list().catch(() => []) : Promise.resolve([]),
+          sercoApi.entities.Saldo ? sercoApi.entities.Saldo.filter(sedeFilter).catch(() => []) : Promise.resolve([]),
+          sercoApi.entities.Cobro ? sercoApi.entities.Cobro.filter(sedeFilter).catch(() => []) : Promise.resolve([])
         ]);
 
         const activeComs = (coms || []).filter(c => c.activo !== false);
@@ -357,7 +360,8 @@ export default function Home() {
         const isRh = role === "rh" || role === "reclutador";
 
         // 1. Finanzas: Material de inventario solicitado (pendiente)
-        if (role === "finanzas" || isSuperUser) {
+        const isFinanzasUser = role === "finanzas" || role.includes("finanz") || isSuperUser;
+        if (isFinanzasUser) {
           (sols || []).filter(s => s.estado === 'pendiente').forEach(s => {
             const rawTime = s.created_at || s.fecha || null;
             if (!isWithinLastWeek(rawTime)) return;
@@ -372,6 +376,57 @@ export default function Home() {
               hora: formatTimeAndDate(rawTime, s.hora || ""),
               rawTimestamp: parseToTimestamp(rawTime),
             });
+          });
+
+          // 1b. Finanzas: Cobros vencidos (Servicios que no han pagado a la fecha límite de factura)
+          const hoyStr = new Date().toISOString().slice(0, 10);
+          const cobrosToCheck = allCobrosList && allCobrosList.length > 0 ? allCobrosList : monthlyCobros;
+          (cobrosToCheck || []).forEach((c) => {
+            const isPagado = (c.estado || "").toLowerCase() === "pagado";
+            if (!isPagado && c.fecha_limite_pago && c.fecha_limite_pago <= hoyStr) {
+              const diffMs = new Date(hoyStr) - new Date(c.fecha_limite_pago);
+              const diasVencido = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+              if (diasVencido >= 0 && diasVencido <= 60) {
+                const montoPendiente = Number(c.monto || 0);
+                alertsList.push({
+                  id: `cobro-vencido-${c.id}`,
+                  type: 'danger',
+                  categoria: 'Cobro Vencido',
+                  title: 'Factura de Servicio Vencida',
+                  description: `El servicio "${c.servicio_nombre || "Servicio"}" no ha liquidado su factura (Límite: ${c.fecha_limite_pago}${diasVencido > 0 ? `, venció hace ${diasVencido} día(s)` : ", vence hoy"}). Monto pendiente: ${montoPendiente.toLocaleString("es-MX")}.`,
+                  autor: 'Facturación / Cobros',
+                  hora: `Límite: ${c.fecha_limite_pago}`,
+                  rawTimestamp: new Date(c.fecha_limite_pago + "T23:59:59").getTime(),
+                });
+              }
+            }
+          });
+
+          // 1c. Finanzas: Saldos de celular por agotarse o ya agotados
+          (saldosList || []).forEach((s) => {
+            if (s.fecha && s.monto) {
+              const fechaVenc = getFechaVencimientoRecarga(s.fecha, s.monto);
+              if (!fechaVenc) return;
+              const diffDias = Math.round((new Date(fechaVenc) - new Date(hoyStr)) / (1000 * 60 * 60 * 24));
+              if (diffDias <= 2 && diffDias >= -7) {
+                const tiempoTexto = diffDias > 0
+                  ? `vence en ${diffDias} día(s) (${fechaVenc})`
+                  : diffDias === 0
+                  ? `vence hoy (${fechaVenc})`
+                  : `se agotó el ${fechaVenc}`;
+
+                alertsList.push({
+                  id: `saldo-vence-${s.id}-${s.fecha}`,
+                  type: diffDias <= 0 ? 'danger' : 'warning',
+                  categoria: 'Saldo Celular',
+                  title: diffDias <= 0 ? 'Saldo de Celular Agotado' : 'Saldo de Celular por Agotarse',
+                  description: `El saldo de ${s.monto} (${s.compania || "Celular"}) de ${s.nombre || s.numero_telefono || "el equipo"} ${tiempoTexto}.`,
+                  autor: 'Telefonía / Egresos',
+                  hora: fechaVenc,
+                  rawTimestamp: new Date(fechaVenc + "T12:00:00").getTime(),
+                });
+              }
+            }
           });
         }
 

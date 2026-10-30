@@ -29,6 +29,7 @@ function notificationPath(notification) {
     case "agenda": return `/agenda?evento=${recordId}`;
     case "egreso": return `/egresos?egreso=${recordId}`;
     case "recarga_celular": return `/egresos?recarga=${recordId}`;
+    case "cobro": return `/cobros?registro=${recordId}`;
     default: return "/";
   }
 }
