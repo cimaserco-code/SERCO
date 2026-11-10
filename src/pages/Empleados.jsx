@@ -48,6 +48,7 @@ import {
   enrichEmpleadoWithMeta,
   enrichEmpleadosListWithMeta,
 } from "@/lib/empleadoMetadata";
+import { EmpleadoAvatar, EmpleadoProfilePhoto } from "@/components/EmpleadoAvatar";
 
 export function formatProperName(text) {
   return formatPersonName(text);
@@ -297,6 +298,7 @@ export default function Empleados() {
   const [newNumeroInput, setNewNumeroInput] = useState("");
   const [savingNumero, setSavingNumero] = useState(false);
   const [editNumeroError, setEditNumeroError] = useState("");
+  const [updatingProfilePhoto, setUpdatingProfilePhoto] = useState(false);
   // Estado para Modal de Desglose de Finiquito Editable estilo Excel
   const getInitialFiniquitoForm = (emp) => {
     if (!emp) {
@@ -1072,10 +1074,10 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                 upsert: true,
               });
             if (!upErr) {
-              const { data: pubData } = supabase.storage
+              const { data: signData } = await supabase.storage
                 .from("fotos_empleados")
-                .getPublicUrl(fileName);
-              if (pubData?.publicUrl) uploadedUrl = pubData.publicUrl;
+                .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+              if (signData?.signedUrl) uploadedUrl = signData.signedUrl;
             }
           } catch (err) {
             console.warn("Subida a fotos_empleados falló, intentando documentos:", err);
@@ -1091,18 +1093,18 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                   upsert: true,
                 });
               if (!docErr) {
-                const { data: pubData } = supabase.storage
+                const { data: signData } = await supabase.storage
                   .from("documentos")
-                  .getPublicUrl(`fotos/${fileName}`);
-                if (pubData?.publicUrl) uploadedUrl = pubData.publicUrl;
+                  .createSignedUrl(`fotos/${fileName}`, 60 * 60 * 24 * 365);
+                if (signData?.signedUrl) uploadedUrl = signData.signedUrl;
               }
             } catch (err) {
               console.warn("Subida a documentos falló:", err);
             }
           }
 
-          // 3. Respaldo de seguridad: guardar WebP ultraligero (~25KB) si Storage no está disponible
-          finalFotoUrl = uploadedUrl || photoPreview;
+          // 3. Respaldo definitivo: photoPreview (WebP dataUrl ~25KB) garantiza renderizado 100% inmediato
+          finalFotoUrl = photoPreview || uploadedUrl;
         }
       }
 
@@ -1221,6 +1223,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           experiencia: form.experiencia ? form.experiencia.trim() : "",
           observaciones: form.observaciones ? form.observaciones.trim() : "",
           comentarios: form.observaciones ? form.observaciones.trim() : "",
+          foto_url: finalFotoUrl,
         });
 
         await executeWithFallback((d) => sercoApi.entities.Empleado.update(editing.id, d), cleanPayload);
@@ -1240,6 +1243,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             experiencia: form.experiencia ? form.experiencia.trim() : "",
             observaciones: form.observaciones ? form.observaciones.trim() : "",
             comentarios: form.observaciones ? form.observaciones.trim() : "",
+            foto_url: finalFotoUrl,
           });
         }
       }
@@ -1409,6 +1413,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
           experiencia: form.experiencia ? form.experiencia.trim() : "",
           observaciones: form.observaciones ? form.observaciones.trim() : "",
           comentarios: form.observaciones ? form.observaciones.trim() : "",
+          foto_url: finalFotoUrl,
         }));
       }
 
@@ -1564,6 +1569,84 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
       setSavingMotivo(false);
     }
   }
+
+  const handleProfilePhotoUpload = async (file) => {
+    if (!file || !viewEmpleado?.id) return;
+    try {
+      setUpdatingProfilePhoto(true);
+      const { blob, dataUrl } = await compressImage(file, 350, 350, 0.8);
+
+      const ext = blob.type === "image/webp" ? "webp" : "jpg";
+      const fileId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const fileName = `emp_${fileId}.${ext}`;
+
+      let uploadedUrl = null;
+      try {
+        const { error: upErr } = await supabase.storage
+          .from("fotos_empleados")
+          .upload(fileName, blob, { contentType: blob.type || "image/webp", upsert: true });
+        if (!upErr) {
+          const { data: signData } = await supabase.storage
+            .from("fotos_empleados")
+            .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+          if (signData?.signedUrl) uploadedUrl = signData.signedUrl;
+        }
+      } catch {
+        // Fallback
+      }
+
+      if (!uploadedUrl) {
+        try {
+          const { error: docErr } = await supabase.storage
+            .from("documentos")
+            .upload(`fotos/${fileName}`, blob, { contentType: blob.type || "image/webp", upsert: true });
+          if (!docErr) {
+            const { data: signData } = await supabase.storage
+              .from("documentos")
+              .createSignedUrl(`fotos/${fileName}`, 60 * 60 * 24 * 365);
+            if (signData?.signedUrl) uploadedUrl = signData.signedUrl;
+          }
+        } catch {
+          // Fallback
+        }
+      }
+
+      const finalUrl = dataUrl || uploadedUrl;
+
+      // Guardar en metadata local
+      await setStoredEmpleadoMeta(viewEmpleado.id, {
+        foto_url: finalUrl,
+      });
+
+      // Intentar actualizar en base de datos
+      try {
+        await sercoApi.entities.Empleado.update(viewEmpleado.id, {
+          foto_url: finalUrl,
+        });
+      } catch (err) {
+        console.warn("Actualización directa en Supabase omitida:", err?.message);
+      }
+
+      // Actualizar estado en tiempo real
+      setViewEmpleado((prev) => (prev ? { ...prev, foto_url: finalUrl } : null));
+      setItems((prev) => prev.map((e) => (e.id === viewEmpleado.id ? { ...e, foto_url: finalUrl } : e)));
+      setAllEmployees((prev) => prev.map((e) => (e.id === viewEmpleado.id ? { ...e, foto_url: finalUrl } : e)));
+
+      toast({
+        title: "Fotografía actualizada",
+        description: `Se actualizó la fotografía de ${formatUserDisplayName(viewEmpleado.nombre_completo, user?.role)}.`,
+      });
+    } catch (err) {
+      console.error("Error al actualizar foto:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo actualizar la fotografía seleccionada.",
+      });
+    } finally {
+      setUpdatingProfilePhoto(false);
+    }
+  };
 
   async function handleConfirmReingreso() {
     try {
@@ -1809,14 +1892,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                       onClick={() => setViewEmpleado(enrichEmpleadoWithMeta(item))}
                     >
                       <TableCell className="text-center py-1.5 w-14">
-                        <Avatar className="h-9 w-9 mx-auto border shadow-sm">
-                          <AvatarImage src={item.foto_url} alt={item.nombre_completo} className="object-cover" />
-                          <AvatarFallback className="text-[10px] bg-muted font-bold text-muted-foreground">
-                            {item.nombre_completo
-                              ? item.nombre_completo.trim().split(/\s+/).slice(0, 2).map((n) => n[0]).join("").toUpperCase()
-                              : <User className="w-4 h-4 text-muted-foreground" />}
-                          </AvatarFallback>
-                        </Avatar>
+                        <EmpleadoAvatar fotoUrl={item.foto_url} nombre={item.nombre_completo} />
                       </TableCell>
                       <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                         {item.numero_empleado ? (
@@ -1933,14 +2009,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         onClick={() => setViewEmpleado(enrichEmpleadoWithMeta(item))}
                       >
                         <TableCell className="text-center py-1.5 w-14">
-                          <Avatar className="h-9 w-9 mx-auto border shadow-sm">
-                            <AvatarImage src={item.foto_url} alt={item.nombre_completo} className="object-cover" />
-                            <AvatarFallback className="text-[10px] bg-muted font-bold text-muted-foreground">
-                              {item.nombre_completo
-                                ? item.nombre_completo.trim().split(/\s+/).slice(0, 2).map((n) => n[0]).join("").toUpperCase()
-                                : <User className="w-4 h-4 text-muted-foreground" />}
-                            </AvatarFallback>
-                          </Avatar>
+                          <EmpleadoAvatar fotoUrl={item.foto_url} nombre={item.nombre_completo} />
                         </TableCell>
                         <TableCell className="font-semibold text-xs text-muted-foreground whitespace-nowrap">
                           {item.numero_empleado ? (
@@ -3274,19 +3343,13 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
             <div className="p-4 sm:p-5 rounded-2xl border bg-card/90 shadow-2xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="relative shrink-0">
-                    {viewEmpleado?.foto_url ? (
-                      <img
-                        src={viewEmpleado.foto_url}
-                        alt={viewEmpleado.nombre_completo}
-                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-primary/20 shadow-md bg-background"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col items-center justify-center text-primary shadow-xs">
-                        <User className="w-8 h-8" />
-                      </div>
-                    )}
-                  </div>
+                  <EmpleadoProfilePhoto
+                    fotoUrl={viewEmpleado?.foto_url}
+                    nombre={viewEmpleado?.nombre_completo}
+                    canEdit={can("empleados", "edit")}
+                    uploading={updatingProfilePhoto}
+                    onUploadPhoto={handleProfilePhotoUpload}
+                  />
 
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">

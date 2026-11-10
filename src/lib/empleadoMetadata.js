@@ -3,7 +3,7 @@ import { sercoApi } from "@/api/sercoClient";
 const STORAGE_KEY = "serco_empleados_metadata";
 
 /**
- * Obtiene el mapa completo de metadata de empleados { [empId]: { experiencia: string, observaciones: string } }
+ * Obtiene el mapa completo de metadata de empleados { [empId]: { experiencia: string, observaciones: string, foto_url: string } }
  */
 export function getStoredEmpleadosMetadata() {
   try {
@@ -28,23 +28,24 @@ export function saveStoredEmpleadosMetadata(map) {
 }
 
 /**
- * Obtiene la metadata (experiencia y observaciones) guardada para un empleado específico
+ * Obtiene la metadata (experiencia, observaciones y fotografía) guardada para un empleado específico
  */
 export function getStoredEmpleadoMeta(empId) {
-  if (!empId) return { experiencia: "", observaciones: "" };
+  if (!empId) return { experiencia: "", observaciones: "", foto_url: "" };
   const map = getStoredEmpleadosMetadata();
   const meta = map[empId];
   return {
     experiencia: meta?.experiencia || "",
     observaciones: meta?.observaciones || "",
+    foto_url: meta?.foto_url || "",
   };
 }
 
 /**
- * Asigna y persiste experiencia y observaciones para un empleado específico.
+ * Asigna y persiste experiencia, observaciones y fotografía para un empleado específico.
  * Guarda en almacenamiento local e intenta persistir en Supabase.
  */
-export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones, comentarios }) {
+export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones, comentarios, foto_url }) {
   if (!empId) return;
   const map = getStoredEmpleadosMetadata();
   const current = map[empId] || {};
@@ -57,10 +58,15 @@ export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones,
     ? (experiencia || "")
     : (current.experiencia || "");
 
+  const fotoVal = foto_url !== undefined
+    ? (foto_url || "")
+    : (current.foto_url || "");
+
   const newMeta = {
     experiencia: expVal,
     observaciones: obsVal,
     comentarios: obsVal,
+    foto_url: fotoVal,
     updated_at: new Date().toISOString(),
   };
   
@@ -73,6 +79,7 @@ export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones,
       const payload = {};
       if (newMeta.experiencia !== undefined) payload.experiencia = newMeta.experiencia;
       if (newMeta.observaciones !== undefined) payload.observaciones = newMeta.observaciones;
+      if (newMeta.foto_url) payload.foto_url = newMeta.foto_url;
       if (Object.keys(payload).length > 0) {
         await sercoApi.entities.Empleado.update(empId, payload);
       }
@@ -84,7 +91,7 @@ export async function setStoredEmpleadoMeta(empId, { experiencia, observaciones,
 }
 
 /**
- * Resuelve y enriquece un empleado con su experiencia y observaciones/comentarios,
+ * Resuelve y enriquece un empleado con su experiencia, observaciones/comentarios y fotografía,
  * dando prioridad a los datos de la base de datos si existen, o al almacenamiento local.
  */
 export function enrichEmpleadoWithMeta(emp) {
@@ -94,11 +101,13 @@ export function enrichEmpleadoWithMeta(emp) {
   const obs = emp.observaciones != null && emp.observaciones !== ""
     ? emp.observaciones
     : (emp.comentarios != null && emp.comentarios !== "" ? emp.comentarios : (stored.observaciones || stored.comentarios || ""));
+  const foto = emp.foto_url != null && emp.foto_url !== "" ? emp.foto_url : (stored.foto_url || "");
   return {
     ...emp,
     experiencia: exp || "",
     observaciones: obs || "",
     comentarios: obs || "",
+    foto_url: foto || "",
   };
 }
 
@@ -115,11 +124,13 @@ export function enrichEmpleadosListWithMeta(list) {
     const obs = emp.observaciones != null && emp.observaciones !== ""
       ? emp.observaciones
       : (emp.comentarios != null && emp.comentarios !== "" ? emp.comentarios : (stored.observaciones || stored.comentarios || ""));
+    const foto = emp.foto_url != null && emp.foto_url !== "" ? emp.foto_url : (stored.foto_url || "");
     return {
       ...emp,
       experiencia: exp,
       observaciones: obs,
       comentarios: obs,
+      foto_url: foto,
     };
   });
 }
