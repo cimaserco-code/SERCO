@@ -68,6 +68,21 @@ export default function Usuarios() {
   const [showClientPassword, setShowClientPassword] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(null);
 
+  // Creación de Usuario directa estilo Supabase (con correo y contraseña)
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({
+    email: "",
+    full_name: "",
+    password: "Serco2026",
+    role: "Coordinador Administrativo",
+    sede_ids: [],
+    servicio_id: "",
+    autoConfirm: true,
+  });
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [createdSuccessData, setCreatedSuccessData] = useState(null);
+
   // Edición y Reseteo
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({ role: "user", sede_ids: [], estado: "active" });
@@ -317,6 +332,142 @@ export default function Usuarios() {
     }
   }
 
+  function openCreateUser(defaultRole = null, defaultService = null) {
+    const targetRole = defaultRole
+      ? defaultRole
+      : (roles.find((r) => r.nombre.toLowerCase().includes("coordinador"))?.nombre || (roles[0]?.nombre || "user"));
+
+    setCreateUserForm({
+      email: defaultService?.correo || defaultService?.correo_2 || "",
+      full_name: defaultService?.admin_nombre || defaultService?.nombre || "",
+      password: "Serco2026",
+      role: targetRole,
+      sede_ids: defaultService?.sede_id ? [defaultService.sede_id] : [],
+      servicio_id: defaultService?.id || "",
+      autoConfirm: true,
+    });
+    setShowCreatePassword(false);
+    setCreateUserOpen(true);
+  }
+
+  const generatePassword = () => {
+    const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%";
+    let pwd = "Serco!";
+    for (let i = 0; i < 4; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setCreateUserForm((prev) => ({ ...prev, password: pwd }));
+    setShowCreatePassword(true);
+  };
+
+  async function handleCreateUser(e) {
+    if (e) e.preventDefault();
+    const email = (createUserForm.email || "").trim().toLowerCase();
+    const password = createUserForm.password || "Serco2026";
+    const fullName = (createUserForm.full_name || "").trim() || email.split("@")[0];
+    const role = createUserForm.role || "user";
+    const sedeIds = createUserForm.sede_ids || [];
+    const servicioId = (role || "").toLowerCase() === "cliente" ? createUserForm.servicio_id : null;
+
+    if (!email) {
+      toast({
+        title: "Correo requerido",
+        description: "Por favor proporciona un correo electrónico.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      toast({
+        title: "Contraseña inválida",
+        description: "La contraseña debe tener al menos 6 caracteres.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingUser(true);
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.access_token) throw new Error("La sesión de administrador expiró. Inicia sesión nuevamente.");
+
+      let res = await fetch("/api/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          fullName,
+          role,
+          sede_ids: sedeIds,
+          servicio_id: servicioId,
+        }),
+      });
+
+      // Si /api/create-user devolviera 404 (ej. en desarrollo local), intentar /api/create-client si es cliente
+      if (res.status === 404 && (role || "").toLowerCase() === "cliente") {
+        res = await fetch("/api/create-client", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ email, password, fullName }),
+        });
+      }
+
+      const responseBody = await res.text();
+      let result = {};
+      try {
+        result = responseBody ? JSON.parse(responseBody) : {};
+      } catch {
+        result = {};
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || responseBody.trim() || `Error ${res.status}`);
+      }
+
+      // Si vinculó un servicio, actualizar correo si no tenía
+      if (servicioId) {
+        const targetServ = services.find((s) => s.id === servicioId);
+        if (targetServ && !targetServ.correo && !targetServ.correo_2) {
+          await sercoApi.entities.Servicio.update(servicioId, { correo: email }).catch(() => {});
+        }
+      }
+
+      toast({
+        title: "Usuario creado exitosamente",
+        description: `Usuario ${email} registrado y listo para ingresar con su contraseña.`,
+      });
+
+      setCreatedSuccessData({
+        email,
+        password,
+        fullName,
+        role,
+        sedeNames: sedeNombres(sedeIds),
+      });
+
+      setCreateUserOpen(false);
+      await load();
+    } catch (err) {
+      console.error("Error al crear usuario:", err);
+      toast({
+        title: "Error al crear usuario",
+        description: err.message || "No se pudo registrar el usuario en Supabase.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingUser(false);
+    }
+  }
+
   function handleCopyCredentials(u) {
     const text = `Acceso al Portal de Clientes SERCO:\n\nUsuario / Correo: ${u.email}\nContraseña inicial: Serco2026\nEnlace de acceso: ${window.location.origin}/login\n\n(Puedes cambiar tu contraseña en cualquier momento desde tu menú en el portal).`;
     navigator.clipboard.writeText(text);
@@ -361,12 +512,22 @@ export default function Usuarios() {
             />
           </div>
           {activeTab === "personal" ? (
-            <Button onClick={openInvite} className="h-9 text-xs">
-              <Plus className="w-4 h-4 mr-1" /> Invitar Personal
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button onClick={() => openCreateUser()} className="h-9 text-xs font-semibold shadow-xs">
+                <UserPlus className="w-4 h-4 mr-1.5" /> Crear Usuario
+              </Button>
+              <Button
+                variant="outline"
+                onClick={openInvite}
+                className="h-9 text-xs"
+                title="Enviar solo invitación por correo sin contraseña"
+              >
+                <Plus className="w-4 h-4 mr-1" /> Invitar
+              </Button>
+            </div>
           ) : (
-            <Button onClick={() => openCreateClient()} className="h-9 text-xs">
-              <UserPlus className="w-4 h-4 mr-1" /> Nuevo Cliente
+            <Button onClick={() => openCreateUser("cliente")} className="h-9 text-xs font-semibold shadow-xs">
+              <UserPlus className="w-4 h-4 mr-1.5" /> Nuevo Cliente
             </Button>
           )}
         </div>
@@ -465,7 +626,7 @@ export default function Usuarios() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-[11px] bg-white dark:bg-slate-900 border-amber-300 hover:bg-amber-100"
-                        onClick={() => openCreateClient(serv)}
+                        onClick={() => openCreateUser("cliente", serv)}
                       >
                         ⚡ Habilitar {serv.nombre}
                       </Button>
@@ -569,6 +730,300 @@ export default function Usuarios() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* ══════════════════ MODAL CREACIÓN DIRECTA DE USUARIO (ESTILO SUPABASE) ══════════════════ */}
+      <Dialog open={createUserOpen} onOpenChange={setCreateUserOpen}>
+        <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-heading">
+              <UserPlus className="w-5 h-5 text-primary" />
+              Crear Usuario en el Sistema
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Crea una cuenta en Supabase con correo y contraseña. El usuario quedará listo para iniciar sesión de inmediato.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateUser} className="space-y-4 py-2">
+            {/* 1. Nombre Completo */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Nombre Completo *</Label>
+              <Input
+                placeholder="Ej. Lic. Fernando Gómez Martínez"
+                value={createUserForm.full_name}
+                onChange={(e) => setCreateUserForm({ ...createUserForm, full_name: e.target.value })}
+                required
+                className="text-xs h-9"
+              />
+            </div>
+
+            {/* 2. Correo Electrónico */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Correo Electrónico *</Label>
+              <Input
+                type="email"
+                placeholder="usuario@ejemplo.com"
+                value={createUserForm.email}
+                onChange={(e) => setCreateUserForm({ ...createUserForm, email: e.target.value })}
+                required
+                className="text-xs h-9"
+              />
+            </div>
+
+            {/* 3. Contraseña con visor y generador */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">Contraseña de Acceso *</Label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateUserForm((prev) => ({ ...prev, password: "Serco2026" }));
+                      setShowCreatePassword(true);
+                    }}
+                    className="text-[11px] text-primary hover:underline font-medium"
+                  >
+                    Usar "Serco2026"
+                  </button>
+                  <span className="text-muted-foreground text-[10px]">·</span>
+                  <button
+                    type="button"
+                    onClick={generatePassword}
+                    className="text-[11px] text-primary hover:underline font-medium flex items-center gap-1"
+                  >
+                    <KeyRound className="w-3 h-3" /> Generar Segura
+                  </button>
+                </div>
+              </div>
+              <div className="relative">
+                <Input
+                  type={showCreatePassword ? "text" : "password"}
+                  value={createUserForm.password}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, password: e.target.value })}
+                  placeholder="Mínimo 6 caracteres"
+                  required
+                  minLength={6}
+                  className="text-xs h-9 pr-10 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePassword(!showCreatePassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showCreatePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* 4. Rol */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Rol Asignado *</Label>
+              <Select
+                value={createUserForm.role}
+                onValueChange={(val) => setCreateUserForm({ ...createUserForm, role: val })}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecciona un rol..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={r.nombre} className="text-xs">
+                      <div className="flex flex-col text-left">
+                        <span className="font-semibold">{r.nombre}</span>
+                        {r.descripcion && (
+                          <span className="text-[11px] text-muted-foreground truncate max-w-xs">
+                            {r.descripcion}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 5. Si es Cliente: Vincular Servicio */}
+            {(createUserForm.role || "").toLowerCase() === "cliente" && (
+              <div className="space-y-1.5 p-3 rounded-lg border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">
+                <Label className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                  Vincular a un Servicio Existente (Opcional)
+                </Label>
+                <Select
+                  value={createUserForm.servicio_id}
+                  onValueChange={(srvId) => {
+                    if (srvId === "ninguno") {
+                      setCreateUserForm((prev) => ({ ...prev, servicio_id: "" }));
+                      return;
+                    }
+                    const sel = services.find((s) => s.id === srvId);
+                    if (sel) {
+                      setCreateUserForm((prev) => ({
+                        ...prev,
+                        servicio_id: srvId,
+                        full_name: prev.full_name || sel.admin_nombre || sel.nombre,
+                        email: prev.email || sel.correo || sel.correo_2 || "",
+                      }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs bg-background">
+                    <SelectValue placeholder="Seleccionar servicio..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ninguno">-- Ninguno (Captura Manual) --</SelectItem>
+                    {services.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.nombre} {s.correo ? `(${s.correo})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* 6. Sedes Asignadas */}
+            {(createUserForm.role || "").toLowerCase() !== "cliente" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold">Sedes Asignadas</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (createUserForm.sede_ids.length === sedes.length) {
+                        setCreateUserForm((prev) => ({ ...prev, sede_ids: [] }));
+                      } else {
+                        setCreateUserForm((prev) => ({ ...prev, sede_ids: sedes.map((s) => s.id) }));
+                      }
+                    }}
+                    className="text-[11px] text-primary hover:underline font-medium"
+                  >
+                    {createUserForm.sede_ids.length === sedes.length ? "Deseleccionar todas" : "Seleccionar todas"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border rounded-lg bg-muted/20">
+                  {sedes.map((s) => {
+                    const isChecked = createUserForm.sede_ids.includes(s.id);
+                    return (
+                      <label key={s.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setCreateUserForm((prev) => ({
+                                ...prev,
+                                sede_ids: [...prev.sede_ids, s.id],
+                              }));
+                            } else {
+                              setCreateUserForm((prev) => ({
+                                ...prev,
+                                sede_ids: prev.sede_ids.filter((id) => id !== s.id),
+                              }));
+                            }
+                          }}
+                        />
+                        <span className="truncate">{s.nombre}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 7. Auto-Confirmación (Estilo Supabase) */}
+            <div className="flex items-start gap-2.5 p-3 rounded-lg border bg-muted/30">
+              <Checkbox
+                id="autoConfirmCheck"
+                checked={createUserForm.autoConfirm}
+                onCheckedChange={(c) => setCreateUserForm({ ...createUserForm, autoConfirm: c === true })}
+                className="mt-0.5"
+              />
+              <div className="space-y-0.5">
+                <label htmlFor="autoConfirmCheck" className="text-xs font-bold text-foreground cursor-pointer">
+                  Auto-confirmar usuario (Estilo Supabase)
+                </label>
+                <p className="text-[11px] text-muted-foreground">
+                  Habilita la cuenta inmediatamente para que el usuario pueda iniciar sesión con sus credenciales sin verificar correo.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setCreateUserOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={creatingUser || !createUserForm.email || !createUserForm.password}
+                className="font-semibold"
+              >
+                {creatingUser ? "Creando en Supabase..." : "Crear Usuario"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL DE ÉXITO CON CREDENCIALES COPIABLES ══════════════════ */}
+      <Dialog open={!!createdSuccessData} onOpenChange={(v) => !v && setCreatedSuccessData(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-2">
+              <Check className="w-6 h-6 stroke-[3]" />
+            </div>
+            <DialogTitle className="text-center font-heading text-lg">
+              ¡Usuario Creado Exitosamente!
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs">
+              La cuenta fue habilitada en Supabase y está lista para ser utilizada.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-4 rounded-xl border bg-muted/40 space-y-2 text-xs">
+            <div className="flex justify-between py-1 border-b">
+              <span className="text-muted-foreground font-medium">Nombre:</span>
+              <strong className="text-foreground">{createdSuccessData?.fullName}</strong>
+            </div>
+            <div className="flex justify-between py-1 border-b">
+              <span className="text-muted-foreground font-medium">Correo:</span>
+              <strong className="font-mono text-foreground">{createdSuccessData?.email}</strong>
+            </div>
+            <div className="flex justify-between py-1 border-b">
+              <span className="text-muted-foreground font-medium">Contraseña:</span>
+              <strong className="font-mono text-primary font-bold text-sm">{createdSuccessData?.password}</strong>
+            </div>
+            <div className="flex justify-between py-1 border-b">
+              <span className="text-muted-foreground font-medium">Rol:</span>
+              <Badge variant="outline" className="capitalize">{createdSuccessData?.role}</Badge>
+            </div>
+            {createdSuccessData?.sedeNames && createdSuccessData.sedeNames !== "—" && (
+              <div className="flex justify-between py-1">
+                <span className="text-muted-foreground font-medium">Sedes:</span>
+                <span className="text-right max-w-[220px] truncate">{createdSuccessData.sedeNames}</span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+            <Button
+              className="w-full sm:w-auto flex-1 font-semibold"
+              onClick={() => {
+                const text = `Credenciales de Acceso a SERCO:\n\nUsuario: ${createdSuccessData?.email}\nContraseña: ${createdSuccessData?.password}\nRol: ${createdSuccessData?.role}\n\nIngresa aquí: ${window.location.origin}/login`;
+                navigator.clipboard.writeText(text);
+                toast({
+                  title: "Credenciales copiadas",
+                  description: "Se han copiado los datos al portapapeles para compartirlos por WhatsApp o correo.",
+                });
+              }}
+            >
+              <Copy className="w-4 h-4 mr-1.5" /> Copiar Datos de Acceso
+            </Button>
+            <Button variant="outline" onClick={() => setCreatedSuccessData(null)}>
+              Listo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal para Crear Cuenta de Cliente (Contraseña genérica Serco2026) */}
       <Dialog open={clientModalOpen} onOpenChange={setClientModalOpen}>

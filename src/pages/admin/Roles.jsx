@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionsContext";
-import { ShieldCheck, Plus, Pencil, Trash2, Lock } from "lucide-react";
+import { ShieldCheck, Plus, Pencil, Trash2, Lock, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,14 +19,19 @@ const roleColors = {
   admin: "bg-emerald-500",
   supervisor: "bg-blue-500",
   user: "bg-slate-500",
+  "coordinador administrativo": "bg-indigo-600",
+  coordinador: "bg-indigo-600",
+  rh: "bg-amber-600",
+  finanzas: "bg-teal-600",
+  director: "bg-purple-600",
 };
 
 const emptyForm = { nombre: "", descripcion: "", permisos: {} };
 
 export default function Roles() {
   const { user } = useAuth();
-  const { canView } = usePermissions();
-  const isAdmin = canView("administracion");
+  const { canView, isAdmin: isSuperAdmin } = usePermissions();
+  const isAdmin = isSuperAdmin || canView("roles");
   const { toast } = useToast();
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +59,37 @@ export default function Roles() {
     setEditing(null);
     setForm(emptyForm);
     setModalOpen(true);
+  }
+
+  async function handleQuickInstallCoordinador() {
+    setSaving(true);
+    try {
+      const coordinadorPreset = {
+        nombre: "Coordinador Administrativo",
+        descripcion: "Habilidades administrativas: sedes, clientes, usuarios, comunicados y reportes de atención a clientes.",
+        permisos: {
+          inicio: { view: true },
+          overview: { view: true },
+          administracion: { view: true },
+          sedes: { view: true, create: true, edit: true, delete: false },
+          usuarios: { view: true, create: true, edit: true, delete: false },
+          comunicados: { view: true, create: true, edit: true, delete: false },
+          atencion: { view: true, create: true, edit: true, delete: false },
+          servicios: { view: true, create: false, edit: false, delete: false },
+          todas_sedes: { view: true },
+        },
+      };
+      await sercoApi.entities.Rol.create(coordinadorPreset);
+      toast({
+        title: "Rol creado",
+        description: "Se configuró el nuevo rol 'Coordinador Administrativo' con éxito.",
+      });
+      await load();
+    } catch (e) {
+      toast({ title: "Error al crear rol", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openEdit(rol) {
@@ -111,9 +147,22 @@ export default function Roles() {
           <h2 className="text-2xl font-heading font-bold">Roles</h2>
           <p className="text-sm text-muted-foreground mt-1">Roles y permisos del sistema</p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="w-4 h-4 mr-1" /> Crear
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {!roles.some((r) => (r.nombre || "").toLowerCase().includes("coordinador")) && (
+            <Button
+              variant="outline"
+              onClick={handleQuickInstallCoordinador}
+              disabled={saving}
+              className="bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 text-xs h-9"
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-indigo-600" />
+              Crear Coordinador Administrativo
+            </Button>
+          )}
+          <Button onClick={openCreate} className="text-xs h-9">
+            <Plus className="w-4 h-4 mr-1" /> Nuevo Rol
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -183,6 +232,13 @@ export default function Roles() {
               <RolePermissionEditor
                 permissions={form.permisos}
                 onChange={(permisos) => setForm({ ...form, permisos })}
+                onApplyPreset={(preset) =>
+                  setForm((f) => ({
+                    ...f,
+                    nombre: f.nombre || preset.name,
+                    descripcion: f.descripcion || preset.description,
+                  }))
+                }
               />
             </div>
           </div>

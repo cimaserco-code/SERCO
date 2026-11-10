@@ -55,7 +55,7 @@ const navigationSections = [
 
 const adminNavItems = [
   { to: "/administracion/usuarios", label: "Usuarios", icon: Users },
-  { to: "/administracion/roles", label: "Roles", icon: ShieldCheck },
+  { to: "/administracion/roles", label: "Roles", icon: ShieldCheck, onlyAdmin: true },
   { to: "/administracion/sedes", label: "Sedes", icon: Building2 },
   { to: "/administracion/comunicados", label: "Comunicados", icon: Megaphone },
 ];
@@ -226,7 +226,7 @@ export default function Layout() {
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="mt-1 space-y-1 ml-4 border-l border-sidebar-border pl-3">
-              {adminNavItems.map((item) => {
+              {adminNavItems.filter((item) => !item.onlyAdmin || isAdmin).map((item) => {
                 const Icon = item.icon;
                 return (
                   <NavLink
