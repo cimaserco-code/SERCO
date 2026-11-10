@@ -11,17 +11,28 @@ import { useSedeScope } from "@/hooks/useSedeScope";
  * - Single-sede user: auto-assigned, selector disabled
  * - Multi-sede user: can pick among their own sedes only
  */
-export default function SedeSelector({ value, onChange, sedes, required = true }) {
+export default function SedeSelector({ value, onChange, sedes, required = true, disabled }) {
   const { isSuperAdmin, userSedeIds, showSedeSelector } = useSedeScope();
 
-  const availableSedes = isSuperAdmin
-    ? sedes
-    : sedes.filter((s) => userSedeIds.includes(s.id));
+  const isSelectorDisabled = disabled !== undefined ? disabled : !showSedeSelector;
+
+  const availableSedes = React.useMemo(() => {
+    const list = isSuperAdmin
+      ? [...(sedes || [])]
+      : (sedes || []).filter((s) => userSedeIds.includes(s.id));
+
+    // Si el valor actual no está en la lista pero existe en sedes (ej. sede previa del registro), incluirlo
+    if (value && !list.some((s) => s.id === value)) {
+      const currentSede = (sedes || []).find((s) => s.id === value);
+      if (currentSede) list.unshift(currentSede);
+    }
+    return list;
+  }, [isSuperAdmin, sedes, userSedeIds, value]);
 
   return (
     <div>
       <Label>Sede {required && "*"}</Label>
-      <Select value={value} onValueChange={onChange} disabled={!showSedeSelector}>
+      <Select value={value} onValueChange={onChange} disabled={isSelectorDisabled}>
         <SelectTrigger><SelectValue placeholder="Selecciona una sede" /></SelectTrigger>
         <SelectContent>
           {availableSedes.map((s) => (

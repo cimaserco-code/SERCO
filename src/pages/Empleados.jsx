@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { supabase } from "@/lib/supabaseClient";
-import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Shirt, Calendar, Building2, Phone, Mail, MapPin, CreditCard, Briefcase, UserCheck, User } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, UserX, Download, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, Check, Camera, Upload, Loader2, Shirt, Calendar, Building2, Phone, Mail, MapPin, CreditCard, Briefcase, UserCheck, User, Calculator, Printer } from "lucide-react";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -297,6 +297,15 @@ export default function Empleados() {
   const [newNumeroInput, setNewNumeroInput] = useState("");
   const [savingNumero, setSavingNumero] = useState(false);
   const [editNumeroError, setEditNumeroError] = useState("");
+  // Estado para Modal de Desglose de Finiquito
+  const [finiquitoModalEmp, setFiniquitoModalEmp] = useState(null);
+  const [finiquitoDiasPendientes, setFiniquitoDiasPendientes] = useState("0");
+  const [finiquitoUniformes, setFiniquitoUniformes] = useState("0");
+  const openFiniquitoModal = (emp) => {
+    setFiniquitoModalEmp(emp);
+    setFiniquitoDiasPendientes("0");
+    setFiniquitoUniformes("0");
+  };
   const [sortField, setSortField] = useState("nombre_completo");
   const [sortDirection, setSortDirection] = useState("asc");
   const [serviceComboboxOpen, setServiceComboboxOpen] = useState(false);
@@ -1509,23 +1518,72 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
     }
   }
 
-  // Finiquito estimation helper
-  function getFiniquitoEstimation(ingreso, baja, sueldo) {
+  // Finiquito estimation helper (Cálculo oficial conforme a LFT y tabla Excel)
+  function getFiniquitoEstimation(ingreso, baja, sueldo, options = {}) {
     if (!ingreso || !baja || !sueldo) return null;
-    const start = new Date(ingreso);
-    const end = new Date(baja);
-    const diffTime = Math.abs(end - start);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    // Simple estimation (e.g. 15 days of aguinaldo per year, 6 days of vacation per year)
-    const dailySueldo = sueldo / 30;
-    const estimatedAguinaldo = (diffDays / 365) * 15 * dailySueldo;
-    const estimatedVacacion = (diffDays / 365) * 6 * dailySueldo;
-    const total = estimatedAguinaldo + estimatedVacacion;
-    
+    const ingresoStr = typeof ingreso === "string" ? ingreso.slice(0, 10) : "";
+    const bajaStr = typeof baja === "string" ? baja.slice(0, 10) : "";
+    if (!ingresoStr || !bajaStr) return null;
+
+    const [yAlta, mAlta, dAltaNum] = ingresoStr.split("-").map(Number);
+    const [yBaja, mBaja, dBajaNum] = bajaStr.split("-").map(Number);
+    if (!yAlta || !yBaja) return null;
+
+    const dAlta = new Date(yAlta, mAlta - 1, dAltaNum);
+    const dBaja = new Date(yBaja, mBaja - 1, dBajaNum);
+    if (isNaN(dAlta.getTime()) || isNaN(dBaja.getTime())) return null;
+
+    // Días trabajados totales en el periodo (Fecha Baja - Fecha Alta)
+    const diffTime = Math.max(0, dBaja.getTime() - dAlta.getTime());
+    const diasTrabajados = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+
+    // Salario Diario (sueldo mensual / 30)
+    const sueldoNum = Number(sueldo) || 0;
+    const salarioDiario = options.salarioDiario || (sueldoNum > 0 ? (sueldoNum / 30) : 0);
+    if (salarioDiario <= 0) return null;
+
+    const diasAnio = 365;
+
+    // Días trabajados en el año actual (para aguinaldo)
+    let diasAguinaldo = diasTrabajados;
+    if (yAlta < yBaja) {
+      const inicioAnioBaja = new Date(yBaja, 0, 1);
+      const diffAnio = Math.round((dBaja.getTime() - inicioAnioBaja.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      diasAguinaldo = Math.min(diasTrabajados, Math.max(1, diffAnio));
+    }
+
+    // 1. Aguinaldo proporcional: (Días aguinaldo / 365) * 15 días * Salario Diario
+    const aguinaldo = (diasAguinaldo / diasAnio) * 15 * salarioDiario;
+
+    // 2. Vacaciones proporcionales: (Días trabajados / 365) * 12 días * Salario Diario (1er año LFT)
+    const diasVacacionesBase = 12;
+    const vacaciones = (diasTrabajados / diasAnio) * diasVacacionesBase * salarioDiario;
+
+    // 3. Prima vacacional: Vacaciones * 25% (0.25)
+    const primaVacacional = vacaciones * 0.25;
+
+    // 4. Días pendientes y Deducciones (uniformes, etc.)
+    const diasPendientes = Number(options.diasPendientes || 0);
+    const pagoDiasPendientes = diasPendientes * salarioDiario;
+    const deduccionesUniformes = Number(options.deduccionesUniformes || options.uniformes || 0);
+
+    // 5. Total Finiquito
+    const total = aguinaldo + vacaciones + primaVacacional + pagoDiasPendientes - deduccionesUniformes;
+
     return {
-      days: diffDays,
-      total: Math.round(total)
+      days: diasTrabajados,
+      diasTrabajados,
+      diasAguinaldo,
+      salarioDiario,
+      diasVacacionesBase,
+      aguinaldo,
+      vacaciones,
+      primaVacacional,
+      diasPendientes,
+      pagoDiasPendientes,
+      deduccionesUniformes,
+      total: Math.max(0, total),
+      totalRedondeado: Math.round(total)
     };
   }
 
@@ -1843,8 +1901,23 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                           </div>
                         </TableCell>
                         <TableCell>{est ? `${est.days} días` : "—"}</TableCell>
-                        <TableCell className="text-right font-medium text-emerald-600">
-                          {est ? `$${est.total.toLocaleString("es-MX")}` : "—"}
+                        <TableCell className="text-right">
+                          {est ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 font-semibold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openFiniquitoModal(item);
+                              }}
+                              title="Ver desglose detallado de finiquito"
+                            >
+                              <span>${est.total.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <Calculator className="w-3 h-3 opacity-70" />
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700`}>
@@ -1855,6 +1928,15 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                           <div className="flex justify-end gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs px-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                              onClick={() => openFiniquitoModal(item)}
+                              title="Ver desglose de finiquito"
+                            >
+                              <Calculator className="w-3 h-3 mr-1" /> Finiquito
+                            </Button>
                             {can("empleados", "edit") && (
                               <>
                                 <Button
@@ -1864,7 +1946,7 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                                   onClick={() => openEditMotivo(item)}
                                   title="Editar motivo de baja"
                                 >
-                                  <Pencil className="w-3 h-3 mr-1" /> Editar Motivo
+                                  <Pencil className="w-3 h-3 mr-1" /> Motivo
                                 </Button>
                                 <Button
                                   variant="outline"
@@ -3396,6 +3478,52 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
                         </p>
                       </div>
                     )}
+
+                    {viewEmpleado?.fecha_baja && (() => {
+                      const estView = getFiniquitoEstimation(viewEmpleado.fecha_ingreso, viewEmpleado.fecha_baja, viewEmpleado.sueldo);
+                      if (!estView) return null;
+                      return (
+                        <div className="col-span-full p-3.5 rounded-lg border border-emerald-300/80 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900/50 mt-1 space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                              <Calculator className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+                              Cálculo de Finiquito por Baja
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-base sm:text-lg font-black text-emerald-700 dark:text-emerald-300 font-mono">
+                                ${estView.total.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs px-2.5 border-emerald-400 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
+                                onClick={() => openFiniquitoModal(viewEmpleado)}
+                              >
+                                Ver Desglose
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs text-muted-foreground border-t border-emerald-200/60 dark:border-emerald-900/40">
+                            <div>
+                              <span className="text-[11px] block">Salario Diario:</span>
+                              <p className="font-bold text-foreground font-mono">${estView.salarioDiario.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <span className="text-[11px] block">Aguinaldo Proporcional:</span>
+                              <p className="font-bold text-foreground font-mono">${estView.aguinaldo.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                            <div>
+                              <span className="text-[11px] block">Vacaciones ({estView.diasVacacionesBase} días):</span>
+                              <p className="font-bold text-foreground font-mono">${estView.vacaciones.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                            <div>
+                              <span className="text-[11px] block">Prima Vacacional (25%):</span>
+                              <p className="font-bold text-foreground font-mono">${estView.primaVacacional.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -3958,14 +4086,43 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
         confirmLabel="Dar de Baja"
         onConfirm={handleConfirmBaja}
       >
-        <div className="space-y-2 py-3 px-1">
-          <Label htmlFor="motivo-baja-confirm">Motivo de la Baja</Label>
-          <Textarea
-            id="motivo-baja-confirm"
-            placeholder="Escribe el motivo de la baja..."
-            value={motivoBajaInput}
-            onChange={(e) => setMotivoBajaInput(e.target.value)}
-          />
+        <div className="space-y-3 py-2 px-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="motivo-baja-confirm">Motivo de la Baja</Label>
+            <Textarea
+              id="motivo-baja-confirm"
+              placeholder="Escribe el motivo de la baja..."
+              value={motivoBajaInput}
+              onChange={(e) => setMotivoBajaInput(e.target.value)}
+            />
+          </div>
+
+          {(() => {
+            const bajaEmp = items.find((e) => e.id === bajaConfirmId);
+            const est = bajaEmp ? getFiniquitoEstimation(bajaEmp.fecha_ingreso, getLocalDateString(), bajaEmp.sueldo) : null;
+            if (!est) return null;
+            return (
+              <div className="p-3 rounded-lg border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/30 dark:border-amber-900/50 space-y-2 text-xs">
+                <div className="flex items-center justify-between font-bold text-amber-900 dark:text-amber-200 border-b border-amber-200/60 pb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Calculator className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
+                    Cálculo Estimado de Finiquito (al día de hoy)
+                  </span>
+                  <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
+                    ${est.total.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground pt-0.5">
+                  <div>Días laborados: <strong className="text-foreground">{est.diasTrabajados} días</strong></div>
+                  <div>Salario diario: <strong className="text-foreground">${est.salarioDiario.toFixed(2)}</strong></div>
+                  <div>Aguinaldo proporcional: <strong className="text-foreground">${est.aguinaldo.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+                  <div>Vacaciones ({est.diasVacacionesBase} días): <strong className="text-foreground">${est.vacaciones.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+                  <div>Prima vacacional (25%): <strong className="text-foreground">${est.primaVacacional.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+                  <div>Base legal anual: <strong className="text-foreground">365 días</strong></div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </ConfirmDialog>
       <ConfirmDialog
@@ -4238,6 +4395,217 @@ function calcularDiasEnEmpresa(fechaIngreso, fechaBaja, fechaReingreso) {
               Guardar de Todos Modos
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════ MODAL: DESGLOSE DE FINIQUITO ══════════════════ */}
+      <Dialog open={!!finiquitoModalEmp} onOpenChange={(v) => !v && setFiniquitoModalEmp(null)}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          {(() => {
+            if (!finiquitoModalEmp) return null;
+            const fechaBajaEfectiva = finiquitoModalEmp.fecha_baja ? finiquitoModalEmp.fecha_baja.slice(0, 10) : getLocalDateString();
+            const est = getFiniquitoEstimation(
+              finiquitoModalEmp.fecha_ingreso,
+              fechaBajaEfectiva,
+              finiquitoModalEmp.sueldo,
+              {
+                diasPendientes: Number(finiquitoDiasPendientes) || 0,
+                deduccionesUniformes: Number(finiquitoUniformes) || 0,
+              }
+            );
+
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 rounded-lg">
+                      <Calculator className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-xl font-bold">Cálculo de Finiquito</DialogTitle>
+                      <DialogDescription className="text-xs">
+                        {finiquitoModalEmp.nombre_completo} · Sede: {sedeNombre(finiquitoModalEmp.sede_id)}
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-4 py-2 text-sm">
+                  {/* Encabezado con fechas y salario */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg bg-muted/50 border text-xs">
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Fecha de Alta</span>
+                      <strong className="font-semibold text-foreground">
+                        {finiquitoModalEmp.fecha_ingreso ? finiquitoModalEmp.fecha_ingreso.slice(0, 10) : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Fecha de Baja</span>
+                      <strong className="font-semibold text-rose-600 dark:text-rose-400">
+                        {fechaBajaEfectiva}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Sueldo Mensual</span>
+                      <strong className="font-semibold text-foreground font-mono">
+                        ${Number(finiquitoModalEmp.sueldo || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Salario Diario (SD)</span>
+                      <strong className="font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
+                        ${est ? est.salarioDiario.toFixed(2) : "0.00"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Tabla con el desglose idéntico al Excel */}
+                  {est ? (
+                    <div className="rounded-lg border overflow-hidden">
+                      <Table>
+                        <TableHeader className="bg-muted/40">
+                          <TableRow>
+                            <TableHead className="font-bold text-foreground">Concepto</TableHead>
+                            <TableHead className="text-center font-bold text-foreground w-28">Días / Base</TableHead>
+                            <TableHead className="text-right font-bold text-foreground w-36">Monto ($)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody className="text-xs">
+                          <TableRow>
+                            <TableCell className="font-medium">
+                              <div>Días trabajados en el año actual</div>
+                              <span className="text-[11px] text-muted-foreground">Base proporcional para aguinaldo</span>
+                            </TableCell>
+                            <TableCell className="text-center font-bold font-mono">{est.diasAguinaldo} días</TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">—</TableCell>
+                          </TableRow>
+
+                          <TableRow>
+                            <TableCell className="font-medium">
+                              <div>Días trabajados totales en el periodo</div>
+                              <span className="text-[11px] text-muted-foreground">Base proporcional para vacaciones</span>
+                            </TableCell>
+                            <TableCell className="text-center font-bold font-mono">{est.diasTrabajados} días</TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">—</TableCell>
+                          </TableRow>
+
+                          <TableRow className="bg-muted/15">
+                            <TableCell className="font-medium">
+                              <div>Aguinaldo proporcional</div>
+                              <span className="text-[11px] text-muted-foreground">15 días de ley al año / 365</span>
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground font-mono">15 días / año</TableCell>
+                            <TableCell className="text-right font-bold font-mono">
+                              ${est.aguinaldo.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+
+                          <TableRow className="bg-muted/15">
+                            <TableCell className="font-medium">
+                              <div>Vacaciones proporcionales</div>
+                              <span className="text-[11px] text-muted-foreground">{est.diasVacacionesBase} días primer año (Vacaciones Dignas)</span>
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground font-mono">{est.diasVacacionesBase} días / año</TableCell>
+                            <TableCell className="text-right font-bold font-mono">
+                              ${est.vacaciones.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+
+                          <TableRow className="bg-muted/15">
+                            <TableCell className="font-medium">
+                              <div>Prima vacacional (25%)</div>
+                              <span className="text-[11px] text-muted-foreground">25% de ley sobre vacaciones</span>
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground font-mono">25%</TableCell>
+                            <TableCell className="text-right font-bold font-mono">
+                              ${est.primaVacacional.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Ajustes interactivos */}
+                          <TableRow>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-1.5">
+                                <span>Días pendientes de pago:</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  className="w-16 h-7 text-xs font-mono"
+                                  value={finiquitoDiasPendientes}
+                                  onChange={(e) => setFiniquitoDiasPendientes(e.target.value)}
+                                />
+                              </div>
+                              <span className="text-[11px] text-muted-foreground">Días laborados sin cobrar antes de la baja</span>
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground font-mono">{Number(finiquitoDiasPendientes) || 0} días</TableCell>
+                            <TableCell className="text-right font-bold font-mono text-emerald-600">
+                              + ${est.pagoDiasPendientes.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+
+                          <TableRow>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-1.5">
+                                <span>Deducciones / Uniformes:</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  className="w-24 h-7 text-xs font-mono"
+                                  placeholder="$0.00"
+                                  value={finiquitoUniformes}
+                                  onChange={(e) => setFiniquitoUniformes(e.target.value)}
+                                />
+                              </div>
+                              <span className="text-[11px] text-muted-foreground">Prendas o adeudos no entregados a descontar</span>
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground">Deducción</TableCell>
+                            <TableCell className="text-right font-bold font-mono text-rose-600">
+                              - ${est.deduccionesUniformes.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+
+                          {/* TOTAL */}
+                          <TableRow className="bg-emerald-50 dark:bg-emerald-950/40 border-t-2 border-emerald-500">
+                            <TableCell colSpan={2} className="font-black text-sm text-emerald-900 dark:text-emerald-100 uppercase tracking-wide">
+                              TOTAL FINIQUITO
+                            </TableCell>
+                            <TableCell className="text-right font-black text-base font-mono text-emerald-700 dark:text-emerald-300">
+                              ${est.total.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-xs text-muted-foreground bg-muted/30 rounded-lg">
+                      No se cuenta con suficiente información de fecha de alta, baja o salario para calcular el finiquito.
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFiniquitoModalEmp(null)}
+                  >
+                    Cerrar
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                    onClick={() => {
+                      window.print();
+                    }}
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-1.5" />
+                    Imprimir / Guardar
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

@@ -15,11 +15,22 @@ export const AuthProvider = ({ children }) => {
   const [appPublicSettings, setAppPublicSettings] = useState({ id: 'supabase', public_settings: {} });
 
   useEffect(() => {
+    // Si la URL contiene un token de recuperación y no estamos en /reset-password, redirigir
+    if (window.location.hash.includes('type=recovery') && window.location.pathname !== '/reset-password') {
+      window.location.href = '/reset-password' + window.location.hash;
+      return;
+    }
+
     // Check initial auth session
     checkUserAuth(true);
 
     // Subscribe to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY' && window.location.pathname !== '/reset-password') {
+        window.location.href = '/reset-password' + window.location.hash;
+        return;
+      }
+
       if (session) {
         await checkUserAuth(false);
       } else {

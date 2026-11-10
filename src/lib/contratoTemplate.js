@@ -182,8 +182,11 @@ export async function generateContractMonterreyPDF(emp, params, sedes, options =
     const lineHeight = isTitle ? 6 : 5;
     const isHeading = isTitle || isCentered || [
       "DECLARACIONES:",
+      "Declara “El Patrón”:",
       "I. Declara “El Patrón”:",
+      "Declara “El Trabajador”:",
       "II. Declara “El Trabajador”:",
+      "Declaran “Las Partes”:",
       "III. Declaran “Las Partes”:",
       "CLÁUSULAS",
     ].includes(text);
@@ -318,7 +321,7 @@ export async function generateContractMonterreyPDF(emp, params, sedes, options =
     `CUARTA. - CENTRO DE TRABAJO Y REUBICACIÓN. “El Trabajador” reconoce y acepta que, derivado de la naturaleza de las funciones propias del puesto de GUARDIA DE SEGURIDAD privada, sus actividades implican que la prestación de sus labores deba realizarse en diversos centros de trabajo o instalaciones en donde se presten los servicios de seguridad, dentro de la zona operativa correspondiente, incluyendo instalaciones de clientes o puntos de operación que le sean asignados según las necesidades del servicio.`,
     `“El Patrón” podrá asignar, cambiar o reubicar a “El Trabajador” en cualquiera de dichos centros de trabajo o servicios, cuando así lo requieran las necesidades operativas, administrativas o contractuales del servicio de seguridad privada, siempre que se respete su salario base y las demás condiciones esenciales de trabajo. La reasignación podrá generar la modificación del bono por asignación de servicio, de conformidad con lo previsto en la cláusula SÉPTIMA BIS del presente contrato, sin que ello constituya una reducción del salario base.`,
     `En caso de que la asignación de servicio implique modificaciones en el horario de labores, “El Trabajador” acepta ajustarse al horario correspondiente al servicio asignado, respetándose en todo momento los límites establecidos por la Ley Federal del Trabajo.`,
-    `QUINTA. - JORNADA LABORAL. La jornada laboral en ningún momento rebasará los máximos legales que para tal efecto señale “la ley”.`,
+    `QUINTA. - JORNADA LABORAL. La jornada laboral en ningún momento rebasará los máximos legales que para tal efecto señale “La Ley”.`,
     `“El Patrón” otorgará, por cada seis días trabajados, un día de descanso; reservándose el derecho “El Patrón” de modificar el día de descanso con previo aviso, respetando siempre un día de descanso a la semana.`,
     `SEXTA. ACUERDOS. - “El Trabajador” disfrutará de un día de descanso tal como se establece en la cláusula anterior; sin embargo, “El Trabajador” conviene en laborar los días domingos en que “El Patrón” necesite de sus servicios.Asimismo, “El Trabajador” se obliga a laborar los días festivos que establece el artículo 74 de “La Ley” cuando así lo requieran las necesidades del servicio, teniendo derecho al pago del salario conforme a lo que establece “La Ley” del día en que prestó sus servicios.`,
     `“El Trabajador” únicamente podrá laborar tiempo extraordinario cuando “El Patrón” se lo indique mediante orden por escrito, en la cual señalará él o los días y horarios en el cual laborará tiempo extra.`,
@@ -442,8 +445,11 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
     const lineHeight = isTitle ? 6 : 5;
     const isHeading = isTitle || isCentered || [
       "DECLARACIONES:",
+      "Declara “El Patrón”:",
       "I. Declara “El Patrón”:",
+      "Declara “El Trabajador”:",
       "II. Declara “El Trabajador”:",
+      "Declaran “Las Partes”:",
       "III. Declaran “Las Partes”:",
       "CLÁUSULAS",
     ].includes(text);
@@ -513,7 +519,7 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
       tempY += 4;
     });
 
-    const trabText = `C. ${nombreTrabajador}\nTrabajador`;
+    const trabText = `C. ${nombreTrabajador}`;
     const trabNameLines = doc.splitTextToSize(trabText, contentWidth / 2 - 10);
     tempY = y;
     trabNameLines.forEach(line => {
@@ -526,7 +532,7 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
   const sueldoMensual = Number(emp.sueldo || 0);
   const salarioQuincenal = Number(params.salario_quincenal) > 0
     ? Number(params.salario_quincenal)
-    : (sueldoMensual > 0 ? Math.round(sueldoMensual / 2) : 0);
+    : (sueldoMensual > 0 ? Math.round(sueldoMensual / 2) : 4730);
   const salarioQuincenalLetras = numeroALetras(salarioQuincenal);
 
   const edad = calcularEdad(emp.fecha_nacimiento);
@@ -574,7 +580,7 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
   const contactoEmergenciaTelefono = emp.telefono_emergencia || "__________________";
 
   const tituloContrato = isIndeterminado
-    ? `CONTRATO POR TIEMPO INDETERMINADO, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`
+    ? `CONTRATO POR TIEMPO INDETERMINADO, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “El Patrón” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “El Trabajador”, QUIENES EN CONJUNTO “Las Partes”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`
     : `CONTRATO POR PERIODO DE PRUEBA, QUE CELEBRA POR UNA PARTE CIMA-SERCO, SEGURIDAD PRIVADA Y CONFIABILIDAD, S.A. DE C.V. REPRESENTADA EN ESTE ACTO POR LA LIC. SAMARA JIMÉNEZ SÁNCHEZ, EN SU CARÁCTER DE APODERADA LEGAL, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ “EL PATRÓN” Y POR LA OTRA PARTE EL C. ${nombreTrabajador}, A QUIEN EN LO SUCESIVO SE LE DENOMINARÁ COMO “EL TRABAJADOR”, QUIENES EN CONJUNTO “LAS PARTES”; SE SUJETAN A LAS SIGUIENTES DECLARACIONES Y CLÁUSULAS:`;
 
   const clausulasPrimera = isIndeterminado
@@ -595,19 +601,19 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
   const paragraphs = [
     tituloContrato,
     `DECLARACIONES:`,
-    `I. Declara “El Patrón”:`,
+    `Declara “El Patrón”:`,
     `Ser una persona moral legalmente constituida conforme a las leyes mexicanas, acreditando constitución a través del instrumento notarial con número 24,017 (veinticuatro mil diecisiete), de fecha doce de abril del año dos mil veintiuno, otorgada ante la fe del Licenciado Rafael De La Huerta Manjarrez, Titular de la Notaría Pública número Dieciséis de la Décima Primera Demarcación Notarial, con residencia en la Ciudad de Xalapa, Veracruz.`,
     `Su apoderada legal acredita la personalidad mediante instrumento público número 6,788, de fecha 09 de marzo de 2026, otorgado ante la fe del Licenciado Ángel Ramírez Bretón, titular de la Notaría Pública número 35 del municipio de Emiliano Zapata, Veracruz`,
     `Declara ser una persona moral debidamente registrada ante la Secretaría de Hacienda y Crédito Público, con Registro Federal de Contribuyentes: CSP210412PK1.`,
     `Señala como medio de contacto para oír y recibir toda clase de notificaciones el correo electrónico: cimacontacto2024@gmail.com.`,
-    `II. Declara “El Trabajador”:`,
+    `Declara “El Trabajador”:`,
     `Bajo protesta de decir verdad, declara ser una persona física, de nacionalidad mexicana, contar con la edad de ${edad} años, de estado civil ${emp.estado_civil || '___________'}, sexo ${emp.sexo || '_______________________'}, con domicilio en calle ${emp.calle || '__________________'}, número ${emp.numero || '___'}, colonia ${emp.colonia || '__________'}, C.P. ${cp}, en la ciudad de ${ciudadTrabajador}, estado de ${estadoTrabajador}. Con C.U.R.P. ${curp} y R.F.C. ${rfc}.`,
     `Poseer la capacidad, facultades, habilidades, aptitudes, experiencia, condiciones de salud y adiestramiento necesario para el desempeño de las actividades a desarrollar y de las tareas inherentes al mismo.`,
     `“El Trabajador” declara conocer completamente la naturaleza del presente contrato al momento de su firma y se compromete a desempeñar las funciones del puesto bajo la dirección y supervisión de “El Patrón”, cumpliendo con las órdenes e instrucciones relacionadas con todas y cada una de sus responsabilidades.`,
     `Sus datos generales son veraces, y se obliga a notificar a “El Patrón” por escrito y en forma inmediata, cualquier cambio relacionado con estos; de no hacerlo, se considerarán vigentes los últimos datos que hubiere proporcionado a “El Patrón” para todos los efectos legales a que haya lugar.`,
     `Reconocer su firma plasmada al calce de cada página y al final del presente contrato.`,
-    `III. Declaran “Las Partes”:`,
-    `“Las Partes” declaran que conocen sus obligaciones y prohibiciones:Por lo que respecta a “El Patrón”: los artículos 132 y 133 de la Ley Federal del Trabajo.`,
+    `Declaran “Las Partes”:`,
+    `“Las Partes” declaran que conocen sus obligaciones y prohibiciones: Por lo que respecta a “El Patrón”: los artículos 132 y 133 de la Ley Federal del Trabajo.`,
     `Por lo que se refiere a “El Trabajador”: los artículos 134 y 135, así como demás relativos aplicables de dicho ordenamiento legal.`,
     `Se reconocen la personalidad con la que comparecen y se sujetan a lo dispuesto en la Ley Federal del Trabajo, en lo sucesivo “La Ley”; y finalmente, al referirse al presente escrito se le denominará como “El Contrato”, acordando las partes sujetarse al tenor de las siguientes:`,
     ...clausulasPrimera,
@@ -622,9 +628,9 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
     `En consecuencia, el lugar de prestación de servicios de “El Trabajador” podrá ubicarse en cualquiera de los servicios o instalaciones que “El Patrón” tenga asignados dentro de la zona operativa correspondiente, incluyendo oficinas administrativas, centros de operación o instalaciones de clientes, según las necesidades del servicio.`,
     `“El Patrón” podrá asignar, cambiar o reubicar a “El Trabajador” en cualquiera de dichos centros de trabajo o servicios, cuando así lo requieran las necesidades operativas, administrativas o contractuales del servicio de seguridad privada, siempre que no se afecten el salario ni las condiciones esenciales de trabajo.`,
     `En caso de que la asignación de servicio implique modificaciones en el horario de labores, “El Trabajador” acepta ajustarse al horario correspondiente al servicio asignado, respetándose en todo momento los límites establecidos por la Ley Federal del Trabajo.`,
-    `QUINTA. - JORNADA LABORAL. La jornada laboral en ningún momento rebasará los máximos legales que para tal efecto señale “la ley”.`,
+    `QUINTA. - JORNADA LABORAL. La jornada laboral en ningún momento rebasará los máximos legales que para tal efecto señale “La Ley”.`,
     `“El Patrón” otorgará, por cada seis días trabajados, un día de descanso; reservándose el derecho “El Patrón” de modificar el día de descanso con previo aviso, respetando siempre un día de descanso a la semana.`,
-    `SEXTA. ACUERDOS. - “El Trabajador” disfrutará de un día de descanso tal como se establece en la cláusula anterior; sin embargo, “El Trabajador” conviene en laborar los días domingos en que “El Patrón” necesite de sus servicios.Asimismo, “El Trabajador” se obliga a laborar los días festivos que establece el artículo 74 de “La Ley” cuando así lo requieran las necesidades del servicio, teniendo derecho al pago del salario conforme a lo que establece “La Ley” del día en que prestó sus servicios.`,
+    `SEXTA. ACUERDOS. - “El Trabajador” disfrutará de un día de descanso tal como se establece en la cláusula anterior; sin embargo, “El Trabajador” conviene en laborar los días domingos en que “El Patrón” necesite de sus servicios. Asimismo, “El Trabajador” se obliga a laborar los días festivos que establece el artículo 74 de “La Ley” cuando así lo requieran las necesidades del servicio, teniendo derecho al pago del salario conforme a lo que establece “La Ley” del día en que prestó sus servicios.`,
     `“El Trabajador” únicamente podrá laborar tiempo extraordinario cuando “El Patrón” se lo indique mediante orden por escrito, en la cual señalará él o los días y horarios en el cual laborará tiempo extra.`,
     `SÉPTIMA. SALARIO. - “El Trabajador” recibirá un salario quincenal de $${salarioQuincenal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${salarioQuincenalLetras} 00/100 M.N) de manera quincenal, dicha cantidad le será pagada los días 03 y 18 de cada mes, mismo que será efectuado en el lugar de trabajo asignado o por depósito en el número de cuenta o tarjeta bancaria que designe “El Trabajador”.`,
     `OCTAVA. DEDUCCIONES. - “El Trabajador” autoriza a “El Patrón” deducir de su salario el Impuesto sobre el Producto del Trabajo o también conocido como el Impuesto sobre la Renta y demás impuestos correspondientes, de conformidad con lo establecido en las disposiciones legales en vigor al momento en que se realice el descuento respectivo. Así como demás descuentos descritos en el artículo 97 de la Ley, tales como pensiones alimenticias decretadas por la autoridad competente, pago de rentas, pago de abonos para cubrir préstamos provenientes del Fondo Nacional de la Vivienda para los Trabajadores, etc., según sea el caso de “El Trabajador”.`,
@@ -654,7 +660,7 @@ export async function generateContractOtrasSedesPDF(emp, params, sedes, options 
     `Dichos exámenes podrán realizarse durante la jornada laboral o en las instalaciones que determine “El Patrón”, conforme a las políticas internas de la empresa.`,
     `El incumplimiento injustificado a someterse a dichas pruebas o el resultado positivo podrá dar lugar a la aplicación de las medidas correspondientes conforme a la Ley Federal del Trabajo y al reglamento interno de trabajo.`,
     `VIGÉSIMA. BENEFICIARIO. - “El Trabajador” autoriza a la empresa, con base en el artículo 501 de la Ley Federal del Trabajo, designar como beneficiario/a, para otorgar sus salarios y prestaciones devengadas y no cobradas, en caso de muerte y/o desaparición por un acto delincuencial, al/a la C. ${beneficiarioNombre}, con parentesco ${beneficiarioParentesco} y ${beneficiarioPorcentaje}% de dicha percepción.`,
-    `VIGÉSIMA PRIMERA. - CONTACTO DE EMERGENCIA “El Trabajador” designa como contacto de emergencia a la ${contactoEmergenciaNombre}, quien es su ${contactoEmergenciaParentesco} y cuenta con número de teléfono: ${contactoEmergenciaTelefono}, a quien “El Patrón”, podrá notificar en caso de accidente, enfermedad o cualquier situación que comprometa la salud o integridad de “El Trabajador” durante el desempeño de sus funciones.`,
+    `VIGÉSIMA PRIMERA. - CONTACTO DE EMERGENCIA. “El Trabajador” designa como contacto de emergencia al(la) C. ${contactoEmergenciaNombre}, quien es su ${contactoEmergenciaParentesco} y cuenta con número de teléfono: ${contactoEmergenciaTelefono}, a quien “El Patrón”, podrá notificar en caso de accidente, enfermedad o cualquier situación que comprometa la salud o integridad de “El Trabajador” durante el desempeño de sus funciones.`,
     `VIGÉSIMA. SEGUNDA. - INASISTENCIAS. Cuando “El Trabajador” por cualquier circunstancia se vea obligado a faltar a sus labores, deberá avisar a “El Patrón”, por conducto de sus representantes, con mínimo 12 horas de anticipación a la entrada de su turno. El aviso no justifica la falta, pues en todo caso “El Trabajador” al regresar a sus labores deberá justificar su ausencia con el comprobante respectivo, que en caso de enfermedad será únicamente el certificado de incapacidad. Cuando “El Trabajador” solicite permiso para faltar a sus labores, deberá recabar en todo caso constancia escrita de “El Patrón”; sin dicho requisito, su inasistencia se considerará como falta injustificada.`,
     `VIGÉSIMA TERCERA. - AVISO. Se establece y reconoce “El Trabajador” que, si desea dejar de laborar para “El Patrón”, tendrá la obligación de avisar con 10 días naturales de anticipación, así como de hacer entrega a la administración de toda y cada una de la documentación, indumentaria o materiales que tenga en su poder.`,
     `VIGÉSIMA CUARTA. - AUTORIZACIÓN. “El Trabajador” autoriza a “El Patrón” a ser grabado mediante cámaras de seguridad durante la jornada laboral, a fin de salvaguardar la seguridad del trabajador en caso de un accidente y/o acción suscitada en las instalaciones de la empresa, o donde se encuentre prestando sus servicios.`,

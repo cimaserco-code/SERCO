@@ -18,6 +18,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useSedeScope } from "@/hooks/useSedeScope";
 import SedeSelector from "@/components/SedeSelector";
 import { usePermissions } from "@/lib/PermissionsContext";
+import { useAuth } from "@/lib/AuthContext";
 import AccessRestricted from "@/components/AccessRestricted";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -178,8 +179,14 @@ const emptyForm = {
 };
 
 export default function Servicios() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { sedeFilter, defaultSedeId } = useSedeScope();
+  const { sedeFilter, defaultSedeId, isSuperAdmin, userSedeIds } = useSedeScope();
+  const userRole = (user?.role || "").toLowerCase().trim();
+  const isAdmin = userRole === "admin" || userRole === "administrador" || userRole === "super administrador" || userRole === "ceo" || isSuperAdmin;
+  const isDirector = userRole === "director" || userRole === "director general";
+  const hasMultipleSedes = (userSedeIds && userSedeIds.length > 1) || isSuperAdmin;
+  const canEditServicioSede = isAdmin || (isDirector && hasMultipleSedes);
   const { canView, can } = usePermissions();
   const { toast } = useToast();
   const [items, setItems] = useState([]);
@@ -339,7 +346,7 @@ export default function Servicios() {
   
   function openCreate() {
     setEditing(null);
-    setForm({ ...emptyForm, sede_id: defaultSedeId });
+    setForm({ ...emptyForm, sede_id: defaultSedeId || (userSedeIds?.[0] || "") });
     setModalOpen(true);
   }
 
@@ -806,7 +813,17 @@ export default function Servicios() {
               <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
             </div>
             <div>
-              <SedeSelector value={form.sede_id} onChange={(v) => setForm({ ...form, sede_id: v })} sedes={sedes} />
+              <SedeSelector 
+                value={form.sede_id} 
+                onChange={(v) => setForm({ ...form, sede_id: v })} 
+                sedes={sedes}
+                disabled={!canEditServicioSede}
+              />
+              {!canEditServicioSede && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Solo administradores o Director con múltiples sedes asignadas pueden cambiar la sede.
+                </p>
+              )}
             </div>
             <div>
               <Label>Dirección</Label>

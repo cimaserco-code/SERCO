@@ -21,6 +21,7 @@ const filters = [
 ];
 
 function notificationPath(notification) {
+  if (notification.link) return notification.link;
   const recordId = encodeURIComponent(notification.referencia_id || "");
   switch (notification.referencia_tipo) {
     case "empleado": return `/empleados?registro=${recordId}`;
@@ -29,8 +30,22 @@ function notificationPath(notification) {
     case "agenda": return `/agenda?evento=${recordId}`;
     case "egreso": return `/egresos?egreso=${recordId}`;
     case "recarga_celular": return `/egresos?recarga=${recordId}`;
-    case "cobro": return `/cobros?registro=${recordId}`;
-    default: return "/";
+    case "cobro": return `/facturas?cobro=${recordId}`;
+    default: {
+      const rawId = String(notification.id || "");
+      if (rawId.startsWith("sol-")) return `/inventario?solicitud=${rawId.replace("sol-", "")}`;
+      if (rawId.startsWith("cobro-vencido-")) return `/facturas?cobro=${rawId.replace("cobro-vencido-", "")}`;
+      if (rawId.startsWith("saldo-vence-")) {
+        const parts = rawId.split("-");
+        return `/egresos?recarga=${parts[2] || ""}`;
+      }
+      if (rawId.startsWith("vac-")) return `/servicios/plantilla`;
+      if (rawId.startsWith("entrevista-")) return `/agenda?evento=${rawId.replace("entrevista-", "")}`;
+      if (rawId.startsWith("alta-")) return `/empleados?registro=${rawId.replace("alta-", "")}`;
+      if (rawId.startsWith("baja-")) return `/empleados?registro=${rawId.replace("baja-", "")}`;
+      if (rawId.startsWith("turno-")) return `/servicios/plantilla`;
+      return "/";
+    }
   }
 }
 
@@ -47,10 +62,20 @@ function NoticeRow({ notification, onOpen, onRead, onAttend }) {
   const isReminder = notification.categoria === "recordatorio";
 
   return (
-    <article className={`rounded-md border border-l-4 p-3 overflow-hidden break-words transition-colors ${notification.leida ? "border-l-muted-foreground/30 bg-card" : "border-l-primary bg-primary/[0.035]"}`}>
+    <article
+      onClick={() => onOpen(notification)}
+      className={`group rounded-md border border-l-4 p-3 overflow-hidden break-words transition-all cursor-pointer hover:shadow-xs ${
+        notification.leida
+          ? "border-l-muted-foreground/30 bg-card hover:bg-muted/30"
+          : "border-l-primary bg-primary/[0.035] hover:bg-primary/[0.07]"
+      }`}
+    >
       <div className="space-y-1.5 min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          <h3 className="text-sm font-semibold text-foreground break-words">{notification.titulo}</h3>
+          <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors break-words flex items-center gap-1.5">
+            {notification.titulo}
+            <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
+          </h3>
           {!notification.leida && <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary shrink-0">No leída</span>}
           {isRequiredAction && <span className="rounded-sm bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 shrink-0">Acción {notification.estado}</span>}
           {isReminder && <span className="rounded-sm bg-sky-100 dark:bg-sky-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800 dark:text-sky-300 shrink-0">Recordatorio</span>}
@@ -62,10 +87,10 @@ function NoticeRow({ notification, onOpen, onRead, onAttend }) {
         </time>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5 border-t pt-2">
-        <button type="button" onClick={() => onOpen(notification)} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary group-hover:underline">
           Abrir registro <ExternalLink className="h-3 w-3 shrink-0" />
-        </button>
-        <div className="flex flex-wrap items-center gap-1">
+        </span>
+        <div className="flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {!notification.leida && (
             <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => onRead(notification)}>
               <Check className="mr-1 h-3 w-3" />Marcar leída
@@ -77,6 +102,45 @@ function NoticeRow({ notification, onOpen, onRead, onAttend }) {
             </Button>
           )}
         </div>
+      </div>
+    </article>
+  );
+}
+
+function LegacyAlertRow({ item, onOpen, onDismiss }) {
+  return (
+    <article
+      onClick={() => onOpen(item)}
+      className="group rounded-md border border-l-4 border-l-blue-500 p-3 overflow-hidden break-words bg-card/60 hover:bg-card hover:border-l-primary hover:shadow-xs cursor-pointer transition-all"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 break-words">
+          <h3 className="text-sm font-semibold break-words group-hover:text-primary transition-colors flex items-center gap-1.5">
+            {item.title}
+            <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground break-words leading-relaxed">{item.description}</p>
+        </div>
+        <button
+          type="button"
+          title="Descartar aviso"
+          className="shrink-0 text-xs text-muted-foreground hover:text-foreground font-medium underline sm:no-underline hover:underline ml-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss(item.id);
+          }}
+        >
+          Descartar
+        </button>
+      </div>
+      {item.autor && <p className="mt-1.5 text-[11px] text-muted-foreground font-medium break-words">Por: {item.autor}</p>}
+      <div className="mt-2 flex items-center justify-between border-t pt-1.5">
+        <p className="text-[10px] text-muted-foreground flex items-center gap-1 break-words">
+          <Clock className="w-3 h-3 shrink-0" /> {item.hora || item.categoria}
+        </p>
+        <span className="text-[11px] font-medium text-primary inline-flex items-center gap-1 group-hover:underline">
+          Abrir detalle <ExternalLink className="h-3 w-3" />
+        </span>
       </div>
     </article>
   );
@@ -164,6 +228,11 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
     navigate(notificationPath(notification));
   };
 
+  const handleOpenLegacy = (item) => {
+    setOpen(false);
+    navigate(notificationPath(item));
+  };
+
   const renderNotice = (notification) => (
     <NoticeRow
       key={notification.id}
@@ -183,7 +252,7 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
               <Bell className="h-5 w-5 text-primary" />Notificaciones
               {unreadCount > 0 && <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs text-primary">{unreadCount}</span>}
             </CardTitle>
-            <span className="text-xs text-primary">Ver todas</span>
+            <span className="text-xs text-primary font-medium hover:underline">Ver todas</span>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 p-3.5 sm:p-4">
@@ -200,27 +269,13 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
             {loading ? <p className="py-6 text-center text-sm text-muted-foreground">Cargando notificaciones...</p> : (
               <>
                 {notifications.slice(0, 5).map(renderNotice)}
-                {visibleLegacy.slice(0, 3).map((item) => (
-                  <article key={item.id} className="rounded-md border border-l-4 border-l-blue-500 p-3 overflow-hidden break-words bg-card/60">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1 break-words">
-                        <h3 className="text-sm font-semibold break-words">{item.title}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground break-words leading-relaxed">{item.description}</p>
-                      </div>
-                      <button 
-                        type="button" 
-                        title="Descartar aviso" 
-                        className="shrink-0 text-xs text-muted-foreground hover:text-foreground font-medium underline sm:no-underline hover:underline ml-1" 
-                        onClick={() => onDismissLegacy(item.id)}
-                      >
-                        Descartar
-                      </button>
-                    </div>
-                    {item.autor && <p className="mt-1.5 text-[11px] text-muted-foreground font-medium break-words">Por: {item.autor}</p>}
-                    <p className="mt-1 text-[10px] text-muted-foreground flex items-center gap-1 break-words">
-                      <Clock className="w-3 h-3 shrink-0" /> {item.hora || item.categoria}
-                    </p>
-                  </article>
+                {visibleLegacy.slice(0, 4).map((item) => (
+                  <LegacyAlertRow
+                    key={item.id}
+                    item={item}
+                    onOpen={handleOpenLegacy}
+                    onDismiss={onDismissLegacy}
+                  />
                 ))}
                 {!notifications.length && !visibleLegacy.length && <p className="py-8 text-center text-sm text-muted-foreground">No hay notificaciones.</p>}
               </>
@@ -255,26 +310,12 @@ export default function NotificationCenter({ userId, legacyNotifications = [], d
               <p className="py-10 text-center text-sm text-muted-foreground">No hay notificaciones en esta vista.</p>
             )}
             {visibleLegacy.map((item) => (
-              <article key={item.id} className="rounded-md border border-l-4 border-l-blue-500 p-3 overflow-hidden break-words bg-card/60">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1 break-words">
-                    <h3 className="text-sm font-semibold break-words">{item.title}</h3>
-                    <p className="mt-1 text-xs text-muted-foreground break-words leading-relaxed">{item.description}</p>
-                  </div>
-                  <button 
-                    type="button" 
-                    title="Descartar aviso" 
-                    className="shrink-0 text-xs text-muted-foreground hover:text-foreground font-medium underline sm:no-underline hover:underline ml-1" 
-                    onClick={() => onDismissLegacy(item.id)}
-                  >
-                    Descartar
-                  </button>
-                </div>
-                {item.autor && <p className="mt-1.5 text-[11px] text-muted-foreground font-medium break-words">Por: {item.autor}</p>}
-                <p className="mt-1 text-[10px] text-muted-foreground flex items-center gap-1 break-words">
-                  <Clock className="w-3 h-3 shrink-0" /> {item.hora || item.categoria}
-                </p>
-              </article>
+              <LegacyAlertRow
+                key={item.id}
+                item={item}
+                onOpen={handleOpenLegacy}
+                onDismiss={onDismissLegacy}
+              />
             ))}
             {dismissedLegacy.length > 0 && <Button variant="ghost" size="sm" onClick={onRestoreLegacy}><RotateCcw className="mr-1 h-3.5 w-3.5" />Restaurar avisos anteriores ({dismissedLegacy.length})</Button>}
           </div>

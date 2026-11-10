@@ -667,7 +667,7 @@ export default function Documentos() {
                   <Input
                     type="number"
                     value={contractForm.salario_quincenal}
-                    placeholder="Ej. 4500"
+                    placeholder="Ej. 4730"
                     onChange={(e) => setContractForm({ ...contractForm, salario_quincenal: e.target.value })}
                   />
                   <span className="text-[11px] text-muted-foreground mt-1 block">

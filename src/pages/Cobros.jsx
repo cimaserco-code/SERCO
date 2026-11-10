@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
 import { Plus, Pencil, Trash2, Search, DollarSign, CheckCircle, EyeOff, ChevronLeft, ChevronRight, CalendarDays, CreditCard, Download, Tag, Receipt, PackagePlus, RotateCcw } from "lucide-react";
 import {
@@ -648,11 +649,29 @@ export default function Cobros() {
     });
   };
 
+  const [searchParams] = useSearchParams();
+  const cobroParam = searchParams.get("cobro");
+
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
     const mm = String(today.getMonth() + 1).padStart(2, "0");
     return `${today.getFullYear()}-${mm}`;
   });
+
+  useEffect(() => {
+    if (!cobroParam || items.length === 0) return;
+    const found = items.find(
+      (c) => String(c.id) === String(cobroParam) || String(c.servicio_id) === String(cobroParam)
+    );
+    if (found) {
+      if (found.mes && found.mes !== currentMonth) {
+        setCurrentMonth(found.mes);
+      }
+      if (found.servicio_nombre) {
+        setSearch(found.servicio_nombre);
+      }
+    }
+  }, [cobroParam, items]);
 
   useEffect(() => {
     load();

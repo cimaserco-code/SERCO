@@ -375,6 +375,7 @@ export default function Home() {
               autor: author,
               hora: formatTimeAndDate(rawTime, s.hora || ""),
               rawTimestamp: parseToTimestamp(rawTime),
+              link: `/inventario?solicitud=${s.id}`,
             });
           });
 
@@ -397,6 +398,7 @@ export default function Home() {
                   autor: 'Facturación / Cobros',
                   hora: `Límite: ${c.fecha_limite_pago}`,
                   rawTimestamp: new Date(c.fecha_limite_pago + "T23:59:59").getTime(),
+                  link: `/facturas?cobro=${c.id}`,
                 });
               }
             }
@@ -424,6 +426,7 @@ export default function Home() {
                   autor: 'Telefonía / Egresos',
                   hora: fechaVenc,
                   rawTimestamp: new Date(fechaVenc + "T12:00:00").getTime(),
+                  link: `/egresos?recarga=${s.id}`,
                 });
               }
             }
@@ -446,6 +449,7 @@ export default function Home() {
               autor: author,
               hora: formatTimeAndDate(rawTime, v.hora || ""),
               rawTimestamp: parseToTimestamp(rawTime),
+              link: `/servicios/plantilla`,
             });
           });
         }
@@ -469,6 +473,7 @@ export default function Home() {
               autor: author,
               hora: formatTimeAndDate(rawTime, ev.hora_inicio || ""),
               rawTimestamp: parseToTimestamp(rawTime),
+              link: `/agenda?evento=${ev.id}`,
             });
           });
         }
@@ -491,6 +496,7 @@ export default function Home() {
               autor: author,
               hora: formatTimeAndDate(rawTime, e.hora_ingreso || ""),
               rawTimestamp: parseToTimestamp(rawTime),
+              link: `/empleados?registro=${e.id}`,
             });
           });
         }
@@ -514,6 +520,7 @@ export default function Home() {
               autor: author,
               hora: formatTimeAndDate(rawTime, e.hora_baja || ""),
               rawTimestamp: parseToTimestamp(rawTime),
+              link: `/empleados?registro=${e.id}`,
             });
           });
         }
@@ -534,6 +541,7 @@ export default function Home() {
               autor: author,
               hora: formatTimeAndDate(rawTime, t.hora || ""),
               rawTimestamp: parseToTimestamp(rawTime),
+              link: `/servicios/plantilla`,
             });
           });
         }

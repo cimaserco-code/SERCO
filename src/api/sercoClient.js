@@ -331,17 +331,49 @@ export const sercoApi = {
       }
     },
 
-    async resetPasswordRequest(email) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    async resetPasswordRequest(emailOrUsername) {
+      const identifier = (emailOrUsername || '').trim();
+      if (!identifier) {
+        throw new Error('Por favor ingresa un correo o nombre de usuario');
+      }
+
+      let email = identifier;
+      // Si no contiene '@', buscamos en perfiles por nombre de usuario o nombre completo
+      if (!identifier.includes('@')) {
+        const { data: profile, error: profileErr } = await supabase
+          .from('profiles')
+          .select('email, usuario, full_name')
+          .or(`usuario.ilike."${identifier}",full_name.ilike."${identifier}"`)
+          .maybeSingle();
+
+        if (profileErr || !profile?.email) {
+          throw new Error(`No encontramos ningún usuario registrado como "${identifier}". Verifica el nombre o introduce tu correo.`);
+        }
+        email = profile.email;
+      }
+
+      email = email.toLowerCase().trim();
+
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`
       });
-      if (error) throw error;
-      return true;
+
+      if (error) {
+        const msg = error.message || '';
+        if (error.status === 429 || /rate limit|security purposes|60 seconds/i.test(msg)) {
+          throw new Error('Has solicitado el restablecimiento recientemente. Por seguridad, espera al menos un minuto antes de volver a intentar.');
+        }
+        throw new Error(msg || 'No se pudo enviar el correo de recuperación.');
+      }
+
+      return { email };
     },
 
-    async resetPassword({ resetToken, newPassword }) {
-      // Supabase uses standard access token when redirecting for password reset.
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
+    async resetPassword({ resetToken, newPassword, password } = {}) {
+      const pwd = newPassword || password;
+      if (!pwd) throw new Error('Debes ingresar una contraseña');
+      // Supabase utiliza la sesión de recuperación establecida al abrir el enlace
+      const { data, error } = await supabase.auth.updateUser({ password: pwd });
       if (error) throw error;
       return true;
     },

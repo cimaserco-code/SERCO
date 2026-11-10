@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useClientPortal } from "@/context/ClientPortalContext";
 import { formatUserDisplayName } from "@/lib/userNameFormatting";
 import { sercoApi } from "@/api/sercoClient";
@@ -70,6 +71,24 @@ export default function ClientHome() {
 
   const displayName = formatUserDisplayName(user?.full_name || user?.nombre || "Cliente", user?.role);
   const servicioNombre = selectedServicio?.nombre || "Servicio Asignado";
+  const navigate = useNavigate();
+
+  const handleOpenClientNotification = (notif) => {
+    if (notif.tipo === "supervision" || notif.tipo === "capacitacion") {
+      navigate("/cliente/agenda");
+      return;
+    }
+    if (notif.tipo === "finanzas") {
+      const el = document.getElementById("seccion-factura");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (notif.tipo === "personal") {
+      const el = document.getElementById("seccion-guardias");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+  };
 
   const [selectedGuardiaFicha, setSelectedGuardiaFicha] = useState(null);
   const [fichaPdfUrl, setFichaPdfUrl] = useState(null);
@@ -609,16 +628,17 @@ export default function ClientHome() {
                   notificaciones.map((notif) => (
                     <div
                       key={notif.id}
-                      className={`p-3 text-xs transition-colors flex items-start gap-2.5 ${
+                      onClick={() => handleOpenClientNotification(notif)}
+                      className={`p-3 text-xs transition-all cursor-pointer group flex items-start gap-2.5 ${
                         notif.tipo === "finanzas"
-                          ? "bg-emerald-50/70 dark:bg-emerald-950/30"
+                          ? "bg-emerald-50/70 hover:bg-emerald-100/70 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
                           : notif.tipo === "personal"
-                          ? "bg-blue-50/70 dark:bg-blue-950/30"
+                          ? "bg-blue-50/70 hover:bg-blue-100/70 dark:bg-blue-950/30 dark:hover:bg-blue-950/50"
                           : notif.tipo === "supervision"
-                          ? "bg-indigo-50/70 dark:bg-indigo-950/30"
+                          ? "bg-indigo-50/70 hover:bg-indigo-100/70 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50"
                           : notif.tipo === "capacitacion"
-                          ? "bg-amber-50/70 dark:bg-amber-950/30"
-                          : "bg-muted/30"
+                          ? "bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
+                          : "bg-muted/30 hover:bg-muted/50"
                       }`}
                     >
                       <div className="p-1.5 rounded-md bg-card shadow-2xs shrink-0 mt-0.5">
@@ -629,8 +649,9 @@ export default function ClientHome() {
                       </div>
                       <div className="flex-1 space-y-0.5 min-w-0">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="font-bold text-foreground truncate">
+                          <span className="font-bold text-foreground group-hover:text-primary transition-colors truncate flex items-center gap-1">
                             {notif.titulo}
+                            <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
                           </span>
                           {notif.urgente && (
                             <Badge className="bg-red-500 text-white text-[9px] py-0 px-1.5 shrink-0">
@@ -641,14 +662,22 @@ export default function ClientHome() {
                         <p className="text-muted-foreground leading-relaxed">
                           {notif.mensaje}
                         </p>
-                        {notif.fecha && (
-                          <span className="text-[10px] text-muted-foreground/80 block pt-0.5">
-                            {notif.fecha}
+                        <div className="flex items-center justify-between pt-1">
+                          {notif.fecha && (
+                            <span className="text-[10px] text-muted-foreground/80">
+                              {notif.fecha}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-primary font-medium inline-flex items-center gap-0.5 group-hover:underline ml-auto">
+                            Ir a la sección →
                           </span>
-                        )}
+                        </div>
                       </div>
                       <button
-                        onClick={() => dismissNotification(notif.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          dismissNotification(notif.id);
+                        }}
                         className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-black/5"
                         title="Descartar"
                       >
@@ -683,16 +712,17 @@ export default function ClientHome() {
               return (
                 <div
                   key={notif.id}
-                  className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all ${
+                  onClick={() => handleOpenClientNotification(notif)}
+                  className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all cursor-pointer group hover:shadow-xs hover:scale-[1.005] ${
                     isUrgent
-                      ? "bg-red-50/80 border-red-200 dark:bg-red-950/30 dark:border-red-900"
+                      ? "bg-red-50/80 border-red-200 dark:bg-red-950/30 dark:border-red-900 hover:border-red-400"
                       : notif.tipo === "finanzas"
-                      ? "bg-emerald-50/80 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900"
+                      ? "bg-emerald-50/80 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900 hover:border-emerald-400"
                       : notif.tipo === "supervision"
-                      ? "bg-indigo-50/80 border-indigo-200 dark:bg-indigo-950/30 dark:border-indigo-900"
+                      ? "bg-indigo-50/80 border-indigo-200 dark:bg-indigo-950/30 dark:border-indigo-900 hover:border-indigo-400"
                       : notif.tipo === "capacitacion"
-                      ? "bg-amber-50/80 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900"
-                      : "bg-blue-50/80 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900"
+                      ? "bg-amber-50/80 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900 hover:border-amber-400"
+                      : "bg-blue-50/80 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900 hover:border-blue-400"
                   }`}
                 >
                   <div className="p-2 rounded-lg bg-card shadow-2xs shrink-0 mt-0.5">
@@ -704,8 +734,9 @@ export default function ClientHome() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-xs text-foreground truncate">
+                      <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors truncate flex items-center gap-1">
                         {notif.titulo}
+                        <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
                       </span>
                       {isUrgent && (
                         <Badge className="bg-red-600 text-white text-[9px] px-1.5 py-0">
@@ -716,15 +747,23 @@ export default function ClientHome() {
                     <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
                       {notif.mensaje}
                     </p>
-                    {notif.fecha && (
-                      <span className="text-[10px] text-muted-foreground/80 block mt-1">
-                        {notif.fecha}
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-border/40">
+                      {notif.fecha && (
+                        <span className="text-[10px] text-muted-foreground/80">
+                          {notif.fecha}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-primary font-semibold inline-flex items-center gap-1 group-hover:underline ml-auto">
+                        Ver sección <ExternalLink className="w-3 h-3" />
                       </span>
-                    )}
+                    </div>
                   </div>
 
                   <button
-                    onClick={() => dismissNotification(notif.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismissNotification(notif.id);
+                    }}
                     className="text-muted-foreground hover:text-foreground p-1"
                     title="Descartar aviso"
                   >
@@ -744,7 +783,7 @@ export default function ClientHome() {
       <div className="space-y-6">
 
         {/* ────────────────── 1. SECCIÓN: FACTURA DEL MES (ARRIBA) ────────────────── */}
-        <Card className="border-border shadow-xs">
+        <Card id="seccion-factura" className="border-border shadow-xs scroll-mt-20">
           <CardHeader className="pb-3 border-b border-border bg-muted/20">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -912,7 +951,7 @@ export default function ClientHome() {
 
         {/* ────────────────── 2. SECCIÓN: GUARDIAS ASIGNADOS (EN MEDIO) ────────────────── */}
         {/* REGLA: "pon los guardias en orden matutino, vespertino y cubredescansos" */}
-        <Card className="border-border shadow-xs">
+        <Card id="seccion-guardias" className="border-border shadow-xs scroll-mt-20">
           <CardHeader className="pb-3 border-b border-border bg-muted/20">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
