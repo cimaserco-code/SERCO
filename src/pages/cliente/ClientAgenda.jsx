@@ -59,16 +59,17 @@ export default function ClientAgenda() {
     // Add invoice due date as special financial events
     (cobros || []).forEach((c) => {
       if (c.fecha_limite_pago) {
+        const conceptoSuffix = c.concepto ? ` - ${c.concepto}` : "";
         list.push({
           id: `factura-limite-${c.id}`,
           tipo: "factura_limite",
-          titulo: `Fecha Límite Factura (${c.mes || ""})`,
+          titulo: `Fecha Límite Factura (${c.mes || ""})${conceptoSuffix}`,
           fecha: c.fecha_limite_pago,
           hora_inicio: "18:00",
           hora_fin: "23:59",
           monto: c.monto,
           estado: c.estado,
-          notas: `Fecha límite para realizar el pago de la factura correspondiente al mes ${c.mes || ""}. Monto: $${Number(c.monto || 0).toLocaleString("es-MX")}`,
+          notas: `Fecha límite para realizar el pago de la factura${conceptoSuffix} correspondiente al mes ${c.mes || ""}. Monto: $${Number(c.monto || 0).toLocaleString("es-MX")}`,
         });
       }
     });

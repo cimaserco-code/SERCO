@@ -456,6 +456,9 @@ const emptyForm = {
   partes_pagadas: [],
   fechas_partes: {},
   partes_personalizadas: null,
+  concepto: "",
+  es_adicional: false,
+  propagar_futuro: true,
 };
 
 function copiarFecha(fecha,mes){
@@ -868,37 +871,128 @@ export default function Cobros() {
 
   const sedeNombre = (sedeId) => sedes.find((s) => s.id === sedeId)?.nombre || "—";
 
-  const monthlyItems = items.filter((item) => item.mes === currentMonth && !isCobroExcluido(item));
+  const monthlyItemsRaw = items.filter((item) => item.mes === currentMonth && !isCobroExcluido(item));
   const monthlyExcluded = excludedItems.filter((item) => item.mes === currentMonth);
+
+  const getServicioGroupKey = (c) =>
+    c?.servicio_id || (c?.servicio_nombre || "").trim().toLowerCase() || c?.id;
+
+  const monthlyGroupedByService = new Map();
+  monthlyItemsRaw.forEach((item) => {
+    const key = getServicioGroupKey(item);
+    if (!monthlyGroupedByService.has(key)) monthlyGroupedByService.set(key, []);
+    monthlyGroupedByService.get(key).push(item);
+  });
+
+  const serviceInvoiceMetaMap = new Map();
+  const monthlyItems = [];
+  monthlyGroupedByService.forEach((groupList) => {
+    const ordered = [...groupList].sort((a, b) => {
+      const aMeta = a.metadata || getCobroMeta(a.id) || {};
+      const bMeta = b.metadata || getCobroMeta(b.id) || {};
+      const aAdd = aMeta.es_adicional ? 1 : 0;
+      const bAdd = bMeta.es_adicional ? 1 : 0;
+      if (aAdd !== bAdd) return aAdd - bAdd;
+      return String(a.created_date || a.created_at || "").localeCompare(
+        String(b.created_date || b.created_at || "")
+      );
+    });
+    ordered.forEach((item, idx) => {
+      serviceInvoiceMetaMap.set(item.id, {
+        index: idx + 1,
+        total: ordered.length,
+      });
+      monthlyItems.push(item);
+    });
+  });
 
   const filtered = monthlyItems.filter((item) => {
     const txt = search.toLowerCase();
+    if (!txt) return true;
+    const meta = item.metadata || getCobroMeta(item.id) || {};
     return (
       (item.servicio_nombre || "").toLowerCase().includes(txt) ||
       (item.estado || "").toLowerCase().includes(txt) ||
-      (item.fecha_factura || "").toLowerCase().includes(txt)
+      (item.fecha_factura || "").toLowerCase().includes(txt) ||
+      (meta.concepto || "").toLowerCase().includes(txt) ||
+      (meta.nombre_constancia || item.nombre_constancia || "").toLowerCase().includes(txt)
     );
   });
 
+  function getServicioDefaultsForForm(baseForm, servId, targetMes = currentMonth, sourceItem = null) {
+    const serv = servicios.find((s) => s.id === servId);
+    const cfg = getServicioCobroConfig(servId) || {};
+    const sourceMeta = sourceItem?.metadata || (sourceItem?.id ? getCobroMeta(sourceItem.id) : null) || {};
+    const dias = getDiasMesFactura(targetMes || currentMonth);
 
-  function openCreate() {
-    setEditing(null);
-    setForm({
-      ...emptyForm,
-      mes: currentMonth,
-      sede_id: defaultSedeId,
-      es_variable: false,
-      costo_dia: "",
-      metodo_pago: "transferencia",
-      nombre_constancia: "",
-      calcular_iva: true,
-      frecuencia_pago: "mensual",
-      dias_quincena: 15,
-      dias_quincena_partes: { q1: 15, q2: 15 },
+    const esVariable = sourceMeta.es_variable ?? cfg?.es_variable ?? false;
+    const costoDia = sourceMeta.costo_dia ?? cfg?.costo_dia ?? "";
+    let initMonto = sourceItem?.monto ?? serv?.monto_mensual ?? baseForm.monto ?? "";
+    if (!sourceItem) {
+      if (esVariable && costoDia) {
+        initMonto = Math.round(Number(costoDia) * dias);
+      } else if (cfg?.monto != null && cfg.monto !== "") {
+        initMonto = Number(cfg.monto);
+      }
+    }
+
+    const metodoPago = sourceMeta.metodo_pago ?? cfg?.metodo_pago ?? serv?.metodo_pago ?? "transferencia";
+    const calcularIva = sourceMeta.calcular_iva !== undefined
+      ? sourceMeta.calcular_iva
+      : cfg?.calcular_iva !== undefined
+      ? cfg.calcular_iva
+      : metodoPago !== "efectivo";
+    const frecuenciaPago = sourceMeta.frecuencia_pago ?? cfg?.frecuencia_pago ?? "mensual";
+    const diasQuincena = sourceMeta.dias_quincena ?? cfg?.dias_quincena ?? 15;
+    const diasQuincenaPartes = sourceMeta.dias_quincena_partes ?? cfg?.dias_quincena_partes ?? {
+      q1: diasQuincena,
+      q2: 15,
+    };
+    const servNombreConstancia =
+      sourceMeta.nombre_constancia || cfg?.nombre_constancia || serv?.nombre_constancia || sourceItem?.nombre_constancia || "";
+
+    const existingCountInMonth = items.filter(
+      (c) => c.servicio_id === servId && c.mes === (targetMes || currentMonth) && !isCobroExcluido(c)
+    ).length;
+    const isAdditional = existingCountInMonth > 0 || Boolean(sourceItem?.servicio_id);
+
+    return {
+      ...baseForm,
+      servicio_id: servId || "",
+      servicio_nombre: serv?.nombre || sourceItem?.servicio_nombre || "",
+      sede_id: serv?.sede_id || sourceItem?.sede_id || defaultSedeId,
+      mes: targetMes || currentMonth,
+      monto: initMonto,
+      es_variable: esVariable,
+      costo_dia: costoDia,
+      metodo_pago: metodoPago,
+      nombre_constancia: servNombreConstancia,
+      calcular_iva: calcularIva,
+      frecuencia_pago: frecuenciaPago,
+      dias_quincena: diasQuincena,
+      dias_quincena_partes: diasQuincenaPartes,
       partes_pagadas: [],
       fechas_partes: {},
       partes_personalizadas: null,
-    });
+      concepto: "",
+      es_adicional: isAdditional,
+      propagar_futuro: !isAdditional,
+    };
+  }
+
+  function openCreate(sourceItem = null) {
+    setEditing(null);
+    const base = {
+      ...emptyForm,
+      mes: sourceItem?.mes || currentMonth,
+      sede_id: sourceItem?.sede_id || defaultSedeId,
+    };
+    if (sourceItem && (sourceItem.servicio_id || sourceItem.id)) {
+      const servId = sourceItem.servicio_id || sourceItem.id;
+      setForm(getServicioDefaultsForForm(base, servId, base.mes, sourceItem.servicio_id ? sourceItem : null));
+    } else {
+      setForm(base);
+    }
     setModalOpen(true);
   }
 
@@ -920,6 +1014,7 @@ export default function Cobros() {
       q1: meta.dias_quincena_partes?.q1 ?? diasQuincena,
       q2: meta.dias_quincena_partes?.q2 ?? (diasRestantes === 16 ? 16 : 15),
     };
+    const isAdicional = Boolean(meta.es_adicional);
 
     const info = getCobroPartesInfo(item, meta);
 
@@ -940,6 +1035,9 @@ export default function Cobros() {
       fechas_partes: info.fechasPartes,
       partes_personalizadas: Array.isArray(meta.partes_personalizadas) ? info.partes : null,
       estado: info.estadoEfectivo,
+      concepto: meta.concepto || "",
+      es_adicional: isAdicional,
+      propagar_futuro: !isAdicional,
     });
 
     setModalOpen(true);
@@ -1164,7 +1262,7 @@ export default function Cobros() {
     ];
     const mesDescarga = meses[today.getMonth()];
     const anioDescarga = today.getFullYear();
-    const concepto = `SEGURIDAD PRIVADA CORRESPONDIENTE DE ${mesDescarga} DEL ${anioDescarga}`;
+    const defaultConcepto = `SEGURIDAD PRIVADA CORRESPONDIENTE DE ${mesDescarga} DEL ${anioDescarga}`;
 
     const headers = [
       "FECHA SOLICITUD",
@@ -1179,7 +1277,7 @@ export default function Cobros() {
     ];
 
     const rows = dataToExport.map((item) => {
-      const meta = getCobroMeta(item.id) || {};
+      const meta = item.metadata || getCobroMeta(item.id) || {};
       const servCfg = getServicioCobroConfig(item.servicio_id) || {};
       const serv = servicios.find((s) => s.id === item.servicio_id);
 
@@ -1192,6 +1290,7 @@ export default function Cobros() {
         ""
       ).trim().toUpperCase();
 
+      const itemConcepto = (meta.concepto || "").trim().toUpperCase() || defaultConcepto;
       const valorBaseNum = Number(item.monto || 0);
       const ivaNum = valorBaseNum * 0.16;
       const totalNum = valorBaseNum + ivaNum;
@@ -1204,7 +1303,7 @@ export default function Cobros() {
         valorBaseNum.toFixed(2),
         ivaNum.toFixed(2),
         totalNum.toFixed(2),
-        concepto,
+        itemConcepto,
         "PUE"
       ];
     });
@@ -1287,12 +1386,39 @@ export default function Cobros() {
   }
 
   async function handleSave() {
+    if (!form.servicio_id) {
+      toast({
+        title: "Servicio requerido",
+        description: "Selecciona un servicio para generar la factura.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!form.mes) {
+      toast({
+        title: "Mes requerido",
+        description: "Indica el mes correspondiente de la factura.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const diasMes = getDiasMesFactura(form.mes || currentMonth);
-      let finalMonto = form.monto === "" ? null : Number(form.monto);
+      let finalMonto = form.monto === "" || form.monto === null || form.monto === undefined ? null : Number(form.monto);
       if (form.es_variable && form.costo_dia) {
         finalMonto = Math.round(Number(form.costo_dia) * diasMes);
+      }
+
+      if (finalMonto === null || Number.isNaN(finalMonto) || finalMonto < 0) {
+        toast({
+          title: "Monto inválido",
+          description: "Ingresa un monto válido (0 o mayor) o un costo por día.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
       }
 
       const planActual = calcularPlanPagos({
@@ -1332,6 +1458,17 @@ export default function Cobros() {
 
       const latestFechaPago = form.fecha_pago || (Object.values(form.fechas_partes || {}).pop()) || null;
 
+      let isAdditionalInvoice = Boolean(form.es_adicional);
+      if (!editing) {
+        const existingForMonth = form.mes === currentMonth
+          ? monthlyItems.filter((c) => c.servicio_id === form.servicio_id)
+          : (await sercoApi.entities.Cobro.filter({ servicio_id: form.servicio_id, mes: form.mes }).catch(() => []))
+              .filter((c) => !isCobroExcluido(c));
+        if (existingForMonth.length > 0) {
+          isAdditionalInvoice = true;
+        }
+      }
+
       const payload = {
         servicio_id: form.servicio_id,
         servicio_nombre: form.servicio_nombre,
@@ -1357,7 +1494,11 @@ export default function Cobros() {
         partes_pagadas: checkedParts,
         fechas_partes: form.fechas_partes || {},
         partes_personalizadas: form.partes_personalizadas || undefined,
+        concepto: (form.concepto || "").trim(),
+        es_adicional: isAdditionalInvoice && !form.propagar_futuro,
       };
+
+      const savedMes = form.mes;
 
       if (editing) {
         setCobroMeta(editing.id, metaPayload);
@@ -1385,69 +1526,78 @@ export default function Cobros() {
           }
         }
 
-        try {
-          const serviceId = editing.servicio_id;
-          const editedMonth = editing.mes;
-          const newMonto = payload.monto;
-          const newFechaLimite = payload.fecha_limite_pago;
+        if (form.propagar_futuro) {
+          try {
+            const serviceId = editing.servicio_id;
+            const editedMonth = editing.mes;
+            const newMonto = payload.monto;
+            const newFechaLimite = payload.fecha_limite_pago;
 
-          const subsequentPendingCobros = await sercoApi.entities.Cobro.filter({
-            servicio_id: serviceId,
-            estado: "pendiente",
-            mes: { $gt: editedMonth },
-          });
+            const subsequentPendingCobros = await sercoApi.entities.Cobro.filter({
+              servicio_id: serviceId,
+              estado: "pendiente",
+              mes: { $gt: editedMonth },
+            });
 
-          if (subsequentPendingCobros.length > 0) {
-            await Promise.all(
-              subsequentPendingCobros.map((c) => {
-                const adjustedFechaLimite = adjustDateToMonth(newFechaLimite, c.mes);
-                let cMonto = newMonto;
-                if (form.es_variable && form.costo_dia) {
-                  const cDias = getDiasMesFactura(c.mes);
-                  cMonto = Math.round(Number(form.costo_dia) * cDias);
-                }
-                const subMeta = {
-                  ...c.metadata,
-                  ...getCobroMeta(c.id),
-                  es_variable: form.es_variable,
-                  costo_dia: form.costo_dia,
-                  metodo_pago: form.metodo_pago,
-                  nombre_constancia: (form.nombre_constancia || "").trim(),
-                  calcular_iva: form.calcular_iva,
-                  frecuencia_pago: form.frecuencia_pago,
-                  dias_quincena: form.dias_quincena || 15,
-                  dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
-                };
-                setCobroMeta(c.id, subMeta);
-                return sercoApi.entities.Cobro.update(c.id, {
-                  monto: cMonto,
-                  fecha_limite_pago: adjustedFechaLimite,
-                  metadata: subMeta,
-                }).catch(async () => {
+            const baseSubsequentPending = (subsequentPendingCobros || []).filter((c) => {
+              const cMeta = c.metadata || getCobroMeta(c.id) || {};
+              return !cMeta.es_adicional;
+            });
+
+            if (baseSubsequentPending.length > 0) {
+              await Promise.all(
+                baseSubsequentPending.map((c) => {
+                  const adjustedFechaLimite = adjustDateToMonth(newFechaLimite, c.mes);
+                  let cMonto = newMonto;
+                  if (form.es_variable && form.costo_dia) {
+                    const cDias = getDiasMesFactura(c.mes);
+                    cMonto = Math.round(Number(form.costo_dia) * cDias);
+                  }
+                  const subMeta = {
+                    ...c.metadata,
+                    ...getCobroMeta(c.id),
+                    es_variable: form.es_variable,
+                    costo_dia: form.costo_dia,
+                    metodo_pago: form.metodo_pago,
+                    nombre_constancia: (form.nombre_constancia || "").trim(),
+                    calcular_iva: form.calcular_iva,
+                    frecuencia_pago: form.frecuencia_pago,
+                    dias_quincena: form.dias_quincena || 15,
+                    dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
+                  };
+                  setCobroMeta(c.id, subMeta);
                   return sercoApi.entities.Cobro.update(c.id, {
                     monto: cMonto,
                     fecha_limite_pago: adjustedFechaLimite,
-                  }).catch(() => {});
-                });
-              })
-            );
+                    metadata: subMeta,
+                  }).catch(async () => {
+                    return sercoApi.entities.Cobro.update(c.id, {
+                      monto: cMonto,
+                      fecha_limite_pago: adjustedFechaLimite,
+                    }).catch(() => {});
+                  });
+                })
+              );
+              toast({
+                title: "Propagación exitosa",
+                description: `Se actualizó el monto de $${newMonto} y la configuración en ${baseSubsequentPending.length} meses posteriores.`,
+              });
+            } else {
+              toast({
+                title: "Factura actualizada con éxito",
+                description: "No se encontraron meses futuros pendientes para propagar.",
+              });
+            }
+          } catch (propagateError) {
+            console.error("No se pudo propagar el cambio a los meses siguientes:", propagateError);
             toast({
-              title: "Propagación exitosa",
-              description: `Se actualizó el monto de $${newMonto} y la configuración en ${subsequentPendingCobros.length} meses posteriores.`,
-            });
-          } else {
-            toast({
-              title: "Guardado sin propagación",
-              description: "No se encontraron meses futuros pendientes para este servicio en esta sede.",
+              title: "Advertencia de propagación",
+              description: "El cobro se guardó, pero no se pudo propagar a los meses siguientes.",
+              variant: "warning",
             });
           }
-        } catch (propagateError) {
-          console.error("No se pudo propagar el cambio a los meses siguientes:", propagateError);
-          toast({
-            title: "Advertencia de propagación",
-            description: "El cobro se guardó, pero no se pudo propagar a los meses siguientes.",
-            variant: "warning",
-          });
+        } else {
+          toast({ title: "Factura actualizada con éxito" });
         }
       } else {
         const createPayload = {
@@ -1455,6 +1605,10 @@ export default function Cobros() {
           metadata: metaPayload,
         };
         delete createPayload.nombre_constancia;
+        if (createPayload.estado === "parcial") {
+          createPayload.estado = "pendiente";
+          createPayload.fecha_pago = null;
+        }
 
         let created = null;
         try {
@@ -1466,25 +1620,34 @@ export default function Cobros() {
         if (created?.id) {
           setCobroMeta(created.id, metaPayload);
         }
-        toast({ title: "Factura creada con éxito" });
+        toast({
+          title: isAdditionalInvoice ? "Factura adicional creada con éxito" : "Factura creada con éxito",
+          description: savedMes && savedMes !== currentMonth ? `Periodo: ${formatMes(savedMes)}` : undefined,
+        });
       }
 
-      setServicioCobroConfig(form.servicio_id, {
-        es_variable: form.es_variable,
-        costo_dia: form.costo_dia,
-        metodo_pago: form.metodo_pago,
-        nombre_constancia: (form.nombre_constancia || "").trim(),
-        calcular_iva: form.calcular_iva,
-        frecuencia_pago: form.frecuencia_pago,
-        dias_quincena: form.dias_quincena || 15,
-        dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
-        monto: form.es_variable ? null : payload.monto,
-      });
+      if (!isAdditionalInvoice || form.propagar_futuro) {
+        setServicioCobroConfig(form.servicio_id, {
+          es_variable: form.es_variable,
+          costo_dia: form.costo_dia,
+          metodo_pago: form.metodo_pago,
+          nombre_constancia: (form.nombre_constancia || "").trim(),
+          calcular_iva: form.calcular_iva,
+          frecuencia_pago: form.frecuencia_pago,
+          dias_quincena: form.dias_quincena || 15,
+          dias_quincena_partes: form.dias_quincena_partes || { q1: 15, q2: 15 },
+          monto: form.es_variable ? null : payload.monto,
+        });
+      }
 
       setEditing(null);
       setForm(emptyForm);
       setModalOpen(false);
-      await load();
+      if (savedMes && savedMes !== currentMonth) {
+        setCurrentMonth(savedMes);
+      } else {
+        await load();
+      }
     } catch (e) {
       console.error(e);
       toast({
@@ -1498,8 +1661,12 @@ export default function Cobros() {
   }
 
   async function handleDelete() {
+    if (!deleteId) return;
     await sercoApi.entities.Cobro.delete(deleteId);
     setDeleteId(null);
+    setModalOpen(false);
+    setEditing(null);
+    toast({ title: "Factura eliminada" });
     await load();
   }
 
@@ -1632,7 +1799,19 @@ export default function Cobros() {
             </Button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {(can("cobros", "create") || can("cobros", "edit")) && (
+            <Button
+              size="sm"
+              onClick={() => openCreate()}
+              className="gap-1.5 text-xs font-semibold h-9 shadow-2xs shrink-0"
+              title="Generar una nueva factura para un servicio"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nueva Factura</span>
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -1704,6 +1883,7 @@ export default function Cobros() {
               filtered.map((item) => {
                 const meta = item.metadata || getCobroMeta(item.id);
                 const info = getCobroPartesInfo(item, meta);
+                const servOrdinal = serviceInvoiceMetaMap.get(item.id);
                 const itemExtras = facturasExtrasAll.filter(
                   (x) => x.servicio_id === item.servicio_id && (!x.mes || x.mes === item.mes)
                 );
@@ -1721,6 +1901,11 @@ export default function Cobros() {
                     <TableCell className="font-medium">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-semibold">{item.servicio_nombre || "—"}</span>
+                        {servOrdinal && servOrdinal.total > 1 && (
+                          <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200 text-[10px] px-1.5 py-0 font-semibold">
+                            Factura {servOrdinal.index}/{servOrdinal.total}
+                          </Badge>
+                        )}
                         {meta?.es_variable && (
                           <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] px-1.5 py-0 font-medium">
                             Variable
@@ -1746,6 +1931,11 @@ export default function Cobros() {
                           </Badge>
                         )}
                       </div>
+                      {meta?.concepto && (
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-[260px]" title={meta.concepto}>
+                          {meta.concepto}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>{item.fecha_factura || "—"}</TableCell>
                     <TableCell className="capitalize text-xs text-muted-foreground">
@@ -1822,6 +2012,23 @@ export default function Cobros() {
                         </Button>
                       )}
 
+                      {/* Botón Generar otra factura para el mismo servicio */}
+                      {(can("cobros", "create") || can("cobros", "edit")) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs font-semibold gap-1 border-blue-200 hover:bg-blue-50 text-blue-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCreate(item);
+                          }}
+                          title="Generar otra factura para este servicio"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Factura
+                        </Button>
+                      )}
+
                       {/* Botón Facturas Extras */}
                       {can("cobros", "edit") && (
                         <Button
@@ -1872,34 +2079,7 @@ export default function Cobros() {
                 <Select
                   value={form.servicio_id}
                   onValueChange={(val) => {
-                    const serv = servicios.find((s) => s.id === val);
-                    const cfg = getServicioCobroConfig(val);
-                    const dias = getDiasMesFactura(form.mes || currentMonth);
-                    let initMonto = serv?.monto_mensual || form.monto;
-                    if (cfg?.es_variable && cfg?.costo_dia) {
-                      initMonto = Math.round(Number(cfg.costo_dia) * dias);
-                    } else if (cfg?.monto != null && cfg.monto !== "") {
-                      initMonto = Number(cfg.monto);
-                    }
-                    const servNombreConstancia = cfg?.nombre_constancia || serv?.nombre_constancia || "";
-                    setForm({
-                      ...form,
-                      servicio_id: val,
-                      servicio_nombre: serv?.nombre || "",
-                      sede_id: serv?.sede_id || defaultSedeId,
-                      monto: initMonto,
-                      es_variable: cfg?.es_variable ?? form.es_variable,
-                      costo_dia: cfg?.costo_dia ?? form.costo_dia,
-                      metodo_pago: cfg?.metodo_pago ?? form.metodo_pago,
-                      nombre_constancia: servNombreConstancia || form.nombre_constancia || "",
-                      calcular_iva: cfg?.calcular_iva ?? form.calcular_iva,
-                      frecuencia_pago: cfg?.frecuencia_pago ?? form.frecuencia_pago,
-                      dias_quincena: cfg?.dias_quincena ?? form.dias_quincena ?? 15,
-                      dias_quincena_partes: cfg?.dias_quincena_partes ?? {
-                        q1: cfg?.dias_quincena ?? form.dias_quincena_partes?.q1 ?? 15,
-                        q2: form.dias_quincena_partes?.q2 ?? 15,
-                      },
-                    });
+                    setForm(getServicioDefaultsForForm(form, val, form.mes || currentMonth));
                   }}
                 >
                   <SelectTrigger>
@@ -1920,6 +2100,29 @@ export default function Cobros() {
                 <Input value={form.servicio_nombre} disabled className="bg-muted" />
               </div>
             )}
+
+            {!editing && form.servicio_id && form.mes === currentMonth && (() => {
+              const existingCount = monthlyItems.filter((c) => c.servicio_id === form.servicio_id).length;
+              if (existingCount === 0) return null;
+              return (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/70 dark:bg-blue-950/30 dark:border-blue-900 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
+                  Este servicio ya tiene <strong>{existingCount}</strong> factura(s) en {formatMes(form.mes)}. Se agregará una factura adicional independiente.
+                </div>
+              );
+            })()}
+
+            <div>
+              <Label htmlFor="cobro_concepto">Concepto / Etiqueta de Factura</Label>
+              <Input
+                id="cobro_concepto"
+                placeholder="Ej. Turno adicional, Caseta Norte, 1ra quincena, Renta equipo..."
+                value={form.concepto || ""}
+                onChange={(e) => setForm({ ...form, concepto: e.target.value })}
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Opcional. Ayuda a distinguir varias facturas del mismo servicio y se usa en el Excel SAT.
+              </p>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -2350,18 +2553,52 @@ export default function Cobros() {
                 </div>
               )}
             </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
+              <div className="pr-3">
+                <Label className="text-xs font-semibold">
+                  {editing
+                    ? "Propagar monto y configuración a meses siguientes"
+                    : "Guardar como configuración base mensual del servicio"}
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  {form.propagar_futuro
+                    ? "Actualiza la configuración base del servicio y los meses futuros pendientes."
+                    : "Aplica únicamente a esta factura sin alterar la mensualidad base del servicio."}
+                </p>
+              </div>
+              <Switch
+                checked={Boolean(form.propagar_futuro)}
+                onCheckedChange={(checked) => setForm({ ...form, propagar_futuro: checked })}
+              />
+            </div>
           </div>
 
           <DialogFooter>
             {editing && can("cobros", "edit") && (
-              <Button
-                variant="ghost"
-                className="mr-auto text-muted-foreground hover:text-foreground"
-                onClick={() => setExcludeId(editing.id)}
-              >
-                <EyeOff className="w-4 h-4 mr-1.5" />
-                Excluir
-              </Button>
+              <div className="mr-auto flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setExcludeId(editing.id)}
+                >
+                  <EyeOff className="w-4 h-4 mr-1.5" />
+                  Excluir
+                </Button>
+                {(can("cobros", "delete") || can("cobros", "edit")) &&
+                  monthlyItems.filter(
+                    (c) => c.servicio_id === editing.servicio_id && c.mes === editing.mes
+                  ).length > 1 && (
+                    <Button
+                      variant="ghost"
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                      onClick={() => setDeleteId(editing.id)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-1.5" />
+                      Eliminar
+                    </Button>
+                  )}
+              </div>
             )}
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving || distributionIsInvalid}>
@@ -2380,7 +2617,8 @@ export default function Cobros() {
               Registrar Pago de Factura
             </DialogTitle>
             <DialogDescription>
-              {paymentCobro?.servicio_nombre} • {formatMes(paymentCobro?.mes)}
+              {paymentCobro?.servicio_nombre}
+              {paymentMeta?.concepto ? ` — ${paymentMeta.concepto}` : ""} • {formatMes(paymentCobro?.mes)}
             </DialogDescription>
           </DialogHeader>
 
@@ -2860,25 +3098,31 @@ export default function Cobros() {
                 No hay facturas excluidas en este mes.
               </p>
             ) : (
-              monthlyExcluded.map((exc) => (
-                <div key={exc.id} className="flex items-center justify-between p-3 hover:bg-muted/50 text-sm">
-                  <div>
-                    <p className="font-semibold text-slate-800 dark:text-slate-100">{exc.servicio_nombre || "Servicio sin nombre"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Monto base: ${Number(exc.monto || 0).toLocaleString("es-MX")} • Periodo: {exc.mes}
-                    </p>
+              monthlyExcluded.map((exc) => {
+                const excMeta = exc.metadata || getCobroMeta(exc.id) || {};
+                return (
+                  <div key={exc.id} className="flex items-center justify-between p-3 hover:bg-muted/50 text-sm">
+                    <div>
+                      <p className="font-semibold text-slate-800 dark:text-slate-100">
+                        {exc.servicio_nombre || "Servicio sin nombre"}
+                        {excMeta?.concepto ? ` — ${excMeta.concepto}` : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Monto base: ${Number(exc.monto || 0).toLocaleString("es-MX")} • Periodo: {exc.mes}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-1.5 h-8 text-xs font-semibold"
+                      onClick={() => handleRestoreCobro(exc.id)}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                      Restaurar
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-1.5 h-8 text-xs font-semibold"
-                    onClick={() => handleRestoreCobro(exc.id)}
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
-                    Restaurar
-                  </Button>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 

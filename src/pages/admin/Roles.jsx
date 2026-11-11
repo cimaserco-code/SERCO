@@ -66,13 +66,14 @@ export default function Roles() {
     try {
       const coordinadorPreset = {
         nombre: "Coordinador Administrativo",
-        descripcion: "Habilidades administrativas: sedes, clientes, usuarios, comunicados y reportes de atención a clientes.",
+        descripcion:
+          "Habilidades administrativas: sedes, clientes, usuarios (eliminar y actualizar contraseñas por olvido), comunicados y reportes de atención a clientes.",
         permisos: {
           inicio: { view: true },
           overview: { view: true },
           administracion: { view: true },
           sedes: { view: true, create: true, edit: true, delete: false },
-          usuarios: { view: true, create: true, edit: true, delete: false },
+          usuarios: { view: true, create: true, edit: true, delete: true, reset_password: true },
           comunicados: { view: true, create: true, edit: true, delete: false },
           atencion: { view: true, create: true, edit: true, delete: false },
           servicios: { view: true, create: false, edit: false, delete: false },

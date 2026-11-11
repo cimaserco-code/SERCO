@@ -9,7 +9,7 @@ const MODULES = [
   { key: "overview", label: "Overview", actions: ["view"] },
   { key: "administracion", label: "Administración (Panel General)", actions: ["view"] },
   { key: "sedes", label: "Sedes (Administración)", actions: ["view", "create", "edit", "delete"] },
-  { key: "usuarios", label: "Usuarios y Clientes (Administración)", actions: ["view", "create", "edit", "delete"] },
+  { key: "usuarios", label: "Usuarios y Clientes (Administración)", actions: ["view", "create", "edit", "delete", "reset_password"] },
   { key: "comunicados", label: "Comunicados", actions: ["view", "create", "edit", "delete"] },
   { key: "atencion", label: "Atención a Clientes (Reportes)", actions: ["view", "create", "edit", "delete"] },
   { key: "empleados", label: "Empleados", actions: ["view", "create", "edit", "delete"] },
@@ -32,18 +32,19 @@ const ACTION_LABELS = {
   create: "Crear",
   edit: "Editar",
   delete: "Eliminar",
+  reset_password: "Actualizar contraseñas",
 };
 
 export const ROLE_PRESETS = [
   {
     name: "Coordinador Administrativo",
-    description: "Sedes, Clientes, Usuarios, Comunicados y Reportes de Clientes",
+    description: "Sedes, Clientes, Usuarios (eliminar y contraseña por olvido), Comunicados y Reportes",
     permisos: {
       inicio: { view: true },
       overview: { view: true },
       administracion: { view: true },
       sedes: { view: true, create: true, edit: true, delete: false },
-      usuarios: { view: true, create: true, edit: true, delete: false },
+      usuarios: { view: true, create: true, edit: true, delete: true, reset_password: true },
       comunicados: { view: true, create: true, edit: true, delete: false },
       atencion: { view: true, create: true, edit: true, delete: false },
       servicios: { view: true, create: false, edit: false, delete: false },
@@ -58,7 +59,7 @@ export const ROLE_PRESETS = [
       overview: { view: true },
       administracion: { view: true },
       sedes: { view: true, create: true, edit: true, delete: true },
-      usuarios: { view: true, create: true, edit: true, delete: true },
+      usuarios: { view: true, create: true, edit: true, delete: true, reset_password: true },
       comunicados: { view: true, create: true, edit: true, delete: true },
       atencion: { view: true, create: true, edit: true, delete: true },
       empleados: { view: true, create: true, edit: true, delete: true },

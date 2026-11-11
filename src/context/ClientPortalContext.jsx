@@ -236,6 +236,8 @@ export function ClientPortalProvider({ children }) {
       // 1. Cobros for this service (enriquecidos con metadata de método de pago)
       const rawCobros = (cobrosData || []).filter(
         (c) =>
+          c.excluida !== true &&
+          c.excluida !== "true" &&
           c.estado !== "excluido" &&
           (c.servicio_id === selectedServicio.id ||
           (c.servicio_nombre &&
@@ -260,6 +262,7 @@ export function ClientPortalProvider({ children }) {
         return {
           ...c,
           ...meta,
+          concepto: meta.concepto || c.concepto || "",
           metodo_pago: metodoPago,
         };
       });
@@ -385,19 +388,19 @@ export function ClientPortalProvider({ children }) {
     loadServiceData();
   }, [loadServiceData]);
 
-  // Current month's invoice
-  const facturaActual = useMemo(() => {
-    if (!cobros || cobros.length === 0) return null;
+  // Current month's invoices (supports multiple invoices per service)
+  const facturasActuales = useMemo(() => {
+    if (!cobros || cobros.length === 0) return [];
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    // Try matching current month
-    const current = cobros.find((c) => c.mes === currentMonthKey);
-    if (current) return current;
+    const currentList = cobros.filter((c) => c.mes === currentMonthKey);
+    if (currentList.length > 0) return currentList;
 
-    // Otherwise return the most recent invoice
-    return cobros[0];
+    return [cobros[0]];
   }, [cobros]);
+
+  const facturaActual = facturasActuales[0] || null;
 
   const getTurnoPriority = (turno) => {
     if (!turno) return 99;
@@ -563,21 +566,22 @@ export function ClientPortalProvider({ children }) {
     const todayStr = today.toISOString().slice(0, 10);
 
     // ──────────────── 1. FINANZAS ────────────────
-    if (facturaActual) {
-      const isPaid = (facturaActual.estado || "").toLowerCase() === "pagado";
-      const montoFormateado = Number(facturaActual.monto || 0).toLocaleString("es-MX", {
+    facturasActuales.forEach((factura) => {
+      const isPaid = (factura.estado || "").toLowerCase() === "pagado";
+      const montoFormateado = Number(factura.monto || 0).toLocaleString("es-MX", {
         style: "currency",
         currency: "MXN"
       });
+      const conceptoLabel = factura.concepto ? ` (${factura.concepto})` : "";
 
       // 1.1 Factura emitida / enviada
-      if (facturaActual.fecha_factura || facturaActual.fecha_envio) {
+      if (factura.fecha_factura || factura.fecha_envio) {
         list.push({
-          id: `fin-emitida-${facturaActual.id}`,
+          id: `fin-emitida-${factura.id}`,
           tipo: "finanzas",
-          titulo: "Factura del mes emitida",
-          mensaje: `Se ha emitido tu factura correspondiente al periodo ${facturaActual.mes || ""} por ${montoFormateado}.`,
-          fecha: facturaActual.fecha_factura || facturaActual.fecha_envio,
+          titulo: `Factura del mes emitida${conceptoLabel}`,
+          mensaje: `Se ha emitido tu factura${conceptoLabel} correspondiente al periodo ${factura.mes || ""} por ${montoFormateado}.`,
+          fecha: factura.fecha_factura || factura.fecha_envio,
           urgente: false,
           icono: "dollar"
         });
@@ -585,44 +589,44 @@ export function ClientPortalProvider({ children }) {
 
       // 1.2 Recordatorio de pago (Semana de pago, 1 día antes, y el día de)
       // REGLA ESTRICTA: "en caso de que se cambie el estatus a pagado antes de enviar esas notificaciones no las mandes."
-      if (!isPaid && facturaActual.fecha_limite_pago) {
-        const dueDate = new Date(facturaActual.fecha_limite_pago + "T00:00:00");
+      if (!isPaid && factura.fecha_limite_pago) {
+        const dueDate = new Date(factura.fecha_limite_pago + "T00:00:00");
         const todayZero = new Date(todayStr + "T00:00:00");
         const diffDays = Math.round((dueDate - todayZero) / (1000 * 60 * 60 * 24));
 
         if (diffDays === 0) {
           list.push({
-            id: `fin-vence-hoy-${facturaActual.id}`,
+            id: `fin-vence-hoy-${factura.id}`,
             tipo: "finanzas",
-            titulo: "¡Hoy vence tu factura!",
-            mensaje: `Hoy es la fecha límite para el pago de tu factura (${montoFormateado}). Evita recargos o afectaciones en el servicio.`,
+            titulo: `¡Hoy vence tu factura!${conceptoLabel}`,
+            mensaje: `Hoy es la fecha límite para el pago de tu factura${conceptoLabel} (${montoFormateado}). Evita recargos o afectaciones en el servicio.`,
             fecha: todayStr,
             urgente: true,
             icono: "alert"
           });
         } else if (diffDays === 1) {
           list.push({
-            id: `fin-vence-manana-${facturaActual.id}`,
+            id: `fin-vence-manana-${factura.id}`,
             tipo: "finanzas",
-            titulo: "Recordatorio de pago: vence mañana",
-            mensaje: `Tu factura por ${montoFormateado} vence el día de mañana (${facturaActual.fecha_limite_pago}).`,
+            titulo: `Recordatorio de pago: vence mañana${conceptoLabel}`,
+            mensaje: `Tu factura${conceptoLabel} por ${montoFormateado} vence el día de mañana (${factura.fecha_limite_pago}).`,
             fecha: todayStr,
             urgente: true,
             icono: "alert"
           });
         } else if (diffDays > 1 && diffDays <= 7) {
           list.push({
-            id: `fin-semana-pago-${facturaActual.id}`,
+            id: `fin-semana-pago-${factura.id}`,
             tipo: "finanzas",
-            titulo: "Semana de pago de factura",
-            mensaje: `Estamos en la semana de vencimiento de tu factura (${montoFormateado}). Fecha límite: ${facturaActual.fecha_limite_pago}.`,
+            titulo: `Semana de pago de factura${conceptoLabel}`,
+            mensaje: `Estamos en la semana de vencimiento de tu factura${conceptoLabel} (${montoFormateado}). Fecha límite: ${factura.fecha_limite_pago}.`,
             fecha: todayStr,
             urgente: false,
             icono: "dollar"
           });
         }
       }
-    }
+    });
 
     // ──────────────── 2. PERSONAL ────────────────
     // Altas y bajas en el servicio
@@ -706,7 +710,7 @@ export function ClientPortalProvider({ children }) {
 
     // Filter out dismissed notifications
     return list.filter((n) => !dismissedNotifications.includes(n.id));
-  }, [selectedServicio, facturaActual, guardias, agendaEvents, dismissedNotifications]);
+  }, [selectedServicio, facturasActuales, guardias, agendaEvents, dismissedNotifications]);
 
   const dismissNotification = (id) => {
     const updated = [...dismissedNotifications, id];
@@ -738,6 +742,7 @@ export function ClientPortalProvider({ children }) {
         setSelectedServiceId: handleSelectService,
         loading,
         facturaActual,
+        facturasActuales,
         cobros,
         guardias,
         telefonos,

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { sercoApi } from "@/api/sercoClient";
+import { cleanupServiceClientsOnBaja } from "@/lib/adminUserApi";
 import { getServicioCobroConfig, setServicioCobroConfig } from "@/pages/Cobros";
 import { Plus, Pencil, Trash2, Search, } from "lucide-react";
 import {
@@ -170,6 +171,97 @@ function cleanAddressForGeocoding(address, sedeName) {
   }
   
   return clean.trim();
+}
+
+async function runClientCleanupForDeactivatedService({ servicioId, serviceSnapshot }) {
+  try {
+    const res = await cleanupServiceClientsOnBaja({
+      servicioId,
+      serviceSnapshot: serviceSnapshot
+        ? {
+            nombre: serviceSnapshot.nombre || "",
+            correo: serviceSnapshot.correo || "",
+            correo_2: serviceSnapshot.correo_2 || "",
+            admin_nombre: serviceSnapshot.admin_nombre || "",
+          }
+        : null,
+    });
+
+    const deletedList = Array.isArray(res?.deletedClients) ? res.deletedClients : [];
+    const skippedList = Array.isArray(res?.skippedActiveClients) ? res.skippedActiveClients : [];
+
+    if (res?.errors?.length) {
+      console.warn("Errores parciales al autoeliminar clientes del servicio:", res.errors);
+    }
+
+    return { deletedList, skippedList, error: null };
+  } catch (clientErr) {
+    console.warn("No se pudo autoeliminar el usuario cliente del servicio:", clientErr);
+    return {
+      deletedList: [],
+      skippedList: [],
+      error: clientErr?.message || "No se pudo verificar o eliminar el acceso del cliente.",
+    };
+  }
+}
+
+function buildBajaClientNotice(clientCleanup) {
+  if (!clientCleanup) return "";
+  if (clientCleanup.error) {
+    return ` Aviso: no se pudo autoeliminar el acceso del cliente (${clientCleanup.error}).`;
+  }
+  if (clientCleanup.deletedList.length > 0) {
+    const emails = clientCleanup.deletedList.map((c) => c.email).filter(Boolean).join(", ");
+    const label =
+      clientCleanup.deletedList.length === 1
+        ? "la cuenta de cliente"
+        : `${clientCleanup.deletedList.length} cuentas de cliente`;
+    return ` Se autoeliminó ${label} (${emails}).`;
+  }
+  if (clientCleanup.skippedList.length > 0) {
+    return " La cuenta del cliente se conservó porque aún tiene otro servicio activo.";
+  }
+  return "";
+}
+
+async function cleanupSuspendedServiceResources({ servicioId, serviceName, oldName, serviceSnapshot }) {
+  const cleanName = (serviceName || "").trim();
+  const lowerName = cleanName.toLowerCase();
+  const lowerOldName = (oldName || cleanName).trim().toLowerCase();
+
+  try {
+    const [asigsById, asigsByName] = await Promise.all([
+      sercoApi.entities.AsignacionTurno.filter({ servicio_id: servicioId }).catch(() => []),
+      cleanName
+        ? sercoApi.entities.AsignacionTurno.filter({ servicio_nombre: cleanName }).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+    const asigsMap = new Map();
+    [...(asigsById || []), ...(asigsByName || [])].forEach((a) => asigsMap.set(a.id, a));
+    for (const asigId of asigsMap.keys()) {
+      await sercoApi.entities.AsignacionTurno.delete(asigId).catch(() => {});
+    }
+  } catch (asigErr) {
+    console.warn("Error al limpiar asignaciones de turno del servicio suspendido:", asigErr);
+  }
+
+  try {
+    const allEmps = await sercoApi.entities.Empleado.list().catch(() => []);
+    const affectedEmps = (allEmps || []).filter((e) => {
+      const loc = (e.servicio_ubicacion || "").trim().toLowerCase();
+      return (lowerName && loc === lowerName) || (lowerOldName && loc === lowerOldName);
+    });
+
+    for (const emp of affectedEmps) {
+      await sercoApi.entities.Empleado.update(emp.id, {
+        servicio_ubicacion: "",
+      }).catch(() => {});
+    }
+  } catch (empErr) {
+    console.warn("Error al desvincular empleados del servicio suspendido:", empErr);
+  }
+
+  return await runClientCleanupForDeactivatedService({ servicioId, serviceSnapshot });
 }
 
 const emptyForm = {
@@ -487,47 +579,25 @@ export default function Servicios() {
         });
       }
 
-      // Si el servicio fue suspendido, desvincular a los elementos asignados y limpiar asignaciones de plantilla
+      // Si el servicio fue suspendido, desvincular elementos, limpiar plantilla y autoeliminar clientes huérfanos
       if (savedItem && (payload.estado === "suspendido" || (savedItem.estado || "").toLowerCase() === "suspendido")) {
-        const serviceId = savedItem.id;
-        const serviceName = (savedItem.nombre || "").trim().toLowerCase();
-        const oldName = editing ? (editing.nombre || "").trim().toLowerCase() : serviceName;
-
-        try {
-          // 1. Eliminar asignaciones de turno vinculadas a este servicio en Plantilla
-          const [asigsById, asigsByName] = await Promise.all([
-            sercoApi.entities.AsignacionTurno.filter({ servicio_id: serviceId }).catch(() => []),
-            sercoApi.entities.AsignacionTurno.filter({ servicio_nombre: savedItem.nombre }).catch(() => []),
-          ]);
-          const asigsMap = new Map();
-          [...(asigsById || []), ...(asigsByName || [])].forEach((a) => asigsMap.set(a.id, a));
-          for (const asigId of asigsMap.keys()) {
-            await sercoApi.entities.AsignacionTurno.delete(asigId).catch(() => {});
-          }
-        } catch (asigErr) {
-          console.warn("Error al limpiar asignaciones de turno del servicio suspendido:", asigErr);
-        }
-
-        try {
-          // 2. Desvincular empleados asignados a este servicio para que queden sin servicio
-          const allEmps = await sercoApi.entities.Empleado.list().catch(() => []);
-          const affectedEmps = (allEmps || []).filter((e) => {
-            const loc = (e.servicio_ubicacion || "").trim().toLowerCase();
-            return loc === serviceName || (oldName && loc === oldName);
-          });
-
-          for (const emp of affectedEmps) {
-            await sercoApi.entities.Empleado.update(emp.id, {
-              servicio_ubicacion: "",
-            }).catch(() => {});
-          }
-        } catch (empErr) {
-          console.warn("Error al desvincular empleados del servicio suspendido:", empErr);
-        }
+        const clientCleanup = await cleanupSuspendedServiceResources({
+          servicioId: savedItem.id,
+          serviceName: savedItem.nombre,
+          oldName: editing?.nombre || savedItem.nombre,
+          serviceSnapshot: {
+            nombre: savedItem.nombre || editing?.nombre || payload.nombre || "",
+            correo: savedItem.correo || editing?.correo || payload.correo || "",
+            correo_2: savedItem.correo_2 || editing?.correo_2 || payload.correo_2 || "",
+            admin_nombre: savedItem.admin_nombre || editing?.admin_nombre || payload.admin_nombre || "",
+          },
+        });
 
         toast({
           title: "Servicio Suspendido",
-          description: "El servicio fue suspendido. Los elementos asignados quedaron sin servicio y ya no aparecerá en Facturas, Plantilla ni Asistencias.",
+          description:
+            "El servicio fue suspendido. Los elementos asignados quedaron sin servicio y ya no aparecerá en Facturas, Plantilla ni Asistencias." +
+            buildBajaClientNotice(clientCleanup),
         });
       }
 
@@ -575,15 +645,30 @@ export default function Servicios() {
   }
 
   async function handleDelete() {
+    const deletingId = deleteId;
+    const targetService = items.find((s) => String(s.id) === String(deletingId)) || null;
     try {
-      const cobrosOfService = await sercoApi.entities.Cobro.filter({ servicio_id: deleteId }).catch(() => []);
+      const cobrosOfService = await sercoApi.entities.Cobro.filter({ servicio_id: deletingId }).catch(() => []);
       if (cobrosOfService?.length) {
         await Promise.allSettled(cobrosOfService.map((c) => sercoApi.entities.Cobro.delete(c.id)));
       }
     } catch (e) {
       console.warn("Error limpiando cobros del servicio:", e);
     }
-    await sercoApi.entities.Servicio.delete(deleteId);
+    await sercoApi.entities.Servicio.delete(deletingId);
+    const clientCleanup = await cleanupSuspendedServiceResources({
+      servicioId: deletingId,
+      serviceName: targetService?.nombre || "",
+      oldName: targetService?.nombre || "",
+      serviceSnapshot: targetService,
+    });
+    const clientNotice = buildBajaClientNotice(clientCleanup);
+    if (clientNotice) {
+      toast({
+        title: "Servicio Eliminado",
+        description: `El servicio fue eliminado.${clientNotice}`,
+      });
+    }
     setDeleteId(null);
     await load();
   }
@@ -597,44 +682,18 @@ export default function Servicios() {
         fecha_baja: today,
       });
 
-      const serviceId = item.id;
-      const serviceName = (item.nombre || "").trim().toLowerCase();
-
-      // 1. Limpiar turnos en Plantilla
-      try {
-        const [asigsById, asigsByName] = await Promise.all([
-          sercoApi.entities.AsignacionTurno.filter({ servicio_id: serviceId }).catch(() => []),
-          sercoApi.entities.AsignacionTurno.filter({ servicio_nombre: item.nombre }).catch(() => []),
-        ]);
-        const asigsMap = new Map();
-        [...(asigsById || []), ...(asigsByName || [])].forEach((a) => asigsMap.set(a.id, a));
-        for (const asigId of asigsMap.keys()) {
-          await sercoApi.entities.AsignacionTurno.delete(asigId).catch(() => {});
-        }
-      } catch (asigErr) {
-        console.warn("Error al limpiar asignaciones de turno:", asigErr);
-      }
-
-      // 2. Desvincular empleados
-      try {
-        const allEmps = await sercoApi.entities.Empleado.list().catch(() => []);
-        const affectedEmps = (allEmps || []).filter((e) => {
-          const loc = (e.servicio_ubicacion || "").trim().toLowerCase();
-          return loc === serviceName;
-        });
-
-        for (const emp of affectedEmps) {
-          await sercoApi.entities.Empleado.update(emp.id, {
-            servicio_ubicacion: "",
-          }).catch(() => {});
-        }
-      } catch (empErr) {
-        console.warn("Error al desvincular empleados:", empErr);
-      }
+      const clientCleanup = await cleanupSuspendedServiceResources({
+        servicioId: item.id,
+        serviceName: item.nombre,
+        oldName: item.nombre,
+        serviceSnapshot: item,
+      });
 
       toast({
         title: "Servicio Suspendido",
-        description: "El servicio fue suspendido. Los elementos asignados quedaron sin servicio y ya no aparecerá en Facturas, Plantilla ni Asistencias.",
+        description:
+          "El servicio fue suspendido. Los elementos asignados quedaron sin servicio y ya no aparecerá en Facturas, Plantilla ni Asistencias." +
+          buildBajaClientNotice(clientCleanup),
       });
 
       await load();

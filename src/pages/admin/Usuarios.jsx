@@ -6,6 +6,7 @@ import { usePermissions } from "@/lib/PermissionsContext";
 import { 
   Plus, 
   Pencil, 
+  Trash2,
   Search, 
   Lock, 
   KeyRound, 
@@ -18,6 +19,9 @@ import {
   ShieldCheck, 
   Sparkles 
 } from "lucide-react";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import UpdatePasswordModal from "@/components/admin/UpdatePasswordModal";
+import { deleteInternalUser } from "@/lib/adminUserApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,10 +41,27 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 
+const SUPER_ADMIN_ROLE_SET = new Set([
+  "admin",
+  "administrador",
+  "super administrador",
+  "super_admin",
+  "superadmin",
+]);
+
+function isProtectedSuperAdminRole(role) {
+  return SUPER_ADMIN_ROLE_SET.has((role || "").toString().trim().toLowerCase());
+}
+
 export default function Usuarios() {
   const { user: currentUser } = useAuth();
-  const { canView } = usePermissions();
-  const isAdmin = canView("administracion");
+  const { canView, can } = usePermissions();
+  const isAdmin = canView("administracion") || canView("usuarios");
+  const isSuperAdmin = isProtectedSuperAdminRole(currentUser?.role);
+  const canCreateUsers = can("usuarios", "create");
+  const canEditUsers = can("usuarios", "edit");
+  const canDeleteUsers = can("usuarios", "delete");
+  const canUpdatePasswords = can("usuarios", "reset_password");
   const { toast } = useToast();
   const [users, setUsers] = useState([]);
   const [sedes, setSedes] = useState([]);
@@ -88,7 +109,7 @@ export default function Usuarios() {
   const [editForm, setEditForm] = useState({ role: "user", sede_ids: [], estado: "active" });
   const [saving, setSaving] = useState(false);
   const [resetUser, setResetUser] = useState(null);
-  const [resetting, setResetting] = useState(false);
+  const [deleteTargetUser, setDeleteTargetUser] = useState(null);
 
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
@@ -195,20 +216,51 @@ export default function Usuarios() {
     }
   }
 
+  function canResetTargetPassword(u) {
+    if (!canUpdatePasswords || !u) return false;
+    return !isProtectedSuperAdminRole(u.role) || isSuperAdmin;
+  }
+
+  function canDeleteTargetUser(u) {
+    if (!canDeleteUsers || !u) return false;
+    const targetRole = (u.role || "").toString().trim().toLowerCase();
+    if (targetRole === "cliente") return false;
+    if (u.id && currentUser?.id && u.id === currentUser.id) return false;
+    return !isProtectedSuperAdminRole(u.role) || isSuperAdmin;
+  }
+
   function openReset(u) {
+    if (!canResetTargetPassword(u)) {
+      toast({
+        title: "Acción restringida",
+        description: "No tienes permiso para actualizar la contraseña de este usuario.",
+        variant: "destructive",
+      });
+      return;
+    }
     setResetUser(u);
   }
 
-  async function handleReset() {
-    setResetting(true);
+  async function handleConfirmDeleteUser() {
+    if (!deleteTargetUser) return;
     try {
-      await sercoApi.auth.resetPasswordRequest(resetUser.email);
-      toast({ title: "Enlace enviado", description: `Se envió un enlace de restablecimiento a ${resetUser.email}` });
-      setResetUser(null);
+      const result = await deleteInternalUser({
+        userId: deleteTargetUser.id,
+        email: deleteTargetUser.email,
+      });
+      toast({
+        title: "Usuario eliminado",
+        description: `Se eliminó la cuenta ${result?.email || deleteTargetUser.email} de forma permanente.`,
+      });
+      setDeleteTargetUser(null);
+      await load();
     } catch (e) {
-      toast({ title: "Error", description: e.message || "No se pudo enviar el enlace", variant: "destructive" });
-    } finally {
-      setResetting(false);
+      toast({
+        title: "No se pudo eliminar el usuario",
+        description: e.message || "Ocurrió un error al eliminar la cuenta.",
+        variant: "destructive",
+      });
+      throw e;
     }
   }
 
@@ -511,24 +563,26 @@ export default function Usuarios() {
               className="pl-9 w-full sm:w-64 h-9 text-xs"
             />
           </div>
-          {activeTab === "personal" ? (
-            <div className="flex items-center gap-1.5">
-              <Button onClick={() => openCreateUser()} className="h-9 text-xs font-semibold shadow-xs">
-                <UserPlus className="w-4 h-4 mr-1.5" /> Crear Usuario
+          {canCreateUsers && (
+            activeTab === "personal" ? (
+              <div className="flex items-center gap-1.5">
+                <Button onClick={() => openCreateUser()} className="h-9 text-xs font-semibold shadow-xs">
+                  <UserPlus className="w-4 h-4 mr-1.5" /> Crear Usuario
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={openInvite}
+                  className="h-9 text-xs"
+                  title="Enviar solo invitación por correo sin contraseña"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Invitar
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={() => openCreateUser("cliente")} className="h-9 text-xs font-semibold shadow-xs">
+                <UserPlus className="w-4 h-4 mr-1.5" /> Nuevo Cliente
               </Button>
-              <Button
-                variant="outline"
-                onClick={openInvite}
-                className="h-9 text-xs"
-                title="Enviar solo invitación por correo sin contraseña"
-              >
-                <Plus className="w-4 h-4 mr-1" /> Invitar
-              </Button>
-            </div>
-          ) : (
-            <Button onClick={() => openCreateUser("cliente")} className="h-9 text-xs font-semibold shadow-xs">
-              <UserPlus className="w-4 h-4 mr-1.5" /> Nuevo Cliente
-            </Button>
+            )
           )}
         </div>
       </div>
@@ -543,6 +597,11 @@ export default function Usuarios() {
             Clientes ({clientUsers.length})
           </TabsTrigger>
         </TabsList>
+        {activeTab === "clientes" && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Nota: Los usuarios cliente no se eliminan manualmente; se autoeliminan al dar de baja o eliminar su servicio en Servicios.
+          </p>
+        )}
 
         {/* ══════════ TAB 1: PERSONAL INTERNO ══════════ */}
         <TabsContent value="personal" className="mt-4">
@@ -585,12 +644,32 @@ export default function Usuarios() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar">
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => openReset(u)} title="Restablecer contraseña">
-                            <KeyRound className="w-4 h-4" />
-                          </Button>
+                          {canEditUsers && (!isProtectedSuperAdminRole(u.role) || isSuperAdmin) && (
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar">
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canResetTargetPassword(u) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openReset(u)}
+                              title="Actualizar contraseña (por olvido)"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canDeleteTargetUser(u) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteTargetUser(u)}
+                              title="Eliminar usuario"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -713,12 +792,21 @@ export default function Usuarios() {
                             >
                               {isCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar">
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => openReset(u)} title="Restablecer contraseña">
-                              <KeyRound className="w-4 h-4" />
-                            </Button>
+                            {canEditUsers && (
+                              <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar">
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {canResetTargetPassword(u) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openReset(u)}
+                                title="Actualizar contraseña (por olvido)"
+                              >
+                                <KeyRound className="w-4 h-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1274,23 +1362,21 @@ export default function Usuarios() {
         </DialogContent>
       </Dialog>
 
-      {/* Reset Password Dialog */}
-      <Dialog open={!!resetUser} onOpenChange={(v) => !v && setResetUser(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Restablecer Contraseña</DialogTitle>
-            <DialogDescription>
-              Se enviará un enlace de restablecimiento a <strong>{resetUser?.email}</strong> para que el usuario pueda asignar una nueva contraseña.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResetUser(null)}>Cancelar</Button>
-            <Button onClick={handleReset} disabled={resetting}>
-              {resetting ? "Enviando..." : "Enviar enlace"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Actualizar Contraseña (por olvido) */}
+      <UpdatePasswordModal user={resetUser} onClose={() => setResetUser(null)} />
+
+      {/* Confirmar Eliminación de Usuario Interno */}
+      <ConfirmDialog
+        open={!!deleteTargetUser}
+        onOpenChange={(open) => !open && setDeleteTargetUser(null)}
+        title="Eliminar usuario"
+        description={`¿Estás seguro de eliminar permanentemente a ${
+          formatUserDisplayName(deleteTargetUser?.nombre_completo) || deleteTargetUser?.email || "este usuario"
+        } (${deleteTargetUser?.email || ""})? Se revocará su acceso y no podrá iniciar sesión.`}
+        onConfirm={handleConfirmDeleteUser}
+        confirmLabel="Eliminar usuario"
+        loadingLabel="Eliminando..."
+      />
     </div>
   );
 }

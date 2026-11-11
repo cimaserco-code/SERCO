@@ -62,6 +62,7 @@ export default function ClientHome() {
     selectedServicio,
     loading,
     facturaActual,
+    facturasActuales,
     guardias,
     telefonos,
     notificaciones,
@@ -783,6 +784,25 @@ export default function ClientHome() {
       <div className="space-y-6">
 
         {/* ────────────────── 1. SECCIÓN: FACTURA DEL MES (ARRIBA) ────────────────── */}
+        {(() => {
+          const facturasList = facturasActuales && facturasActuales.length > 0
+            ? facturasActuales
+            : facturaActual
+            ? [facturaActual]
+            : [];
+          const hasMultipleFacturas = facturasList.length > 1;
+          const primaryFactura = facturasList[0] || null;
+          const totalMesFacturas = facturasList.reduce((sum, f) => sum + (Number(f.monto) || 0), 0);
+          const allPaid = facturasList.length > 0 && facturasList.every((f) => (f.estado || "").toLowerCase() === "pagado");
+          const anyTransferencia = facturasList.some((f) => {
+            const m = (f?.metodo_pago || "transferencia").toLowerCase().trim();
+            return !m.includes("efectivo") && !m.includes("cheque");
+          });
+          const metodoReferencia = anyTransferencia
+            ? "transferencia"
+            : (primaryFactura?.metodo_pago || "transferencia").toLowerCase().trim();
+
+          return (
         <Card id="seccion-factura" className="border-border shadow-xs scroll-mt-20">
           <CardHeader className="pb-3 border-b border-border bg-muted/20">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -792,74 +812,109 @@ export default function ClientHome() {
                 </div>
                 <div>
                   <CardTitle className="text-base font-bold text-foreground">
-                    Factura del Mes
+                    {hasMultipleFacturas ? `Facturas del Mes (${facturasList.length})` : "Factura del Mes"}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {facturaActual?.mes
-                      ? `Periodo fiscal correspondiente: ${facturaActual.mes}`
+                    {primaryFactura?.mes
+                      ? `Periodo fiscal correspondiente: ${primaryFactura.mes}`
                       : "Estado financiero de tu servicio"}
                   </CardDescription>
                 </div>
               </div>
-              {facturaActual && (
+              {primaryFactura && (
                 <div>
-                  {getFacturaStatusBadge(facturaActual.estado)}
+                  {hasMultipleFacturas
+                    ? (allPaid
+                        ? getFacturaStatusBadge("pagado")
+                        : getFacturaStatusBadge("pendiente"))
+                    : getFacturaStatusBadge(primaryFactura.estado)}
                 </div>
               )}
             </div>
           </CardHeader>
 
           <CardContent className="pt-5">
-            {facturaActual ? (
+            {facturasList.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 {/* Factura Details: Monto y Fechas */}
                 <div className="lg:col-span-6 space-y-4">
-                  <div className="p-4 rounded-xl bg-muted/40 border border-border flex items-center justify-between">
-                    <div>
-                      <span className="text-xs text-muted-foreground uppercase font-semibold block">
-                        Monto de Factura
+                  {hasMultipleFacturas && (
+                    <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/50 flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-300">
+                        Total combinado ({facturasList.length} facturas)
                       </span>
-                      <span className="text-2xl sm:text-3xl font-extrabold text-foreground">
-                        {Number(facturaActual.monto || 0).toLocaleString("es-MX", {
+                      <span className="text-lg font-extrabold text-emerald-900 dark:text-emerald-200">
+                        {totalMesFacturas.toLocaleString("es-MX", {
                           style: "currency",
                           currency: "MXN",
                         })}
                       </span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs text-muted-foreground block">Fecha Límite:</span>
-                      <span className="text-xs font-bold text-foreground">
-                        {facturaActual.fecha_limite_pago || "Fin de mes"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="p-3 rounded-lg border bg-card">
-                      <span className="text-muted-foreground block">Fecha de Emisión:</span>
-                      <span className="font-semibold text-foreground">
-                        {facturaActual.fecha_factura || facturaActual.fecha_envio || "Emitida"}
-                      </span>
-                    </div>
-                    <div className="p-3 rounded-lg border bg-card">
-                      <span className="text-muted-foreground block">Método preferente:</span>
-                      <span className="font-semibold text-foreground capitalize">
-                        {facturaActual.metodo_pago || "Transferencia SPEI"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {facturaActual.fecha_pago && (
-                    <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Pago confirmado registrado el: <strong>{facturaActual.fecha_pago}</strong></span>
-                    </div>
                   )}
+
+                  {facturasList.map((fac, idx) => (
+                    <div key={fac.id || idx} className={hasMultipleFacturas ? "p-3.5 rounded-xl border border-border bg-card space-y-3" : "space-y-4"}>
+                      {hasMultipleFacturas && (
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/60">
+                          <span className="text-xs font-bold text-foreground">
+                            {fac.concepto ? fac.concepto : `Factura #${idx + 1}`}
+                          </span>
+                          {getFacturaStatusBadge(fac.estado)}
+                        </div>
+                      )}
+                      {!hasMultipleFacturas && fac.concepto && (
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Concepto: <strong className="text-foreground">{fac.concepto}</strong>
+                        </div>
+                      )}
+                      <div className="p-4 rounded-xl bg-muted/40 border border-border flex items-center justify-between">
+                        <div>
+                          <span className="text-xs text-muted-foreground uppercase font-semibold block">
+                            Monto de Factura
+                          </span>
+                          <span className="text-2xl sm:text-3xl font-extrabold text-foreground">
+                            {Number(fac.monto || 0).toLocaleString("es-MX", {
+                              style: "currency",
+                              currency: "MXN",
+                            })}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs text-muted-foreground block">Fecha Límite:</span>
+                          <span className="text-xs font-bold text-foreground">
+                            {fac.fecha_limite_pago || "Fin de mes"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 rounded-lg border bg-card">
+                          <span className="text-muted-foreground block">Fecha de Emisión:</span>
+                          <span className="font-semibold text-foreground">
+                            {fac.fecha_factura || fac.fecha_envio || "Emitida"}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-lg border bg-card">
+                          <span className="text-muted-foreground block">Método preferente:</span>
+                          <span className="font-semibold text-foreground capitalize">
+                            {fac.metodo_pago || "Transferencia SPEI"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {fac.fecha_pago && (
+                        <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Pago confirmado registrado el: <strong>{fac.fecha_pago}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
 
                 {/* Bank Transfer Instructions or Alternative Payment Notice */}
                 {(() => {
-                  const metodo = (facturaActual?.metodo_pago || "transferencia").toLowerCase().trim();
+                  const metodo = metodoReferencia;
                   const esEfectivo = metodo.includes("efectivo");
                   const esCheque = metodo.includes("cheque");
                   const esTransferencia = !esEfectivo && !esCheque;
@@ -948,6 +1003,8 @@ export default function ClientHome() {
             )}
           </CardContent>
         </Card>
+          );
+        })()}
 
         {/* ────────────────── 2. SECCIÓN: GUARDIAS ASIGNADOS (EN MEDIO) ────────────────── */}
         {/* REGLA: "pon los guardias en orden matutino, vespertino y cubredescansos" */}
