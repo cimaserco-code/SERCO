@@ -1879,11 +1879,15 @@ export default function Cobros() {
               <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay facturas registradas</TableCell></TableRow>
-            ) : (
-              filtered.map((item) => {
+            ) : (() => {
+              const seenServiceGroups = new Set();
+              return filtered.map((item) => {
                 const meta = item.metadata || getCobroMeta(item.id);
                 const info = getCobroPartesInfo(item, meta);
                 const servOrdinal = serviceInvoiceMetaMap.get(item.id);
+                const servGroupKey = getServicioGroupKey(item);
+                const isFirstVisibleForService = !seenServiceGroups.has(servGroupKey);
+                seenServiceGroups.add(servGroupKey);
                 const itemExtras = facturasExtrasAll.filter(
                   (x) => x.servicio_id === item.servicio_id && (!x.mes || x.mes === item.mes)
                 );
@@ -1905,6 +1909,20 @@ export default function Cobros() {
                           <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200 text-[10px] px-1.5 py-0 font-semibold">
                             Factura {servOrdinal.index}/{servOrdinal.total}
                           </Badge>
+                        )}
+                        {isFirstVisibleForService && (can("cobros", "create") || can("cobros", "edit")) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCreate(item);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-0.5 text-[11px] font-semibold transition-colors"
+                            title="Agregar otra factura normal a este servicio (independiente de Extras)"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Otra factura
+                          </button>
                         )}
                         {meta?.es_variable && (
                           <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] px-1.5 py-0 font-medium">
@@ -2012,23 +2030,6 @@ export default function Cobros() {
                         </Button>
                       )}
 
-                      {/* Botón Generar otra factura para el mismo servicio */}
-                      {(can("cobros", "create") || can("cobros", "edit")) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs font-semibold gap-1 border-blue-200 hover:bg-blue-50 text-blue-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openCreate(item);
-                          }}
-                          title="Generar otra factura para este servicio"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Factura
-                        </Button>
-                      )}
-
                       {/* Botón Facturas Extras */}
                       {can("cobros", "edit") && (
                         <Button
@@ -2054,8 +2055,8 @@ export default function Cobros() {
                     </TableCell>
                   </TableRow>
                 );
-              })
-            )}
+              });
+            })()}
           </TableBody>
         </Table>
       </div>
@@ -2063,11 +2064,19 @@ export default function Cobros() {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar Factura" : "Nueva Factura"}</DialogTitle>
+            <DialogTitle>
+              {editing
+                ? "Editar Factura"
+                : form.es_adicional && form.servicio_nombre
+                ? `Nueva Factura Adicional — ${form.servicio_nombre}`
+                : "Nueva Factura"}
+            </DialogTitle>
             <DialogDescription>
               {editing
-                ? "Actualiza la información financiera y método de cobro del servicio."
-                : "Crea un registro de cobro para el mes actual o subsecuente."}
+                ? "Actualiza la información financiera y método de cobro de esta factura."
+                : form.es_adicional
+                ? "Genera otra factura normal para este mismo servicio (independiente de Extras)."
+                : "Crea una nueva factura normal para cualquier servicio en el mes seleccionado."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2093,20 +2102,54 @@ export default function Cobros() {
                     ))}
                   </SelectContent>
                 </Select>
+                {!form.servicio_id && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Puedes elegir un servicio aunque ya tenga factura en este mes para generar otra factura normal.
+                  </p>
+                )}
               </div>
             ) : (
-              <div>
-                <Label>Servicio</Label>
-                <Input value={form.servicio_nombre} disabled className="bg-muted" />
+              <div className="space-y-2">
+                <div>
+                  <Label>Servicio</Label>
+                  <Input value={form.servicio_nombre} disabled className="bg-muted" />
+                </div>
+                {(can("cobros", "create") || can("cobros", "edit")) && (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/60 dark:bg-blue-950/20 dark:border-blue-900 px-3 py-2">
+                    <span className="text-xs text-blue-900 dark:text-blue-200">
+                      ¿Necesitas generar otra factura normal para este servicio?
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs font-semibold border-blue-300 bg-white hover:bg-blue-100 text-blue-700 shrink-0 gap-1"
+                      onClick={() => openCreate(editing)}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Otra factura
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
-            {!editing && form.servicio_id && form.mes === currentMonth && (() => {
-              const existingCount = monthlyItems.filter((c) => c.servicio_id === form.servicio_id).length;
-              if (existingCount === 0) return null;
+            {!editing && form.servicio_id && (() => {
+              const existingCount = form.mes === currentMonth
+                ? monthlyItems.filter((c) => c.servicio_id === form.servicio_id).length
+                : 0;
+              if (existingCount === 0 && !form.es_adicional) return null;
               return (
                 <div className="rounded-lg border border-blue-200 bg-blue-50/70 dark:bg-blue-950/30 dark:border-blue-900 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
-                  Este servicio ya tiene <strong>{existingCount}</strong> factura(s) en {formatMes(form.mes)}. Se agregará una factura adicional independiente.
+                  {existingCount > 0 ? (
+                    <>
+                      Este servicio ya tiene <strong>{existingCount}</strong> factura(s) normal(es) en {formatMes(form.mes)}. Se agregará otra factura independiente (no forma parte de Extras).
+                    </>
+                  ) : (
+                    <>
+                      Se creará una factura normal adicional para este servicio en {formatMes(form.mes)} (independiente de Extras).
+                    </>
+                  )}
                 </div>
               );
             })()}
