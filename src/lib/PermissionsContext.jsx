@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { sercoApi } from "@/api/sercoClient";
 import { useAuth } from "@/lib/AuthContext";
+import { isAreaDirectorRole, normalizeRoleName } from "@/lib/overviewRoles";
 
 const PermissionsContext = createContext(null);
 
@@ -27,8 +28,13 @@ export function PermissionsProvider({ children }) {
   }, [loadRoles]);
 
   const permisos = useMemo(() => {
-    const roleConfig = roles.find((r) => r.nombre === user?.role);
-    return roleConfig?.permisos || {};
+    const exactMatch = roles.find((r) => r.nombre === user?.role);
+    if (exactMatch) return exactMatch.permisos || {};
+    const normTarget = normalizeRoleName(user?.role);
+    const normMatch = normTarget
+      ? roles.find((r) => normalizeRoleName(r.nombre) === normTarget)
+      : null;
+    return normMatch?.permisos || {};
   }, [roles, user?.role]);
 
   const isAdmin = useMemo(() => {
@@ -50,9 +56,12 @@ export function PermissionsProvider({ children }) {
   const canView = useCallback(
     (module) => {
       if (roles.length === 0) return true;
+      if (module === "overview" && isAreaDirectorRole(user?.role)) {
+        return permisos?.overview?.view !== false;
+      }
       return permisos?.[module]?.view === true;
     },
-    [permisos, roles.length]
+    [permisos, roles.length, user?.role]
   );
 
   if (loading && user) {
